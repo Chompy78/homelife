@@ -787,5 +787,9 @@ if (token) {
   boot();
 } else {
   kidPicker.classList.remove("hidden");
-  codeInput.focus();
+  // Deliberately not auto-focusing: a programmatic focus() here (not from a
+  // real tap) doesn't open the on-screen keyboard on Android Chrome, and
+  // then a later real tap on the already-focused field doesn't fire a new
+  // focus event either - so the keyboard never appears at all. Letting the
+  // user's own tap do the focusing keeps it reliable everywhere.
 }

@@ -1,4 +1,4 @@
-const CACHE_NAME = "bedroom-reset-pwa-v9";
+const CACHE_NAME = "bedroom-reset-pwa-v10";
 const ASSETS = [
   "./",
   "./index.html",

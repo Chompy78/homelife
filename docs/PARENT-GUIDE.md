@@ -11,6 +11,11 @@ In the dashboard:
   code** (e.g. `AA6-B7E`) and a "Copy link" button.
 - Check the **family PIN** shown in Settings (default `2468`) - this is what
   you'll enter on their tablet to confirm a room pass. Change it if you like.
+- Pick a **family icon** in Settings too - it shows next to your family name
+  on the dashboard and (if you opt in) on the public leaderboard.
+- The **bedroom checklist** section lets you add, rename or remove items -
+  it starts with a sensible 17-item default, but every kid's app updates to
+  match whatever your family's list currently is.
 
 ## 3. Install on each kid's tablet
 1. Open Chrome or Edge on their tablet.

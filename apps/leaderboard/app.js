@@ -20,6 +20,7 @@ async function render() {
       (f, i) => `
       <div class="row">
         <span class="rank">${MEDALS[i] || `#${i + 1}`}</span>
+        <span class="rowIcon">${f.icon || "🏠"}</span>
         <div class="rowMain">
           <div class="rowName">${f.display_name}</div>
           <div class="rowSub">${f.kid_count} kid${f.kid_count === 1 ? "" : "s"} · best streak 🔥 ${f.best_streak} · ${f.total_passes} room${f.total_passes === 1 ? "" : "s"} passed</div>

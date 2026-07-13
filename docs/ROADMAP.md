@@ -79,9 +79,11 @@ only thing that actually marks a room passed.
 
 ## Also deferred (smaller, discussed earlier)
 
-- **Chooseable/uploadable custom icon per kid** (currently a fixed emoji
-  picker only) and **per-family icon** (doesn't exist as a concept yet).
-- **Further checklist customisation** beyond what shipped for shared
-  rooms - the bedroom's 17-item checklist stays fixed by design; shared
-  rooms already support parent add/remove of items
-  (`manage_room_items` in `supabase/functions/family-api`).
+- **Chooseable/uploadable custom icon per kid** (still a fixed emoji picker
+  only). ~~Per-family icon~~ - done: a parent picks one from Settings
+  (`families.icon`), shown on the dashboard header and the leaderboard.
+- ~~Further checklist customisation~~ - done: the bedroom checklist is now
+  per-family and parent-editable (`family_bedroom_items`, seeded with the
+  original 17-item default), the same as shared rooms already were
+  (`manage_bedroom_items` / `manage_room_items` in
+  `supabase/functions/family-api`).

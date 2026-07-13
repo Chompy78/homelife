@@ -15,6 +15,7 @@ const switchFamilyLink = document.getElementById("switchFamilyLink");
 
 const displayNameInput = document.getElementById("displayNameInput");
 const pinInput = document.getElementById("pinInput");
+const familyIconInput = document.getElementById("familyIconInput");
 const publicToggle = document.getElementById("publicToggle");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const settingsSaved = document.getElementById("settingsSaved");
@@ -23,6 +24,12 @@ const newKidName = document.getElementById("newKidName");
 const newKidAvatar = document.getElementById("newKidAvatar");
 const addKidBtn = document.getElementById("addKidBtn");
 const addKidError = document.getElementById("addKidError");
+
+const bedroomItemsAdminEl = document.getElementById("bedroomItemsAdmin");
+const newBedroomItemLabel = document.getElementById("newBedroomItemLabel");
+const newBedroomItemCategory = document.getElementById("newBedroomItemCategory");
+const addBedroomItemBtn = document.getElementById("addBedroomItemBtn");
+const addBedroomItemError = document.getElementById("addBedroomItemError");
 
 const cardsEl = document.getElementById("cards");
 const roomCardsEl = document.getElementById("roomCards");
@@ -144,6 +151,7 @@ saveSettingsBtn.addEventListener("click", async () => {
   const patch = {};
   if (displayNameInput.value.trim()) patch.display_name = displayNameInput.value.trim();
   if (/^\d{4}$/.test(pinInput.value.trim())) patch.mum_pin = pinInput.value.trim();
+  patch.icon = familyIconInput.value;
   patch.is_public = publicToggle.checked;
   saveSettingsBtn.disabled = true;
   const res = await callApi("update_family_settings", { token, ...patch });
@@ -357,6 +365,75 @@ function renderKidCard(data) {
   return card;
 }
 
+// --- Bedroom checklist admin (family-wide, not per kid) -------------------
+
+async function addBedroomItem() {
+  const label = newBedroomItemLabel.value.trim();
+  if (!label) {
+    addBedroomItemError.textContent = "Enter an item first.";
+    addBedroomItemError.classList.remove("hidden");
+    return;
+  }
+  addBedroomItemError.classList.add("hidden");
+  addBedroomItemBtn.disabled = true;
+  const res = await callApi("manage_bedroom_items", { token, itemAction: "add", label, category: newBedroomItemCategory.value.trim() });
+  addBedroomItemBtn.disabled = false;
+  if (!res.ok) {
+    addBedroomItemError.textContent = "Could not add that item. Try again.";
+    addBedroomItemError.classList.remove("hidden");
+    return;
+  }
+  newBedroomItemLabel.value = "";
+  newBedroomItemCategory.value = "";
+  render(false);
+}
+
+async function deleteBedroomItem(item) {
+  const ok = await askConfirm(`Remove "${item.label}" from the bedroom checklist? This removes it for every kid.`);
+  if (!ok) return;
+  await callApi("manage_bedroom_items", { token, itemAction: "delete", item_id: item.id });
+  render(false);
+}
+
+addBedroomItemBtn.addEventListener("click", addBedroomItem);
+
+function renderBedroomItemsAdmin(items) {
+  bedroomItemsAdminEl.innerHTML = "";
+  if (!items || items.length === 0) {
+    bedroomItemsAdminEl.innerHTML = `<p class="loading">No checklist items yet.</p>`;
+    return;
+  }
+  const order = [];
+  const map = new Map();
+  items.forEach((item) => {
+    const cat = item.category || "Checklist";
+    if (!map.has(cat)) {
+      map.set(cat, []);
+      order.push(cat);
+    }
+    map.get(cat).push(item);
+  });
+  order.forEach((cat) => {
+    const group = document.createElement("div");
+    group.className = "roomItemGroup";
+    const label = document.createElement("div");
+    label.className = "kidPhotosLabel";
+    label.textContent = cat;
+    group.appendChild(label);
+    const list = document.createElement("div");
+    list.className = "roomItemList";
+    map.get(cat).forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "roomItemRow";
+      row.innerHTML = `<span>${item.label}</span><button type="button" class="removeItemBtn">✕</button>`;
+      row.querySelector(".removeItemBtn").addEventListener("click", () => deleteBedroomItem(item));
+      list.appendChild(row);
+    });
+    group.appendChild(list);
+    bedroomItemsAdminEl.appendChild(group);
+  });
+}
+
 // --- Shared room admin actions -------------------------------------------
 
 async function addRoomItem(room) {
@@ -514,14 +591,16 @@ async function render(showLoading) {
     cardsEl.innerHTML = `<p class="error">Could not load your family's progress. Check your internet connection.</p>`;
     return;
   }
-  const { family, kids, streaks, states, logs, checklist_total, rooms } = res.data;
+  const { family, kids, streaks, states, logs, checklist_total, bedroom_items, rooms } = res.data;
 
-  familyHeading.textContent = family.name;
+  familyHeading.textContent = `${family.icon || "🏠"} ${family.name}`;
+  renderBedroomItemsAdmin(bedroom_items || []);
   // Don't clobber the settings fields while someone's mid-edit on an auto-refresh tick.
-  const editingSettings = [displayNameInput, pinInput].includes(document.activeElement);
+  const editingSettings = [displayNameInput, pinInput, familyIconInput].includes(document.activeElement);
   if (!editingSettings) {
     displayNameInput.value = family.display_name;
     pinInput.value = family.mum_pin;
+    familyIconInput.value = family.icon || "🏠";
     publicToggle.checked = family.is_public;
   }
 

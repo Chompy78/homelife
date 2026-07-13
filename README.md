@@ -40,9 +40,10 @@ is comparing families against each other.
 
 Tables:
 
-- `families` - name, public display name, parent_code, mum_pin, is_public (leaderboard opt-in)
+- `families` - name, public display name, parent_code, mum_pin, icon, is_public (leaderboard opt-in)
 - `kids` - name, avatar, kid_code, belongs to a family
-- `kid_checklist_state` - today's checkbox state per kid (bedroom only - personal)
+- `family_bedroom_items` - the family's own bedroom checklist (category + label per item), fully editable by a parent from the dashboard. Seeded with a 17-item default checklist automatically when a family is created (a database trigger, so it works even though families themselves are created by raw SQL - see "Onboarding a new family" below); a kid's checklist total is however many items their family currently has, not a fixed number
+- `kid_checklist_state` - today's checkbox state per kid (bedroom only - personal), keyed against the family's current `family_bedroom_items`
 - `kid_streaks` - current streak, best streak, total points, total passes, last Mum result (bedroom only)
 - `kid_progress_log` - append-only history of resets and Mum checks, used by the parent dashboard and leaderboard
 - `sessions` - opaque tokens issued on code redemption, mapping a device to a family (and a kid, for kid sessions)

@@ -9,7 +9,11 @@
 // function - callers never have a Supabase Auth JWT, auth is entirely our
 // own token/code scheme implemented below.
 //
-// Keep CHECKLIST_TOTAL and the POINTS values in sync with apps/shared/config.js.
+// Keep the POINTS values in sync with apps/shared/config.js. The bedroom
+// checklist itself is no longer fixed here - each family has its own
+// customizable set in family_bedroom_items (seeded with a 17-item default
+// when the family is created), same pattern as family_room_items for
+// shared rooms.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -17,7 +21,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-const CHECKLIST_TOTAL = 17;
 const POINTS = {
   ITEM_CHECK: 2,
   DAY_COMPLETE_BONUS: 10,
@@ -115,6 +118,27 @@ async function getSession(token: unknown) {
 async function freshStreak(kidId: string) {
   const { data } = await db.from("kid_streaks").select("*").eq("kid_id", kidId).maybeSingle();
   return data;
+}
+
+async function getBedroomItems(familyId: string) {
+  const { data } = await db
+    .from("family_bedroom_items")
+    .select("id, category, label")
+    .eq("family_id", familyId)
+    .order("sort_order");
+  return data || [];
+}
+
+// Only counts state for items that still exist, so a deleted item can't
+// keep contributing to "day complete" or history after a parent removes it.
+async function bedroomProgressCounts(familyId: string, kidId: string) {
+  const items = await getBedroomItems(familyId);
+  const itemIds = items.map((i) => i.id);
+  const { data: stateRows } = itemIds.length
+    ? await db.from("kid_checklist_state").select("checked").eq("kid_id", kidId).in("item_id", itemIds)
+    : { data: [] };
+  const done = (stateRows || []).filter((s) => s.checked).length;
+  return { done, total: itemIds.length };
 }
 
 async function getPhotosWithUrls(kidId: string) {
@@ -230,14 +254,18 @@ Deno.serve(async (req) => {
       case "get_kid_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: items }, streak, { data: kid }, photos, { data: sharedRooms }] = await Promise.all([
+        const [{ data: items }, streak, { data: kid }, photos, { data: sharedRooms }, bedroomItems] = await Promise.all([
           db.from("kid_checklist_state").select("item_id, checked").eq("kid_id", session.kid_id),
           freshStreak(session.kid_id),
           db.from("kids").select("id, name, avatar_emoji").eq("id", session.kid_id).single(),
           getPhotosWithUrls(session.kid_id),
           db.from("family_rooms").select("id, name, icon").eq("family_id", session.family_id).order("sort_order"),
+          getBedroomItems(session.family_id),
         ]);
-        return json({ ok: true, data: { kid, items: items || [], streak: streak || {}, photos, shared_rooms: sharedRooms || [] } });
+        return json({
+          ok: true,
+          data: { kid, items: items || [], streak: streak || {}, photos, shared_rooms: sharedRooms || [], bedroom_items: bedroomItems },
+        });
       }
 
       case "upload_reference_photo": {
@@ -316,6 +344,9 @@ Deno.serve(async (req) => {
         const checked = !!body.checked;
         if (!itemId) return json({ ok: false, error: "item_id required" }, 400);
 
+        const bedroomItems = await getBedroomItems(session.family_id);
+        if (!bedroomItems.some((i) => i.id === itemId)) return json({ ok: false, error: "not_found" }, 404);
+
         const { data: existing } = await db
           .from("kid_checklist_state")
           .select("checked")
@@ -333,9 +364,8 @@ Deno.serve(async (req) => {
         if (checked && !wasChecked) pointsAwarded += POINTS.ITEM_CHECK;
 
         if (checked) {
-          const { data: items } = await db.from("kid_checklist_state").select("checked").eq("kid_id", session.kid_id);
-          const doneCount = (items || []).filter((i) => i.checked).length;
-          if (doneCount >= CHECKLIST_TOTAL) {
+          const { done, total } = await bedroomProgressCounts(session.family_id, session.kid_id);
+          if (total > 0 && done >= total) {
             const streakRow = await freshStreak(session.kid_id);
             if (streakRow?.last_bonus_date !== todayStr()) completionBonus = POINTS.DAY_COMPLETE_BONUS;
           }
@@ -404,13 +434,12 @@ Deno.serve(async (req) => {
           updated_at: new Date().toISOString(),
         });
 
-        const { data: items } = await db.from("kid_checklist_state").select("checked").eq("kid_id", session.kid_id);
-        const done = (items || []).filter((i) => i.checked).length;
+        const { done, total } = await bedroomProgressCounts(session.family_id, session.kid_id);
         await db.from("kid_progress_log").insert({
           kid_id: session.kid_id,
           items_done: done,
-          items_total: CHECKLIST_TOTAL,
-          percent_complete: Math.round((done / CHECKLIST_TOTAL) * 100),
+          items_total: total,
+          percent_complete: total ? Math.round((done / total) * 100) : 0,
           event_type: eventType,
           mum_result: mumResult,
           streak_at_time: current,
@@ -425,13 +454,12 @@ Deno.serve(async (req) => {
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
         const mumResult = "🔁 Try again. Fix the missed jobs, then ask Mum to check again.";
         await db.from("kid_streaks").upsert({ kid_id: session.kid_id, mum_result: mumResult, updated_at: new Date().toISOString() });
-        const { data: items } = await db.from("kid_checklist_state").select("checked").eq("kid_id", session.kid_id);
-        const done = (items || []).filter((i) => i.checked).length;
+        const { done, total } = await bedroomProgressCounts(session.family_id, session.kid_id);
         await db.from("kid_progress_log").insert({
           kid_id: session.kid_id,
           items_done: done,
-          items_total: CHECKLIST_TOTAL,
-          percent_complete: Math.round((done / CHECKLIST_TOTAL) * 100),
+          items_total: total,
+          percent_complete: total ? Math.round((done / total) * 100) : 0,
           event_type: "mum_try_again",
           mum_result: mumResult,
           streak_at_time: (await freshStreak(session.kid_id))?.current_streak || 0,
@@ -443,15 +471,14 @@ Deno.serve(async (req) => {
       case "reset_day": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
-        const { data: items } = await db.from("kid_checklist_state").select("checked").eq("kid_id", session.kid_id);
-        const done = (items || []).filter((i) => i.checked).length;
+        const { done, total } = await bedroomProgressCounts(session.family_id, session.kid_id);
         const streakRow = await freshStreak(session.kid_id);
 
         await db.from("kid_progress_log").insert({
           kid_id: session.kid_id,
           items_done: done,
-          items_total: CHECKLIST_TOTAL,
-          percent_complete: Math.round((done / CHECKLIST_TOTAL) * 100),
+          items_total: total,
+          percent_complete: total ? Math.round((done / total) * 100) : 0,
           event_type: "reset",
           mum_result: streakRow?.mum_result ?? null,
           streak_at_time: streakRow?.current_streak || 0,
@@ -475,9 +502,13 @@ Deno.serve(async (req) => {
         const { data: family } = await db.from("families").select("*").eq("id", session.family_id).single();
         const { data: kids } = await db.from("kids").select("*").eq("family_id", session.family_id).order("sort_order");
         const kidIds = (kids || []).map((k) => k.id);
+        const bedroomItems = await getBedroomItems(session.family_id);
+        const bedroomItemIds = bedroomItems.map((i) => i.id);
         const [{ data: streaks }, { data: states }, { data: logs }, photosByKid] = await Promise.all([
           kidIds.length ? db.from("kid_streaks").select("*").in("kid_id", kidIds) : Promise.resolve({ data: [] }),
-          kidIds.length ? db.from("kid_checklist_state").select("kid_id, checked").in("kid_id", kidIds) : Promise.resolve({ data: [] }),
+          kidIds.length && bedroomItemIds.length
+            ? db.from("kid_checklist_state").select("kid_id, checked").in("kid_id", kidIds).in("item_id", bedroomItemIds)
+            : Promise.resolve({ data: [] }),
           kidIds.length
             ? db.from("kid_progress_log").select("*").in("kid_id", kidIds).order("created_at", { ascending: false }).limit(60)
             : Promise.resolve({ data: [] }),
@@ -497,7 +528,8 @@ Deno.serve(async (req) => {
             streaks: streaks || [],
             states: states || [],
             logs: logs || [],
-            checklist_total: CHECKLIST_TOTAL,
+            checklist_total: bedroomItemIds.length,
+            bedroom_items: bedroomItems,
             rooms: roomsWithData,
             room_templates: ROOM_TEMPLATES,
           },
@@ -511,6 +543,7 @@ Deno.serve(async (req) => {
         if (typeof body.display_name === "string" && body.display_name.trim()) patch.display_name = body.display_name.trim().slice(0, 60);
         if (typeof body.is_public === "boolean") patch.is_public = body.is_public;
         if (typeof body.mum_pin === "string" && /^\d{4}$/.test(body.mum_pin)) patch.mum_pin = body.mum_pin;
+        if (typeof body.icon === "string" && body.icon.trim()) patch.icon = body.icon.trim().slice(0, 8);
         if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
         await db.from("families").update(patch).eq("id", session.family_id);
         return json({ ok: true });
@@ -571,8 +604,57 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "unknown_kid_action" }, 400);
       }
 
+      case "manage_bedroom_items": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const itemAction = String(body.itemAction || "");
+
+        if (itemAction === "add") {
+          const label = String(body.label || "").trim().slice(0, 140);
+          if (!label) return json({ ok: false, error: "label_required" }, 400);
+          const category = String(body.category || "").trim().slice(0, 60) || "Extra Jobs";
+          const { data: existing } = await db.from("family_bedroom_items").select("id").eq("family_id", session.family_id);
+          const { data: item, error } = await db
+            .from("family_bedroom_items")
+            .insert({ family_id: session.family_id, category, label, sort_order: (existing?.length || 0) + 1 })
+            .select()
+            .single();
+          if (error || !item) return json({ ok: false, error: "could_not_add" }, 500);
+          return json({ ok: true, data: { item } });
+        }
+
+        if (itemAction === "rename") {
+          const { data: item } = await db
+            .from("family_bedroom_items")
+            .select("id")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          const label = String(body.label || "").trim().slice(0, 140);
+          if (!label) return json({ ok: false, error: "label_required" }, 400);
+          await db.from("family_bedroom_items").update({ label }).eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        if (itemAction === "delete") {
+          const { data: item } = await db
+            .from("family_bedroom_items")
+            .select("id")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          await db.from("family_bedroom_items").delete().eq("id", item.id);
+          await db.from("kid_checklist_state").delete().eq("item_id", item.id);
+          return json({ ok: true });
+        }
+
+        return json({ ok: false, error: "unknown_item_action" }, 400);
+      }
+
       case "get_leaderboard": {
-        const { data: families } = await db.from("families").select("id, display_name").eq("is_public", true);
+        const { data: families } = await db.from("families").select("id, display_name, icon").eq("is_public", true);
         if (!families || families.length === 0) return json({ ok: true, data: [] });
         const familyIds = families.map((f) => f.id);
         const [{ data: kids }, { data: rooms }] = await Promise.all([
@@ -592,8 +674,8 @@ Deno.serve(async (req) => {
 
         const kidToFamily = Object.fromEntries((kids || []).map((k) => [k.id, k.family_id]));
         const roomToFamily = Object.fromEntries((rooms || []).map((r) => [r.id, r.family_id]));
-        const byFamily: Record<string, { family_id: string; display_name: string; total_points: number; best_streak: number; total_passes: number; kid_count: number }> = {};
-        for (const f of families) byFamily[f.id] = { family_id: f.id, display_name: f.display_name, total_points: 0, best_streak: 0, total_passes: 0, kid_count: 0 };
+        const byFamily: Record<string, { family_id: string; display_name: string; icon: string; total_points: number; best_streak: number; total_passes: number; kid_count: number }> = {};
+        for (const f of families) byFamily[f.id] = { family_id: f.id, display_name: f.display_name, icon: f.icon || "🏠", total_points: 0, best_streak: 0, total_passes: 0, kid_count: 0 };
         for (const s of streaks || []) {
           const fam = byFamily[kidToFamily[s.kid_id]];
           if (!fam) continue;

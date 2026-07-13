@@ -54,6 +54,15 @@ is checked server-side (a parent sets/changes it from the parent dashboard),
 never shipped to the kid's browser. **Try Again** and **Start a new day**
 don't need the PIN since they can't be used to fake progress.
 
+## The checklist itself
+
+The bedroom checklist isn't fixed - each family has its own copy
+(`family_bedroom_items`), seeded with a sensible 17-item default when the
+family is created, which a parent can add to, rename or remove from the
+parent dashboard. Categories (Clothes, Floor, Storage, etc.) are just a
+label on each item, so a newly-added item can go under an existing
+category or a new one of its own.
+
 ## Points, levels and badges
 
 Checking an item, finishing the whole room, and a Mum Pass/Great Job all

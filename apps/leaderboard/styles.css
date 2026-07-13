@@ -43,6 +43,7 @@ h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
   gap: 14px;
 }
 .rank { font-size: 1.6rem; width: 44px; text-align: center; flex: 0 0 auto; }
+.rowIcon { font-size: 1.6rem; flex: 0 0 auto; }
 .rowMain { flex: 1; min-width: 0; }
 .rowName { font-weight: 900; font-size: 1.1rem; }
 .rowSub { color: var(--muted); font-weight: 700; font-size: 0.85rem; margin-top: 2px; }

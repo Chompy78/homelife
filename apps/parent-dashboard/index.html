@@ -54,6 +54,20 @@
         <label>Family PIN (for Mum Check)
           <input type="text" id="pinInput" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" />
         </label>
+        <label>Family icon
+          <select id="familyIconInput">
+            <option value="🏠">🏠 House</option>
+            <option value="🏡">🏡 House with garden</option>
+            <option value="🏰">🏰 Castle</option>
+            <option value="🏯">🏯 Palace</option>
+            <option value="🛖">🛖 Hut</option>
+            <option value="🌳">🌳 Tree</option>
+            <option value="🌈">🌈 Rainbow</option>
+            <option value="⭐">⭐ Star</option>
+            <option value="🦋">🦋 Butterfly</option>
+            <option value="💙">💙 Heart</option>
+          </select>
+        </label>
       </div>
       <label class="publicToggle">
         <input type="checkbox" id="publicToggle" />
@@ -82,6 +96,18 @@
         <button id="addKidBtn" type="button" class="saveBtn">Add</button>
       </div>
       <p class="addKidError hidden" id="addKidError"></p>
+    </section>
+
+    <section class="card bedroomChecklistCard">
+      <h2>Bedroom checklist</h2>
+      <p class="roomHint">Every kid's bedroom uses this same checklist - add, rename or remove items and it updates for everyone next sync.</p>
+      <div class="roomItemsAdmin" id="bedroomItemsAdmin"></div>
+      <div class="addItemRow">
+        <input type="text" id="newBedroomItemLabel" placeholder="New checklist item" maxlength="140" />
+        <input type="text" id="newBedroomItemCategory" placeholder="Category (optional)" maxlength="60" style="max-width:160px" />
+        <button id="addBedroomItemBtn" type="button" class="saveBtn">Add</button>
+      </div>
+      <p class="addKidError hidden" id="addBedroomItemError"></p>
     </section>
 
     <section class="card addRoomCard">

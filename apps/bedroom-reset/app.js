@@ -1,12 +1,13 @@
-import { CHECKLIST, LEVELS, levelForPoints, nextLevel, BADGES, earnedBadges } from "../shared/config.js";
+import { LEVELS, levelForPoints, nextLevel, BADGES, earnedBadges } from "../shared/config.js";
 import { callApi } from "../shared/api.js";
 import { compressImage } from "../shared/image.js";
 
 const DEVICE_TOKEN_KEY = "homelife_kid_token";
 const DEVICE_NAME_KEY = "homelife_kid_name";
 const DEVICE_AVATAR_KEY = "homelife_kid_avatar";
-const CHECKLIST_KEY_PREFIX = "bedroom-reset-checklist-v7:";
+const CHECKLIST_KEY_PREFIX = "bedroom-reset-checklist-v8:";
 const STREAK_CACHE_KEY_PREFIX = "bedroom-reset-streak-cache-v7:";
+const BEDROOM_ITEMS_CACHE_KEY = "bedroom-reset-items-cache-v1";
 
 const kidPicker = document.getElementById("kidPicker");
 const codeForm = document.getElementById("codeForm");
@@ -156,11 +157,27 @@ function switchRoom(room) {
 
 // --- Checklist rendering -----------------------------------------------
 
+// Bedroom items carry their own category (grouped into sections, family-
+// customizable); a shared room's items are flat, grouped under the room name.
+function groupByCategory(items) {
+  const order = [];
+  const map = new Map();
+  items.forEach((item) => {
+    const cat = item.category || "Checklist";
+    if (!map.has(cat)) {
+      map.set(cat, []);
+      order.push(cat);
+    }
+    map.get(cat).push(item);
+  });
+  return order.map((cat) => ({ category: cat, items: map.get(cat) }));
+}
+
 function renderChecklist() {
   checklistEl.innerHTML = "";
   const categories =
     activeRoom.type === "bedroom"
-      ? CHECKLIST
+      ? groupByCategory(activeRoom.items || [])
       : [{ category: activeRoom.name, items: (activeRoom.items || []).map((i) => ({ id: i.id, label: i.label })) }];
   categories.forEach((cat) => {
     const section = document.createElement("section");
@@ -286,6 +303,10 @@ async function fetchAndReconcile() {
     return;
   }
 
+  activeRoom.items = res.data.bedroom_items || [];
+  localStorage.setItem(BEDROOM_ITEMS_CACHE_KEY, JSON.stringify(activeRoom.items));
+  renderChecklist();
+  loadLocalChecklist();
   const serverMap = Object.fromEntries((res.data.items || []).map((i) => [i.item_id, i.checked]));
   const toReconcile = [];
   boxes.forEach((box) => {
@@ -738,6 +759,7 @@ function bootRoom() {
   loadLocalStreakCache();
   renderSyncStatus();
   if (activeRoom.type === "bedroom") {
+    activeRoom.items = JSON.parse(localStorage.getItem(BEDROOM_ITEMS_CACHE_KEY) || "[]");
     renderChecklist();
     loadLocalChecklist();
     updateEverything();

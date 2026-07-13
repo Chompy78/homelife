@@ -79,3 +79,9 @@ publishes the whole repo to GitHub Pages. Once live:
 The edge function deploys separately (via the Supabase MCP tool or `supabase
 functions deploy family-api`), not through the GitHub Pages workflow -
 redeploy it after editing `supabase/functions/family-api/index.ts`.
+
+## Roadmap
+
+Scoped-but-not-built ideas, including a full architecture for AI photo
+scoring once the home AI setup is ready, live in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).

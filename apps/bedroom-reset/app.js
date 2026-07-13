@@ -5,13 +5,16 @@ import { compressImage } from "../shared/image.js";
 const DEVICE_TOKEN_KEY = "homelife_kid_token";
 const DEVICE_NAME_KEY = "homelife_kid_name";
 const DEVICE_AVATAR_KEY = "homelife_kid_avatar";
-const CHECKLIST_KEY = "bedroom-reset-checklist-v6";
-const STREAK_CACHE_KEY = "bedroom-reset-streak-cache-v6";
+const CHECKLIST_KEY_PREFIX = "bedroom-reset-checklist-v7:";
+const STREAK_CACHE_KEY_PREFIX = "bedroom-reset-streak-cache-v7:";
 
 const kidPicker = document.getElementById("kidPicker");
 const codeForm = document.getElementById("codeForm");
 const codeInput = document.getElementById("codeInput");
 const codeError = document.getElementById("codeError");
+const roomTitleEl = document.getElementById("roomTitle");
+const roomSubtitleEl = document.getElementById("roomSubtitle");
+const roomSwitcherEl = document.getElementById("roomSwitcher");
 const checklistEl = document.getElementById("checklist");
 const kidNameEl = document.getElementById("kidName");
 const switchKidLink = document.getElementById("switchKidLink");
@@ -72,11 +75,94 @@ let lastSyncOk = null;
 let lastKnownLevel = 1;
 let streakState = { current_streak: 0, best_streak: 0, total_points: 0, total_passes: 0, mum_result: "No Mum check yet today." };
 
+// A kid always has their own bedroom (type "bedroom"), plus zero or more
+// shared family rooms (type "shared") fetched at login. Everything below is
+// written against `activeRoom` so the same UI works for either.
+let sharedRoomsList = [];
+let activeRoom = { type: "bedroom", id: null, name: "Bedroom Reset", icon: "🛏️", items: null };
+
+function roomStorageKey(prefix) {
+  const key = activeRoom.type === "bedroom" ? "bedroom" : activeRoom.id;
+  return `${prefix}${key}`;
+}
+
+// --- Room-aware API calls --------------------------------------------------
+
+function getRoomState() {
+  return activeRoom.type === "bedroom"
+    ? callApi("get_kid_state", { token })
+    : callApi("get_family_room_state", { token, room_id: activeRoom.id });
+}
+function updateRoomItem(itemId, checked) {
+  return activeRoom.type === "bedroom"
+    ? callApi("update_checklist_item", { token, item_id: itemId, checked })
+    : callApi("update_family_room_item", { token, room_id: activeRoom.id, item_id: itemId, checked });
+}
+function roomMumCheck(eventType, pin) {
+  return activeRoom.type === "bedroom"
+    ? callApi("mum_check", { token, event_type: eventType, pin })
+    : callApi("family_room_mum_check", { token, room_id: activeRoom.id, event_type: eventType, pin });
+}
+function roomTryAgain() {
+  return activeRoom.type === "bedroom"
+    ? callApi("mum_try_again", { token })
+    : callApi("family_room_try_again", { token, room_id: activeRoom.id });
+}
+function roomResetDay() {
+  return activeRoom.type === "bedroom"
+    ? callApi("reset_day", { token })
+    : callApi("family_room_reset_day", { token, room_id: activeRoom.id });
+}
+function uploadRoomPhoto(base64, contentType) {
+  return activeRoom.type === "bedroom"
+    ? callApi("upload_reference_photo", { token, image_base64: base64, content_type: contentType })
+    : callApi("upload_family_room_photo", { token, room_id: activeRoom.id, image_base64: base64, content_type: contentType });
+}
+function deleteRoomPhoto(photoId) {
+  return activeRoom.type === "bedroom"
+    ? callApi("delete_reference_photo", { token, photo_id: photoId })
+    : callApi("delete_family_room_photo", { token, photo_id: photoId });
+}
+// The bedroom's progress lives under `streak`, a shared room's under `progress` - same shape either way.
+function progressOf(data) {
+  return activeRoom.type === "bedroom" ? data.streak : data.progress;
+}
+
+// --- Room switcher -----------------------------------------------------
+
+function renderRoomSwitcher() {
+  roomSwitcherEl.innerHTML = "";
+  const rooms = [{ type: "bedroom", id: null, name: `${localStorage.getItem(DEVICE_NAME_KEY) || "My"} Room`, icon: localStorage.getItem(DEVICE_AVATAR_KEY) || "🛏️" }];
+  sharedRoomsList.forEach((r) => rooms.push({ type: "shared", id: r.id, name: r.name, icon: r.icon }));
+  if (rooms.length < 2) return; // nothing to switch between yet
+  rooms.forEach((r) => {
+    const pill = document.createElement("button");
+    pill.type = "button";
+    pill.className = "roomPill" + (r.type === activeRoom.type && r.id === activeRoom.id ? " active" : "");
+    pill.innerHTML = `<span class="roomPillIcon">${r.icon}</span><span>${r.name}</span>`;
+    pill.addEventListener("click", () => {
+      if (r.type === activeRoom.type && r.id === activeRoom.id) return;
+      switchRoom(r);
+    });
+    roomSwitcherEl.appendChild(pill);
+  });
+}
+
+function switchRoom(room) {
+  activeRoom = { ...room, items: null };
+  oneThingMode = false;
+  bootRoom();
+}
+
 // --- Checklist rendering -----------------------------------------------
 
 function renderChecklist() {
   checklistEl.innerHTML = "";
-  CHECKLIST.forEach((cat) => {
+  const categories =
+    activeRoom.type === "bedroom"
+      ? CHECKLIST
+      : [{ category: activeRoom.name, items: (activeRoom.items || []).map((i) => ({ id: i.id, label: i.label })) }];
+  categories.forEach((cat) => {
     const section = document.createElement("section");
     section.className = "category";
     const h2 = document.createElement("h2");
@@ -125,6 +211,7 @@ codeForm.addEventListener("submit", async (e) => {
   localStorage.setItem(DEVICE_TOKEN_KEY, token);
   localStorage.setItem(DEVICE_NAME_KEY, res.data.kid.name);
   localStorage.setItem(DEVICE_AVATAR_KEY, res.data.kid.avatar);
+  sharedRoomsList = res.data.shared_rooms || [];
   kidPicker.classList.add("hidden");
   boot();
 });
@@ -142,7 +229,7 @@ switchKidLink.addEventListener("click", async (e) => {
 // --- Local cache + server sync -------------------------------------------
 
 function loadLocalChecklist() {
-  const saved = JSON.parse(localStorage.getItem(CHECKLIST_KEY) || "{}");
+  const saved = JSON.parse(localStorage.getItem(roomStorageKey(CHECKLIST_KEY_PREFIX)) || "{}");
   boxes.forEach((box) => {
     box.checked = !!saved[box.dataset.id];
     updateItem(box);
@@ -152,29 +239,53 @@ function loadLocalChecklist() {
 function saveLocalChecklist() {
   const state = {};
   boxes.forEach((box) => (state[box.dataset.id] = box.checked));
-  localStorage.setItem(CHECKLIST_KEY, JSON.stringify(state));
+  localStorage.setItem(roomStorageKey(CHECKLIST_KEY_PREFIX), JSON.stringify(state));
 }
 
 function loadLocalStreakCache() {
-  const cached = JSON.parse(localStorage.getItem(STREAK_CACHE_KEY) || "null");
-  if (cached) {
-    streakState = cached;
-    lastKnownLevel = levelForPoints(streakState.total_points || 0).level;
-  }
+  const cached = JSON.parse(localStorage.getItem(roomStorageKey(STREAK_CACHE_KEY_PREFIX)) || "null");
+  streakState = cached || { current_streak: 0, best_streak: 0, total_points: 0, total_passes: 0, mum_result: "No Mum check yet today." };
+  lastKnownLevel = levelForPoints(streakState.total_points || 0).level;
 }
 
 function saveLocalStreakCache() {
-  localStorage.setItem(STREAK_CACHE_KEY, JSON.stringify(streakState));
+  localStorage.setItem(roomStorageKey(STREAK_CACHE_KEY_PREFIX), JSON.stringify(streakState));
 }
 
 async function fetchAndReconcile() {
-  const res = await callApi("get_kid_state", { token });
+  const res = await getRoomState();
   if (!res.ok) {
     lastSyncOk = false;
     renderSyncStatus();
     return;
   }
   lastSyncOk = true;
+
+  if (activeRoom.type === "shared") {
+    activeRoom.items = res.data.items || [];
+    renderChecklist();
+    loadLocalChecklist();
+    const stateMap = Object.fromEntries((res.data.state || []).map((s) => [s.item_id, s.checked]));
+    const toReconcile = [];
+    boxes.forEach((box) => {
+      const id = box.dataset.id;
+      if (id in stateMap) {
+        box.checked = stateMap[id];
+        updateItem(box);
+      } else if (box.checked) {
+        toReconcile.push(id);
+      }
+    });
+    applyStreak(res.data.progress, { celebrate: false });
+    photos = res.data.photos || [];
+    renderPhotos();
+    saveLocalChecklist();
+    renderSyncStatus();
+    updateEverything();
+    for (const id of toReconcile) syncItem(id, true);
+    return;
+  }
+
   const serverMap = Object.fromEntries((res.data.items || []).map((i) => [i.item_id, i.checked]));
   const toReconcile = [];
   boxes.forEach((box) => {
@@ -183,13 +294,14 @@ async function fetchAndReconcile() {
       box.checked = serverMap[id];
       updateItem(box);
     } else if (box.checked) {
-      // checked while offline before this item ever synced - push it now
       toReconcile.push(id);
     }
   });
   applyStreak(res.data.streak, { celebrate: false });
   photos = res.data.photos || [];
   renderPhotos();
+  sharedRoomsList = res.data.shared_rooms || [];
+  renderRoomSwitcher();
   saveLocalChecklist();
   renderSyncStatus();
   updateEverything();
@@ -197,7 +309,7 @@ async function fetchAndReconcile() {
 }
 
 async function syncItem(itemId, checked) {
-  const res = await callApi("update_checklist_item", { token, item_id: itemId, checked });
+  const res = await updateRoomItem(itemId, checked);
   if (!res.ok) {
     lastSyncOk = false;
     renderSyncStatus();
@@ -210,7 +322,7 @@ async function syncItem(itemId, checked) {
     showToast("🌟", `Room complete! +${res.data.completion_bonus} points`);
     confettiBurst(28);
   }
-  applyStreak(res.data.streak, { celebrate: pts > 0 });
+  applyStreak(progressOf(res.data), { celebrate: pts > 0 });
 }
 
 function renderSyncStatus() {
@@ -315,7 +427,7 @@ photoInput.addEventListener("change", async () => {
   photoError.classList.add("hidden");
   try {
     const { base64, contentType } = await compressImage(file);
-    const res = await callApi("upload_reference_photo", { token, image_base64: base64, content_type: contentType });
+    const res = await uploadRoomPhoto(base64, contentType);
     if (!res.ok) {
       photoError.textContent = res.error === "max_photos_reached" ? "You already have 3 photos - remove one first." : "Couldn't upload that photo. Try again.";
       photoError.classList.remove("hidden");
@@ -346,7 +458,7 @@ lightboxDelete.addEventListener("click", async () => {
   if (!lightboxPhotoId) return;
   const ok = await askConfirm("Remove this photo?");
   if (!ok) return;
-  const res = await callApi("delete_reference_photo", { token, photo_id: lightboxPhotoId });
+  const res = await deleteRoomPhoto(lightboxPhotoId);
   if (res.ok) {
     photos = res.data.photos;
     renderPhotos();
@@ -557,22 +669,22 @@ focusDoneBtn.addEventListener("click", () => {
 resetBtn.addEventListener("click", async () => {
   const ok = await askConfirm("Start a new day? This clears today's checklist. Streaks, points and badges are kept.");
   if (!ok) return;
-  const res = await callApi("reset_day", { token });
+  const res = await roomResetDay();
   boxes.forEach((box) => {
     box.checked = false;
     updateItem(box);
   });
   saveLocalChecklist();
-  if (res.ok) applyStreak(res.data.streak, { celebrate: false });
+  if (res.ok) applyStreak(progressOf(res.data), { celebrate: false });
   updateEverything();
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
 passBtn.addEventListener("click", () => {
   requestMumPin("Mum Check - Pass", async (pin) => {
-    const res = await callApi("mum_check", { token, event_type: "mum_pass", pin });
+    const res = await roomMumCheck("mum_pass", pin);
     if (res.ok) {
-      applyStreak(res.data.streak);
+      applyStreak(progressOf(res.data));
       if (res.data.awarded_points > 0) showToast("✅", `Passed by Mum! +${res.data.awarded_points} points`);
       updateEverything();
       return { ok: true };
@@ -584,9 +696,9 @@ passBtn.addEventListener("click", () => {
 
 starBtn.addEventListener("click", () => {
   requestMumPin("Mum Check - Great Job", async (pin) => {
-    const res = await callApi("mum_check", { token, event_type: "mum_star", pin });
+    const res = await roomMumCheck("mum_star", pin);
     if (res.ok) {
-      applyStreak(res.data.streak);
+      applyStreak(progressOf(res.data));
       if (res.data.awarded_points > 0) showToast("⭐", `Great job from Mum! +${res.data.awarded_points} points`);
       updateEverything();
       return { ok: true };
@@ -597,9 +709,9 @@ starBtn.addEventListener("click", () => {
 });
 
 tryBtn.addEventListener("click", async () => {
-  const res = await callApi("mum_try_again", { token });
+  const res = await roomTryAgain();
   if (res.ok) {
-    applyStreak(res.data.streak, { celebrate: false });
+    applyStreak(progressOf(res.data), { celebrate: false });
     updateEverything();
   }
 });
@@ -610,15 +722,41 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-function boot() {
-  kidNameEl.textContent = localStorage.getItem(DEVICE_NAME_KEY) || "…";
-  document.title = `${localStorage.getItem(DEVICE_NAME_KEY) || "Kid"}'s Bedroom Reset`;
-  renderChecklist();
-  loadLocalChecklist();
+function bootRoom() {
+  const kidName = localStorage.getItem(DEVICE_NAME_KEY) || "Kid";
+  if (activeRoom.type === "bedroom") {
+    roomTitleEl.textContent = "Bedroom Reset";
+    roomSubtitleEl.textContent = "Tap each box when it is properly done. Hidden, shoved or stuffed does not count.";
+    document.title = `${kidName}'s Bedroom Reset`;
+  } else {
+    roomTitleEl.textContent = `${activeRoom.icon} ${activeRoom.name}`;
+    roomSubtitleEl.textContent = `The whole family shares this one - anyone can help finish it.`;
+    document.title = `${activeRoom.name} - Homelife`;
+  }
+  kidNameEl.textContent = kidName;
+  renderRoomSwitcher();
   loadLocalStreakCache();
-  updateEverything();
   renderSyncStatus();
+  if (activeRoom.type === "bedroom") {
+    renderChecklist();
+    loadLocalChecklist();
+    updateEverything();
+  } else {
+    // Item definitions for a shared room aren't known until fetched, so there's
+    // nothing sensible to render from cache alone - clear out any previous room's
+    // checklist rather than show stale items while the fetch is in flight.
+    checklistEl.innerHTML = "";
+    boxes = [];
+    updateProgress();
+    updateLevelUI();
+    updateBadgesUI();
+  }
   fetchAndReconcile();
+}
+
+function boot() {
+  activeRoom = { type: "bedroom", id: null, name: "Bedroom Reset", icon: localStorage.getItem(DEVICE_AVATAR_KEY) || "🛏️", items: null };
+  bootRoom();
 }
 
 token = localStorage.getItem(DEVICE_TOKEN_KEY);

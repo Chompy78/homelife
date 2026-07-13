@@ -53,11 +53,13 @@
 
   <main class="app">
     <header>
-      <h1>Bedroom Reset</h1>
-      <p class="subtitle">Tap each box when it is properly done. Hidden, shoved or stuffed does not count.</p>
+      <h1 id="roomTitle">Bedroom Reset</h1>
+      <p class="subtitle" id="roomSubtitle">Tap each box when it is properly done. Hidden, shoved or stuffed does not count.</p>
       <p class="kidTag">For <span id="kidName">…</span> · <a href="#" id="switchKidLink">not you? switch</a></p>
       <p class="syncStatus" id="syncStatus">💾 Saved on this tablet</p>
     </header>
+
+    <div class="roomSwitcher" id="roomSwitcher"></div>
 
     <section class="gridTop">
       <div class="card pieWrap" aria-live="polite">

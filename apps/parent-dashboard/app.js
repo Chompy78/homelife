@@ -25,8 +25,14 @@ const addKidBtn = document.getElementById("addKidBtn");
 const addKidError = document.getElementById("addKidError");
 
 const cardsEl = document.getElementById("cards");
+const roomCardsEl = document.getElementById("roomCards");
 const refreshBtn = document.getElementById("refreshBtn");
 const lastUpdatedEl = document.getElementById("lastUpdated");
+
+const newRoomType = document.getElementById("newRoomType");
+const newRoomName = document.getElementById("newRoomName");
+const addRoomBtn = document.getElementById("addRoomBtn");
+const addRoomError = document.getElementById("addRoomError");
 
 const confirmModal = document.getElementById("confirmModal");
 const confirmTextEl = document.getElementById("confirmText");
@@ -40,8 +46,8 @@ const lightboxClose = document.getElementById("lightboxClose");
 const lightboxDelete = document.getElementById("lightboxDelete");
 
 const MAX_PHOTOS = 3;
-let photoUploadTargetKidId = null;
-let lightboxPhotoId = null;
+let photoUploadTarget = null; // { type: 'kid' | 'room', id }
+let lightboxPhoto = null; // { type: 'kid' | 'room', id }
 
 let token = null;
 let refreshTimer = null;
@@ -198,46 +204,50 @@ function copyKidLink(kid) {
 
 // --- Reference photos --------------------------------------------------
 
-function startPhotoUpload(kidId) {
-  photoUploadTargetKidId = kidId;
+function startPhotoUpload(type, id) {
+  photoUploadTarget = { type, id };
   photoInput.click();
 }
 
 photoInput.addEventListener("change", async () => {
   const file = photoInput.files[0];
-  const kidId = photoUploadTargetKidId;
+  const target = photoUploadTarget;
   photoInput.value = "";
-  photoUploadTargetKidId = null;
-  if (!file || !kidId) return;
+  photoUploadTarget = null;
+  if (!file || !target) return;
   try {
     const { base64, contentType } = await compressImage(file);
-    const res = await callApi("upload_reference_photo", { token, kid_id: kidId, image_base64: base64, content_type: contentType });
+    const res =
+      target.type === "kid"
+        ? await callApi("upload_reference_photo", { token, kid_id: target.id, image_base64: base64, content_type: contentType })
+        : await callApi("upload_family_room_photo", { token, room_id: target.id, image_base64: base64, content_type: contentType });
     if (res.ok) render(false);
-    else alert(res.error === "max_photos_reached" ? "That kid already has 3 photos - remove one first." : "Couldn't upload that photo.");
+    else alert(res.error === "max_photos_reached" ? "That already has 3 photos - remove one first." : "Couldn't upload that photo.");
   } catch (err) {
     alert("Couldn't read that photo. Try a different one.");
   }
 });
 
-function openLightbox(photo) {
+function openLightbox(type, photo) {
   if (!photo) return;
-  lightboxPhotoId = photo.id;
+  lightboxPhoto = { type, id: photo.id };
   lightboxImg.src = photo.url;
   lightbox.classList.remove("hidden");
 }
 function closeLightbox() {
   lightbox.classList.add("hidden");
-  lightboxPhotoId = null;
+  lightboxPhoto = null;
 }
 lightboxClose.addEventListener("click", closeLightbox);
 lightbox.addEventListener("click", (e) => {
   if (e.target === lightbox) closeLightbox();
 });
 lightboxDelete.addEventListener("click", async () => {
-  if (!lightboxPhotoId) return;
+  if (!lightboxPhoto) return;
   const ok = await askConfirm("Remove this photo?");
   if (!ok) return;
-  await callApi("delete_reference_photo", { token, photo_id: lightboxPhotoId });
+  if (lightboxPhoto.type === "kid") await callApi("delete_reference_photo", { token, photo_id: lightboxPhoto.id });
+  else await callApi("delete_family_room_photo", { token, photo_id: lightboxPhoto.id });
   closeLightbox();
   render(false);
 });
@@ -340,10 +350,155 @@ function renderKidCard(data) {
   card.querySelector(".removeBtn").addEventListener("click", () => removeKid(data.kid));
   card.querySelectorAll(".photoTile").forEach((tile) => {
     const photo = photos.find((p) => p.id === tile.dataset.photoId);
-    tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
+    tile.querySelector("img").addEventListener("click", () => openLightbox("kid", photo));
   });
   const addPhotoTile = card.querySelector(".addPhotoTile");
-  if (addPhotoTile) addPhotoTile.addEventListener("click", () => startPhotoUpload(data.kid.id));
+  if (addPhotoTile) addPhotoTile.addEventListener("click", () => startPhotoUpload("kid", data.kid.id));
+  return card;
+}
+
+// --- Shared room admin actions -------------------------------------------
+
+async function addRoomItem(room) {
+  const label = prompt(`Add a checklist item to ${room.name}:`);
+  if (!label || !label.trim()) return;
+  await callApi("manage_room_items", { token, room_id: room.id, itemAction: "add", label: label.trim() });
+  render(false);
+}
+
+async function deleteRoomItem(room, item) {
+  const ok = await askConfirm(`Remove "${item.label}" from ${room.name}'s checklist?`);
+  if (!ok) return;
+  await callApi("manage_room_items", { token, room_id: room.id, itemAction: "delete", item_id: item.id });
+  render(false);
+}
+
+async function removeRoom(room) {
+  const ok = await askConfirm(`Remove ${room.name} completely? This deletes its checklist, streak, points and history. This cannot be undone.`);
+  if (!ok) return;
+  await callApi("remove_family_room", { token, room_id: room.id });
+  render(false);
+}
+
+addRoomBtn.addEventListener("click", async () => {
+  addRoomError.classList.add("hidden");
+  addRoomBtn.disabled = true;
+  const res = await callApi("add_family_room", { token, room_type: newRoomType.value, name: newRoomName.value.trim() });
+  addRoomBtn.disabled = false;
+  if (!res.ok) {
+    addRoomError.textContent = "Could not add that room. Try again.";
+    addRoomError.classList.remove("hidden");
+    return;
+  }
+  newRoomName.value = "";
+  render(false);
+});
+
+function buildRoomView(room) {
+  const done = room.state.filter((s) => s.checked).length;
+  const total = room.items.length;
+  const percent = total ? Math.round((done / total) * 100) : 0;
+  const history = room.logs.slice(0, 5);
+  const since = last7Dates()[0].iso;
+  const passedDates = new Set(
+    room.logs.filter((l) => ["mum_pass", "mum_star"].includes(l.event_type) && l.log_date >= since).map((l) => l.log_date)
+  );
+  return {
+    room,
+    percent,
+    done,
+    total,
+    streak: room.progress.current_streak || 0,
+    bestStreak: room.progress.best_streak || 0,
+    totalPoints: room.progress.total_points || 0,
+    totalPasses: room.progress.total_passes || 0,
+    mumResult: room.progress.mum_result || "No Mum check yet today.",
+    history,
+    passedDates,
+  };
+}
+
+function renderRoomCard(data) {
+  const { room } = data;
+  const level = levelForPoints(data.totalPoints);
+  const earnedIds = new Set(
+    earnedBadges({ bestStreak: data.bestStreak, totalPasses: data.totalPasses, level: level.level }).map((b) => b.id)
+  );
+  const badgeRow = BADGES.map(
+    (b) => `<span class="badgeMini ${earnedIds.has(b.id) ? "earned" : ""}" title="${b.label}">${b.emoji}</span>`
+  ).join("");
+
+  const week = last7Dates()
+    .map(
+      (d) =>
+        `<div class="weekDot"><span class="dot ${data.passedDates.has(d.iso) ? "pass" : ""}"></span><span class="day">${d.label}</span></div>`
+    )
+    .join("");
+
+  const historyRows = data.history
+    .map(
+      (row) =>
+        `<div class="historyRow"><span class="who">${EVENT_LABELS[row.event_type] || row.event_type}</span><span>${row.percent_complete}% · ${formatWhen(row.created_at)}</span></div>`
+    )
+    .join("");
+
+  const photos = room.photos || [];
+  const photoTiles = photos.map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${p.url}" alt="Tidy room example" /></div>`).join("");
+  const addPhotoTileHtml = photos.length < MAX_PHOTOS ? `<button type="button" class="addPhotoTile">+</button>` : "";
+
+  const itemRows = room.items
+    .map((item) => `<div class="roomItemRow" data-item-id="${item.id}"><span>${item.label}</span><button type="button" class="removeItemBtn">✕</button></div>`)
+    .join("");
+
+  const card = document.createElement("div");
+  card.className = "kidCard";
+  card.innerHTML = `
+    <div class="kidCardHead">
+      <span class="kidCardAvatar">${room.icon}</span>
+      <div>
+        <div class="kidCardName">${room.name}</div>
+        <div class="kidCardLevel">Level ${level.level} - ${level.title} · ${data.totalPoints} pts (family)</div>
+      </div>
+    </div>
+    <div class="statRow"><span>Today</span><span class="value pct ${pctClass(data.percent)}">${data.done}/${data.total} (${data.percent}%)</span></div>
+    <div class="statRow"><span>Streak</span><span class="value">🔥 ${data.streak} day${data.streak === 1 ? "" : "s"} (best ${data.bestStreak})</span></div>
+    <div class="mumResult">${data.mumResult}</div>
+    <div class="weekRow">${week}</div>
+    <div class="badgeMiniShelf">${badgeRow}</div>
+    <div class="kidPhotos">
+      <div class="kidPhotosLabel">What Done Looks Like</div>
+      <div class="photoGrid">${photoTiles}${addPhotoTileHtml}</div>
+    </div>
+    <div class="roomItemsAdmin">
+      <div class="kidPhotosLabel">Checklist items</div>
+      <div class="roomItemList">${itemRows || '<div class="roomItemRow"><span>No items yet</span></div>'}</div>
+      <div class="addItemRow">
+        <button type="button" class="adminBtn addItemBtn" style="width:100%">+ Add an item</button>
+      </div>
+    </div>
+    <div class="history">
+      <div class="historyTitle">Recent activity</div>
+      ${historyRows || '<div class="historyRow"><span>No activity yet</span></div>'}
+    </div>
+    <div class="kidAdmin">
+      <div class="kidAdminButtons">
+        <button type="button" class="adminBtn removeBtn">Remove room</button>
+      </div>
+    </div>
+  `;
+  card.querySelectorAll(".photoTile").forEach((tile) => {
+    const photo = photos.find((p) => p.id === tile.dataset.photoId);
+    tile.querySelector("img").addEventListener("click", () => openLightbox("room", photo));
+  });
+  const addPhotoTile = card.querySelector(".addPhotoTile");
+  if (addPhotoTile) addPhotoTile.addEventListener("click", () => startPhotoUpload("room", room.id));
+  card.querySelectorAll(".roomItemRow").forEach((row) => {
+    const item = room.items.find((i) => i.id === row.dataset.itemId);
+    const btn = row.querySelector(".removeItemBtn");
+    if (item && btn) btn.addEventListener("click", () => deleteRoomItem(room, item));
+  });
+  card.querySelector(".addItemBtn").addEventListener("click", () => addRoomItem(room));
+  card.querySelector(".removeBtn").addEventListener("click", () => removeRoom(room));
   return card;
 }
 
@@ -359,7 +514,7 @@ async function render(showLoading) {
     cardsEl.innerHTML = `<p class="error">Could not load your family's progress. Check your internet connection.</p>`;
     return;
   }
-  const { family, kids, streaks, states, logs, checklist_total } = res.data;
+  const { family, kids, streaks, states, logs, checklist_total, rooms } = res.data;
 
   familyHeading.textContent = family.name;
   // Don't clobber the settings fields while someone's mid-edit on an auto-refresh tick.
@@ -379,6 +534,17 @@ async function render(showLoading) {
       cardsEl.appendChild(renderKidCard(data));
     });
   }
+
+  roomCardsEl.innerHTML = "";
+  if (!rooms || rooms.length === 0) {
+    roomCardsEl.innerHTML = `<p class="loading">No shared rooms yet - add one above.</p>`;
+  } else {
+    rooms.forEach((room) => {
+      const data = buildRoomView(room);
+      roomCardsEl.appendChild(renderRoomCard(data));
+    });
+  }
+
   lastUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString("en-AU", { hour: "2-digit", minute: "2-digit" })}`;
 }
 

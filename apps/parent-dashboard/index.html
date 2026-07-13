@@ -84,13 +84,34 @@
       <p class="addKidError hidden" id="addKidError"></p>
     </section>
 
+    <section class="card addRoomCard">
+      <h2>Add a shared room</h2>
+      <p class="roomHint">Shared rooms belong to the whole family - any kid can open one and help finish it, and streaks/points go to the family, not one kid.</p>
+      <div class="addKidRow">
+        <select id="newRoomType">
+          <option value="kitchen">🍽️ Kitchen</option>
+          <option value="living_room">🛋️ Living Room</option>
+          <option value="bathroom">🛁 Bathroom</option>
+          <option value="custom">🏠 Custom Room</option>
+        </select>
+        <input type="text" id="newRoomName" placeholder="Name (optional)" maxlength="40" />
+        <button id="addRoomBtn" type="button" class="saveBtn">Add</button>
+      </div>
+      <p class="addKidError hidden" id="addRoomError"></p>
+    </section>
+
     <div class="toolbar">
       <button id="refreshBtn" type="button" class="refreshBtn">↻ Refresh</button>
       <span id="lastUpdated" class="lastUpdated"></span>
     </div>
+
+    <h2 class="sectionHeading">Kids' bedrooms</h2>
     <div id="cards" class="cards">
       <p class="loading">Loading...</p>
     </div>
+
+    <h2 class="sectionHeading">Shared rooms</h2>
+    <div id="roomCards" class="cards"></div>
   </main>
   <script type="module" src="app.js"></script>
 </body>

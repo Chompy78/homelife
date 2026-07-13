@@ -26,9 +26,48 @@ const POINTS = {
 };
 
 const PHOTO_BUCKET = "reference-photos";
-const MAX_PHOTOS_PER_KID = 3;
+const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour, regenerated on every fetch
+
+// Starting checklists for a shared room, seeded when a parent adds one -
+// fully editable afterwards via manage_room_items, this is just a head start.
+const ROOM_TEMPLATES: Record<string, { label: string; icon: string; items: string[] }> = {
+  kitchen: {
+    label: "Kitchen",
+    icon: "🍽️",
+    items: [
+      "All dishes are washed, dried and put away.",
+      "Benchtops and table are wiped down.",
+      "Stovetop is wiped clean.",
+      "Rubbish and recycling are taken out if full.",
+      "Floor is swept.",
+      "Tea towels and dish cloths are hung up, not left in a pile.",
+    ],
+  },
+  living_room: {
+    label: "Living Room",
+    icon: "🛋️",
+    items: [
+      "Cushions and blankets are folded or arranged neatly.",
+      "Toys, books and remotes are put away, not on the floor.",
+      "Surfaces are clear of cups, plates and rubbish.",
+      "Floor is clear enough to vacuum.",
+    ],
+  },
+  bathroom: {
+    label: "Bathroom",
+    icon: "🛁",
+    items: [
+      "Towels are hung up neatly, not on the floor.",
+      "Sink and bench are wiped down.",
+      "Toilet is flushed and the lid is closed.",
+      "Dirty clothes are in the laundry basket.",
+      "Bathmat is straight.",
+    ],
+  },
+  custom: { label: "Custom Room", icon: "🏠", items: [] },
+};
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L
 
@@ -94,6 +133,45 @@ async function getPhotosWithUrls(kidId: string) {
   return withUrls.filter((p) => p.url);
 }
 
+async function freshRoomProgress(roomId: string) {
+  const { data } = await db.from("family_room_progress").select("*").eq("room_id", roomId).maybeSingle();
+  return data;
+}
+
+async function getRoomPhotosWithUrls(roomId: string) {
+  const { data: rows } = await db
+    .from("family_room_photos")
+    .select("id, storage_path, uploaded_by_kid_id, created_at")
+    .eq("room_id", roomId)
+    .order("created_at", { ascending: true });
+  if (!rows || rows.length === 0) return [];
+  const withUrls = await Promise.all(
+    rows.map(async (row) => {
+      const { data: signed } = await db.storage.from(PHOTO_BUCKET).createSignedUrl(row.storage_path, SIGNED_URL_TTL_SECONDS);
+      return { id: row.id, url: signed?.signedUrl || null, uploaded_by_kid_id: row.uploaded_by_kid_id };
+    })
+  );
+  return withUrls.filter((p) => p.url);
+}
+
+// A session belongs to the room's family - kid or parent, either can use a shared room.
+async function assertFamilyRoomAccess(session: { family_id: string }, roomId: string) {
+  const { data: room } = await db.from("family_rooms").select("*").eq("id", roomId).eq("family_id", session.family_id).maybeSingle();
+  return room || null;
+}
+
+async function buildRoomPayload(room: Record<string, unknown>) {
+  const { data: items } = await db.from("family_room_items").select("id, label").eq("room_id", room.id as string).order("sort_order");
+  const itemIds = (items || []).map((i) => i.id);
+  const [{ data: state }, progress, photos, { data: logs }] = await Promise.all([
+    itemIds.length ? db.from("family_room_state").select("item_id, checked, checked_by_kid_id").in("item_id", itemIds) : Promise.resolve({ data: [] }),
+    freshRoomProgress(room.id as string),
+    getRoomPhotosWithUrls(room.id as string),
+    db.from("family_room_log").select("*").eq("room_id", room.id as string).order("created_at", { ascending: false }).limit(10),
+  ]);
+  return { ...room, items: items || [], state: state || [], progress: progress || {}, photos, logs: logs || [] };
+}
+
 function base64ToBytes(base64: string) {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -126,7 +204,15 @@ Deno.serve(async (req) => {
         if (!kid) return json({ ok: false, error: "That code wasn't found. Check with a parent." }, 404);
         const token = randomToken();
         await db.from("sessions").insert({ token, family_id: kid.family_id, kid_id: kid.id, role: "kid" });
-        return json({ ok: true, data: { token, kid: { id: kid.id, name: kid.name, avatar: kid.avatar_emoji } } });
+        const { data: sharedRooms } = await db
+          .from("family_rooms")
+          .select("id, name, icon")
+          .eq("family_id", kid.family_id)
+          .order("sort_order");
+        return json({
+          ok: true,
+          data: { token, kid: { id: kid.id, name: kid.name, avatar: kid.avatar_emoji }, shared_rooms: sharedRooms || [] },
+        });
       }
 
       case "redeem_parent_code": {
@@ -144,13 +230,14 @@ Deno.serve(async (req) => {
       case "get_kid_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: items }, streak, { data: kid }, photos] = await Promise.all([
+        const [{ data: items }, streak, { data: kid }, photos, { data: sharedRooms }] = await Promise.all([
           db.from("kid_checklist_state").select("item_id, checked").eq("kid_id", session.kid_id),
           freshStreak(session.kid_id),
           db.from("kids").select("id, name, avatar_emoji").eq("id", session.kid_id).single(),
           getPhotosWithUrls(session.kid_id),
+          db.from("family_rooms").select("id, name, icon").eq("family_id", session.family_id).order("sort_order"),
         ]);
-        return json({ ok: true, data: { kid, items: items || [], streak: streak || {}, photos } });
+        return json({ ok: true, data: { kid, items: items || [], streak: streak || {}, photos, shared_rooms: sharedRooms || [] } });
       }
 
       case "upload_reference_photo": {
@@ -169,7 +256,7 @@ Deno.serve(async (req) => {
         }
 
         const { count } = await db.from("kid_reference_photos").select("id", { count: "exact", head: true }).eq("kid_id", kidId);
-        if ((count || 0) >= MAX_PHOTOS_PER_KID) {
+        if ((count || 0) >= MAX_PHOTOS_PER_ROOM) {
           return json({ ok: false, error: `max_photos_reached` }, 400);
         }
 
@@ -398,9 +485,22 @@ Deno.serve(async (req) => {
         ]);
         const photoMap = Object.fromEntries(photosByKid);
         const kidsWithPhotos = (kids || []).map((k) => ({ ...k, photos: photoMap[k.id] || [] }));
+
+        const { data: sharedRooms } = await db.from("family_rooms").select("*").eq("family_id", session.family_id).order("sort_order");
+        const roomsWithData = await Promise.all((sharedRooms || []).map((r) => buildRoomPayload(r)));
+
         return json({
           ok: true,
-          data: { family, kids: kidsWithPhotos, streaks: streaks || [], states: states || [], logs: logs || [], checklist_total: CHECKLIST_TOTAL },
+          data: {
+            family,
+            kids: kidsWithPhotos,
+            streaks: streaks || [],
+            states: states || [],
+            logs: logs || [],
+            checklist_total: CHECKLIST_TOTAL,
+            rooms: roomsWithData,
+            room_templates: ROOM_TEMPLATES,
+          },
         });
       }
 
@@ -475,13 +575,23 @@ Deno.serve(async (req) => {
         const { data: families } = await db.from("families").select("id, display_name").eq("is_public", true);
         if (!families || families.length === 0) return json({ ok: true, data: [] });
         const familyIds = families.map((f) => f.id);
-        const { data: kids } = await db.from("kids").select("id, family_id").in("family_id", familyIds);
+        const [{ data: kids }, { data: rooms }] = await Promise.all([
+          db.from("kids").select("id, family_id").in("family_id", familyIds),
+          db.from("family_rooms").select("id, family_id").in("family_id", familyIds),
+        ]);
         const kidIds = (kids || []).map((k) => k.id);
-        const { data: streaks } = kidIds.length
-          ? await db.from("kid_streaks").select("kid_id, best_streak, total_points, total_passes").in("kid_id", kidIds)
-          : { data: [] };
+        const roomIds = (rooms || []).map((r) => r.id);
+        const [{ data: streaks }, { data: roomProgress }] = await Promise.all([
+          kidIds.length
+            ? db.from("kid_streaks").select("kid_id, best_streak, total_points, total_passes").in("kid_id", kidIds)
+            : Promise.resolve({ data: [] }),
+          roomIds.length
+            ? db.from("family_room_progress").select("room_id, best_streak, total_points, total_passes").in("room_id", roomIds)
+            : Promise.resolve({ data: [] }),
+        ]);
 
         const kidToFamily = Object.fromEntries((kids || []).map((k) => [k.id, k.family_id]));
+        const roomToFamily = Object.fromEntries((rooms || []).map((r) => [r.id, r.family_id]));
         const byFamily: Record<string, { family_id: string; display_name: string; total_points: number; best_streak: number; total_passes: number; kid_count: number }> = {};
         for (const f of families) byFamily[f.id] = { family_id: f.id, display_name: f.display_name, total_points: 0, best_streak: 0, total_passes: 0, kid_count: 0 };
         for (const s of streaks || []) {
@@ -492,8 +602,333 @@ Deno.serve(async (req) => {
           fam.total_passes += s.total_passes || 0;
           fam.kid_count += 1;
         }
+        for (const r of roomProgress || []) {
+          const fam = byFamily[roomToFamily[r.room_id]];
+          if (!fam) continue;
+          fam.total_points += r.total_points || 0;
+          fam.best_streak = Math.max(fam.best_streak, r.best_streak || 0);
+          fam.total_passes += r.total_passes || 0;
+        }
         const result = Object.values(byFamily).sort((a, b) => b.total_points - a.total_points);
         return json({ ok: true, data: result });
+      }
+
+      // --- Shared family rooms (kitchen, living room, etc.) -----------------
+
+      case "get_room_templates": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        return json({ ok: true, data: ROOM_TEMPLATES });
+      }
+
+      case "add_family_room": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const roomType = String(body.room_type || "custom");
+        const template = ROOM_TEMPLATES[roomType] || ROOM_TEMPLATES.custom;
+        const name = String(body.name || template.label).trim().slice(0, 40) || template.label;
+        const { data: existing } = await db.from("family_rooms").select("id").eq("family_id", session.family_id);
+        const { data: room, error } = await db
+          .from("family_rooms")
+          .insert({
+            family_id: session.family_id,
+            name,
+            icon: template.icon,
+            room_type: roomType,
+            sort_order: (existing?.length || 0) + 1,
+          })
+          .select()
+          .single();
+        if (error || !room) return json({ ok: false, error: "could_not_add" }, 500);
+        if (template.items.length) {
+          await db.from("family_room_items").insert(
+            template.items.map((label, i) => ({ room_id: room.id, label, sort_order: i + 1 }))
+          );
+        }
+        await db.from("family_room_progress").insert({ room_id: room.id });
+        return json({ ok: true, data: { room } });
+      }
+
+      case "remove_family_room": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("family_rooms").delete().eq("id", room.id);
+        return json({ ok: true });
+      }
+
+      case "get_family_room_state": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+        const data = await buildRoomPayload(room);
+        return json({ ok: true, data });
+      }
+
+      case "update_family_room_item": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+        const itemId = String(body.item_id || "");
+        const checked = !!body.checked;
+        const { data: item } = await db.from("family_room_items").select("id").eq("id", itemId).eq("room_id", room.id).maybeSingle();
+        if (!item) return json({ ok: false, error: "not_found" }, 404);
+
+        const { data: existingState } = await db.from("family_room_state").select("checked, checked_by_kid_id").eq("item_id", itemId).maybeSingle();
+        const wasChecked = existingState?.checked || false;
+        // A kid checking an item claims credit; a parent checking one leaves existing credit as-is.
+        const checkedBy = session.role === "kid" ? session.kid_id : existingState?.checked_by_kid_id ?? null;
+
+        await db.from("family_room_state").upsert({
+          item_id: itemId,
+          checked,
+          checked_by_kid_id: checkedBy,
+          updated_at: new Date().toISOString(),
+        });
+
+        const { data: allItems } = await db.from("family_room_items").select("id").eq("room_id", room.id);
+        const roomTotal = allItems?.length || 0;
+        const { data: allState } = await db
+          .from("family_room_state")
+          .select("checked")
+          .in("item_id", (allItems || []).map((i) => i.id));
+        const doneCount = (allState || []).filter((s) => s.checked).length;
+
+        let pointsAwarded = 0;
+        let completionBonus = 0;
+        if (checked && !wasChecked) pointsAwarded += POINTS.ITEM_CHECK;
+        if (checked && roomTotal > 0 && doneCount >= roomTotal) {
+          const progressRow = await freshRoomProgress(room.id);
+          if (progressRow?.last_bonus_date !== todayStr()) completionBonus = POINTS.DAY_COMPLETE_BONUS;
+        }
+
+        const delta = pointsAwarded + completionBonus;
+        if (delta > 0) {
+          const progressRow = await freshRoomProgress(room.id);
+          const patch: Record<string, unknown> = {
+            room_id: room.id,
+            total_points: (progressRow?.total_points || 0) + delta,
+            updated_at: new Date().toISOString(),
+          };
+          if (completionBonus > 0) patch.last_bonus_date = todayStr();
+          await db.from("family_room_progress").upsert(patch);
+        }
+
+        const progress = await freshRoomProgress(room.id);
+        return json({ ok: true, data: { points_awarded: pointsAwarded, completion_bonus: completionBonus, progress, room_total: roomTotal, done_count: doneCount } });
+      }
+
+      case "family_room_mum_check": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+        const eventType = String(body.event_type || "");
+        if (!["mum_pass", "mum_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
+
+        const { data: family } = await db.from("families").select("mum_pin").eq("id", session.family_id).single();
+        if (String(body.pin || "") !== family?.mum_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+
+        const progressRow = await freshRoomProgress(room.id);
+        const today = todayStr();
+        const yesterday = yesterdayStr();
+        const emoji = eventType === "mum_star" ? "⭐" : "✅";
+        const label = eventType === "mum_star" ? "Great job from Mum!" : "Passed by Mum!";
+        const points = eventType === "mum_star" ? POINTS.MUM_GREAT_JOB : POINTS.MUM_PASS;
+
+        let current = progressRow?.current_streak || 0;
+        let best = progressRow?.best_streak || 0;
+        let totalPoints = progressRow?.total_points || 0;
+        let totalPasses = progressRow?.total_passes || 0;
+        let lastPassDate = progressRow?.last_pass_date ?? null;
+        let mumResult: string;
+        let awarded = 0;
+
+        if (lastPassDate === today) {
+          mumResult = `${emoji} ${label} Already counted for today.`;
+        } else {
+          current = lastPassDate === yesterday ? current + 1 : 1;
+          best = Math.max(best, current);
+          totalPasses += 1;
+          awarded = points;
+          totalPoints += points;
+          lastPassDate = today;
+          mumResult = `${emoji} ${label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
+        }
+
+        await db.from("family_room_progress").upsert({
+          room_id: room.id,
+          current_streak: current,
+          best_streak: best,
+          last_pass_date: lastPassDate,
+          mum_result: mumResult,
+          total_points: totalPoints,
+          total_passes: totalPasses,
+          updated_at: new Date().toISOString(),
+        });
+
+        const { data: allItems } = await db.from("family_room_items").select("id").eq("room_id", room.id);
+        const roomTotal = allItems?.length || 0;
+        const { data: allState } = await db
+          .from("family_room_state")
+          .select("checked")
+          .in("item_id", (allItems || []).map((i) => i.id));
+        const done = (allState || []).filter((s) => s.checked).length;
+        await db.from("family_room_log").insert({
+          room_id: room.id,
+          kid_id: session.kid_id,
+          items_done: done,
+          items_total: roomTotal,
+          percent_complete: roomTotal ? Math.round((done / roomTotal) * 100) : 0,
+          event_type: eventType,
+          mum_result: mumResult,
+          streak_at_time: current,
+        });
+
+        const progress = await freshRoomProgress(room.id);
+        return json({ ok: true, data: { awarded_points: awarded, progress } });
+      }
+
+      case "family_room_try_again": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+        const mumResult = "🔁 Try again. Fix the missed jobs, then ask Mum to check again.";
+        await db.from("family_room_progress").upsert({ room_id: room.id, mum_result: mumResult, updated_at: new Date().toISOString() });
+        const progress = await freshRoomProgress(room.id);
+        return json({ ok: true, data: { progress } });
+      }
+
+      case "family_room_reset_day": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+
+        const { data: allItems } = await db.from("family_room_items").select("id").eq("room_id", room.id);
+        const itemIds = (allItems || []).map((i) => i.id);
+        const roomTotal = itemIds.length;
+        const { data: allState } = await db.from("family_room_state").select("checked").in("item_id", itemIds);
+        const done = (allState || []).filter((s) => s.checked).length;
+        const progressRow = await freshRoomProgress(room.id);
+
+        await db.from("family_room_log").insert({
+          room_id: room.id,
+          kid_id: session.role === "kid" ? session.kid_id : null,
+          items_done: done,
+          items_total: roomTotal,
+          percent_complete: roomTotal ? Math.round((done / roomTotal) * 100) : 0,
+          event_type: "reset",
+          mum_result: progressRow?.mum_result ?? null,
+          streak_at_time: progressRow?.current_streak || 0,
+        });
+
+        if (itemIds.length) {
+          await db.from("family_room_state").update({ checked: false, updated_at: new Date().toISOString() }).in("item_id", itemIds);
+        }
+        await db.from("family_room_progress").upsert({
+          room_id: room.id,
+          mum_result: "No Mum check yet today.",
+          last_bonus_date: null,
+          updated_at: new Date().toISOString(),
+        });
+
+        const progress = await freshRoomProgress(room.id);
+        return json({ ok: true, data: { progress } });
+      }
+
+      case "manage_room_items": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+        const itemAction = String(body.itemAction || "");
+
+        if (itemAction === "add") {
+          const label = String(body.label || "").trim().slice(0, 140);
+          if (!label) return json({ ok: false, error: "label_required" }, 400);
+          const { data: existing } = await db.from("family_room_items").select("id").eq("room_id", room.id);
+          const { data: item, error } = await db
+            .from("family_room_items")
+            .insert({ room_id: room.id, label, sort_order: (existing?.length || 0) + 1 })
+            .select()
+            .single();
+          if (error || !item) return json({ ok: false, error: "could_not_add" }, 500);
+          return json({ ok: true, data: { item } });
+        }
+
+        if (itemAction === "rename") {
+          const { data: item } = await db.from("family_room_items").select("id").eq("id", body.item_id).eq("room_id", room.id).maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          const label = String(body.label || "").trim().slice(0, 140);
+          if (!label) return json({ ok: false, error: "label_required" }, 400);
+          await db.from("family_room_items").update({ label }).eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        if (itemAction === "delete") {
+          const { data: item } = await db.from("family_room_items").select("id").eq("id", body.item_id).eq("room_id", room.id).maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          await db.from("family_room_items").delete().eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        return json({ ok: false, error: "unknown_item_action" }, 400);
+      }
+
+      case "upload_family_room_photo": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+
+        const { count } = await db.from("family_room_photos").select("id", { count: "exact", head: true }).eq("room_id", room.id);
+        if ((count || 0) >= MAX_PHOTOS_PER_ROOM) return json({ ok: false, error: "max_photos_reached" }, 400);
+
+        const base64 = String(body.image_base64 || "");
+        if (!base64) return json({ ok: false, error: "image_required" }, 400);
+        let bytes: Uint8Array;
+        try {
+          bytes = base64ToBytes(base64);
+        } catch {
+          return json({ ok: false, error: "bad_image_data" }, 400);
+        }
+        if (bytes.byteLength > MAX_PHOTO_BYTES) return json({ ok: false, error: "image_too_large" }, 400);
+
+        const contentType = String(body.content_type || "image/jpeg");
+        const ext = contentType.includes("png") ? "png" : "jpg";
+        const path = `room-${room.id}/${crypto.randomUUID()}.${ext}`;
+
+        const { error: uploadError } = await db.storage.from(PHOTO_BUCKET).upload(path, bytes, { contentType, upsert: false });
+        if (uploadError) return json({ ok: false, error: "upload_failed" }, 500);
+
+        await db.from("family_room_photos").insert({
+          room_id: room.id,
+          storage_path: path,
+          uploaded_by_kid_id: session.role === "kid" ? session.kid_id : null,
+        });
+
+        const photos = await getRoomPhotosWithUrls(room.id);
+        return json({ ok: true, data: { photos } });
+      }
+
+      case "delete_family_room_photo": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const photoId = String(body.photo_id || "");
+        const { data: photo } = await db.from("family_room_photos").select("id, room_id, storage_path").eq("id", photoId).maybeSingle();
+        if (!photo) return json({ ok: false, error: "not_found" }, 404);
+        const room = await assertFamilyRoomAccess(session, photo.room_id);
+        if (!room) return json({ ok: false, error: "not_found" }, 404);
+
+        await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
+        await db.from("family_room_photos").delete().eq("id", photo.id);
+        const photos = await getRoomPhotosWithUrls(photo.room_id);
+        return json({ ok: true, data: { photos } });
       }
 
       default:

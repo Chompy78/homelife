@@ -5,6 +5,12 @@ auto-login per tablet, PIN-gated Mum Check, room score, Focus Mode, daily
 streaks, points, levels and badges. Works for any number of families - each
 one is isolated by its own codes.
 
+A kid also sees a room switcher above the checklist if their family has any
+shared rooms (kitchen, etc., added by a parent from the dashboard) - tapping
+one switches the whole screen to that room's checklist/streak/points, which
+belong to the family rather than one kid. Switching back to "My Room" is
+unaffected by anything that happened in a shared room.
+
 ## Files
 
 - `index.html` - the app itself

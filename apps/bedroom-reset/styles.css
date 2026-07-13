@@ -35,6 +35,26 @@ h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 5vw, 2.7rem); line-height: 1.05; 
 .kidTag { margin: 10px 0 0; font-size: 0.95rem; opacity: 0.92; font-weight: 700; }
 .kidTag a { color: white; text-decoration: underline; }
 .syncStatus { margin: 6px 0 0; font-size: 0.85rem; opacity: 0.85; font-weight: 700; }
+
+.roomSwitcher { display: flex; gap: 10px; overflow-x: auto; margin: 14px 0; padding-bottom: 2px; }
+.roomPill {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 2px solid var(--line);
+  border-radius: 18px;
+  padding: 10px 16px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.roomPill.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+.roomPill .roomPillIcon { font-size: 1.2rem; }
+
 .gridTop { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .card { background: var(--card); border-radius: 22px; padding: 14px; box-shadow: var(--shadow); border: 1px solid var(--line); }
 .pieWrap { display: grid; grid-template-columns: 138px 1fr; gap: 14px; align-items: center; }

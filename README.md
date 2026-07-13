@@ -6,8 +6,8 @@ codes, and can optionally share their stats on a public leaderboard.
 
 ## Apps
 
-- [`apps/bedroom-reset`](apps/bedroom-reset) - kids' bedroom checklist PWA. A kid enters their code once (a parent gives it to them), then the tablet remembers them. PIN-gated Mum Check, streaks, points/levels/badges.
-- [`apps/parent-dashboard`](apps/parent-dashboard) - a parent enters their family's parent code once, then can see every kid's progress, manage kids (add/rename/remove, get their codes), change the family's Mum PIN, and opt in to the public leaderboard.
+- [`apps/bedroom-reset`](apps/bedroom-reset) - kids' bedroom checklist PWA. A kid enters their code once (a parent gives it to them), then the tablet remembers them. PIN-gated Mum Check, streaks, points/levels/badges. A room switcher at the top also gives access to the family's shared rooms (kitchen, etc.) - any kid can open and help finish one.
+- [`apps/parent-dashboard`](apps/parent-dashboard) - a parent enters their family's parent code once, then can see every kid's progress, manage kids (add/rename/remove, get their codes), add/remove shared rooms and edit their checklist items, change the family's Mum PIN, and opt in to the public leaderboard.
 - [`apps/leaderboard`](apps/leaderboard) - public, no code needed. Shows aggregate stats (total points, best streak, rooms passed) for families that have opted in. Never shows individual kids' names or checklist details, even for opted-in families.
 
 ## Shared
@@ -42,11 +42,15 @@ Tables:
 
 - `families` - name, public display name, parent_code, mum_pin, is_public (leaderboard opt-in)
 - `kids` - name, avatar, kid_code, belongs to a family
-- `kid_checklist_state` - today's checkbox state per kid
-- `kid_streaks` - current streak, best streak, total points, total passes, last Mum result
+- `kid_checklist_state` - today's checkbox state per kid (bedroom only - personal)
+- `kid_streaks` - current streak, best streak, total points, total passes, last Mum result (bedroom only)
 - `kid_progress_log` - append-only history of resets and Mum checks, used by the parent dashboard and leaderboard
 - `sessions` - opaque tokens issued on code redemption, mapping a device to a family (and a kid, for kid sessions)
-- `kid_reference_photos` - metadata (storage path, who uploaded it) for each kid's up-to-3 "what done looks like" photos; the actual images live in the `reference-photos` Storage bucket
+- `kid_reference_photos` - metadata for each kid's up-to-3 "what done looks like" bedroom photos
+- `family_rooms` / `family_room_items` - shared rooms (kitchen, etc.) belonging to a family, not one kid, and their checklist items - both fully editable by a parent from the dashboard
+- `family_room_state` / `family_room_progress` / `family_room_log` / `family_room_photos` - the shared-room equivalents of the kid_* tables above. Progress here is a single row per room (the whole family's, not any one kid's) - deliberately parallel to, not merged with, the kid_* tables, so bedrooms keep working exactly as before
+
+The actual reference photo images (both kids' and shared rooms') live in one private Storage bucket, `reference-photos`.
 
 ## Onboarding a new family
 

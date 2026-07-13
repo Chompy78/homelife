@@ -191,6 +191,24 @@ footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size
 .kidBtn { background: var(--card); border: 2px solid var(--line); border-radius: 22px; padding: 26px 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 1.2rem; font-weight: 900; box-shadow: var(--shadow); color: var(--ink); min-height: unset; }
 .kidAvatar { font-size: 3.2rem; }
 
+#codeForm { display: flex; flex-direction: column; gap: 14px; margin-top: 22px; align-items: center; }
+.codeInput {
+  width: 100%;
+  max-width: 260px;
+  text-align: center;
+  font-size: 1.6rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 14px;
+  border-radius: 16px;
+  border: 2px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+.codeSubmit { background: var(--blue); color: #fff; padding: 14px 28px; }
+.codeError { color: var(--red); font-weight: 800; margin-top: 14px; }
+
 @media (max-width: 680px) {
   body { padding: 12px; }
   .gridTop { grid-template-columns: 1fr; }

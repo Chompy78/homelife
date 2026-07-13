@@ -8,11 +8,74 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="app">
-    <header>
+  <div class="gate" id="gate">
+    <div class="gateCard">
       <h1>Parent Dashboard</h1>
+      <p>Enter your family's parent code. This device will remember it.</p>
+      <form id="codeForm">
+        <input id="codeInput" class="codeInput" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="XXXX-XXXX" maxlength="12" />
+        <button type="submit" class="codeSubmit">Continue</button>
+      </form>
+      <p class="codeError hidden" id="codeError"></p>
+    </div>
+  </div>
+
+  <div class="confirmModal hidden" id="confirmModal">
+    <div class="confirmCard">
+      <p id="confirmText"></p>
+      <div class="confirmButtons">
+        <button id="confirmYes" type="button" class="confirmYes">Yes</button>
+        <button id="confirmNo" type="button" class="confirmNo">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="app hidden" id="app">
+    <header>
+      <h1 id="familyHeading">Parent Dashboard</h1>
       <p class="subtitle">Bedroom Reset progress for everyone, in one place.</p>
+      <p class="kidTag"><a href="#" id="switchFamilyLink">not your family? switch</a> · <a href="../leaderboard/">public leaderboard</a></p>
     </header>
+
+    <section class="card settingsCard" id="settingsCard">
+      <h2>Family settings</h2>
+      <div class="settingsGrid">
+        <label>Display name on leaderboard
+          <input type="text" id="displayNameInput" maxlength="60" />
+        </label>
+        <label>Family PIN (for Mum Check)
+          <input type="text" id="pinInput" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" />
+        </label>
+      </div>
+      <label class="publicToggle">
+        <input type="checkbox" id="publicToggle" />
+        Share our stats on the public leaderboard
+      </label>
+      <div class="buttons">
+        <button id="saveSettingsBtn" type="button" class="saveBtn">Save settings</button>
+      </div>
+      <p class="settingsSaved hidden" id="settingsSaved">Saved.</p>
+    </section>
+
+    <section class="card addKidCard">
+      <h2>Add a kid</h2>
+      <div class="addKidRow">
+        <input type="text" id="newKidName" placeholder="Name" maxlength="40" />
+        <select id="newKidAvatar">
+          <option value="🦄">🦄 Unicorn</option>
+          <option value="🌸">🌸 Blossom</option>
+          <option value="🐨">🐨 Koala</option>
+          <option value="🐢">🐢 Turtle</option>
+          <option value="🦊">🦊 Fox</option>
+          <option value="🐬">🐬 Dolphin</option>
+          <option value="🦁">🦁 Lion</option>
+          <option value="🐸">🐸 Frog</option>
+        </select>
+        <button id="addKidBtn" type="button" class="saveBtn">Add</button>
+      </div>
+      <p class="addKidError hidden" id="addKidError"></p>
+    </section>
+
     <div class="toolbar">
       <button id="refreshBtn" type="button" class="refreshBtn">↻ Refresh</button>
       <span id="lastUpdated" class="lastUpdated"></span>

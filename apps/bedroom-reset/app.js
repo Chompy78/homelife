@@ -1,48 +1,17 @@
-import {
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY,
-  KIDS,
-  CHECKLIST,
-  MUM_PIN,
-  POINTS,
-  LEVELS,
-  levelForPoints,
-  nextLevel,
-  BADGES,
-  earnedBadges,
-} from "../shared/config.js";
+import { CHECKLIST, LEVELS, levelForPoints, nextLevel, BADGES, earnedBadges } from "../shared/config.js";
+import { callApi } from "../shared/api.js";
 
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), ms)),
-  ]);
-}
+const DEVICE_TOKEN_KEY = "homelife_kid_token";
+const DEVICE_NAME_KEY = "homelife_kid_name";
+const DEVICE_AVATAR_KEY = "homelife_kid_avatar";
+const CHECKLIST_KEY = "bedroom-reset-checklist-v6";
+const STREAK_CACHE_KEY = "bedroom-reset-streak-cache-v6";
 
-let supabase = null;
-let supabaseLoadFailed = false;
-async function getSupabase() {
-  if (supabase) return supabase;
-  if (supabaseLoadFailed) return null;
-  try {
-    const { createClient } = await withTimeout(import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm"), 6000);
-    supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  } catch (err) {
-    // CDN unreachable, blocked or too slow (captive portal, flaky wifi) - app keeps working from local storage.
-    // Don't retry every tap for the rest of this page load; a fresh reload will try again.
-    supabaseLoadFailed = true;
-  }
-  return supabase;
-}
-
-const DEVICE_KID_KEY = "homelife_kid_id";
-const DEVICE_KID_NAME_KEY = "homelife_kid_name";
-const CHECKLIST_KEY = "bedroom-reset-checklist-v4";
-const META_KEY = "bedroom-reset-meta-v5";
-
-const checklistEl = document.getElementById("checklist");
 const kidPicker = document.getElementById("kidPicker");
-const kidGrid = document.getElementById("kidGrid");
+const codeForm = document.getElementById("codeForm");
+const codeInput = document.getElementById("codeInput");
+const codeError = document.getElementById("codeError");
+const checklistEl = document.getElementById("checklist");
 const kidNameEl = document.getElementById("kidName");
 const switchKidLink = document.getElementById("switchKidLink");
 const doneCount = document.getElementById("doneCount");
@@ -85,18 +54,10 @@ const toastTextEl = document.getElementById("toastText");
 
 let boxes = [];
 let oneThingMode = false;
-let currentKid = null;
+let token = null;
 let lastSyncOk = null;
-let meta = {
-  streak: 0,
-  bestStreak: 0,
-  lastPassDate: null,
-  mumResult: "No Mum check yet today.",
-  totalPoints: 0,
-  totalPasses: 0,
-  pointsAwardedItems: [],
-  completionBonusAwarded: false,
-};
+let lastKnownLevel = 1;
+let streakState = { current_streak: 0, best_streak: 0, total_points: 0, total_passes: 0, mum_result: "No Mum check yet today." };
 
 // --- Checklist rendering -----------------------------------------------
 
@@ -120,181 +81,121 @@ function renderChecklist() {
   totalCount.textContent = boxes.length;
   boxes.forEach((box) =>
     box.addEventListener("change", () => {
-      markChecked(box, box.checked);
+      updateItem(box);
       updateEverything();
+      saveLocalChecklist();
       syncItem(box.dataset.id, box.checked);
-      syncStreak();
     })
   );
 }
 
-function dateString(offsetDays = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+// --- Code entry ------------------------------------------------------------
 
-// --- Kid picker ----------------------------------------------------------
+const prefillCode = new URLSearchParams(location.search).get("code");
+if (prefillCode) codeInput.value = prefillCode.toUpperCase();
 
-function findKidById(id) {
-  return KIDS.find((k) => k.id === id) || null;
-}
-
-function renderKidPicker() {
-  kidGrid.innerHTML = "";
-  KIDS.forEach((kid) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "kidBtn";
-    btn.innerHTML = `<span class="kidAvatar">${kid.avatar}</span><span>${kid.name}</span>`;
-    btn.addEventListener("click", () => chooseKid(kid));
-    kidGrid.appendChild(btn);
-  });
-}
-
-function chooseKid(kid) {
-  localStorage.setItem(DEVICE_KID_KEY, kid.id);
-  localStorage.setItem(DEVICE_KID_NAME_KEY, kid.name);
-  currentKid = kid;
+codeForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const code = codeInput.value.trim();
+  if (!code) return;
+  codeError.classList.add("hidden");
+  const submitBtn = codeForm.querySelector(".codeSubmit");
+  submitBtn.disabled = true;
+  const res = await callApi("redeem_kid_code", { code });
+  submitBtn.disabled = false;
+  if (!res.ok) {
+    codeError.textContent = res.error || "Something went wrong. Try again.";
+    codeError.classList.remove("hidden");
+    return;
+  }
+  token = res.data.token;
+  localStorage.setItem(DEVICE_TOKEN_KEY, token);
+  localStorage.setItem(DEVICE_NAME_KEY, res.data.kid.name);
+  localStorage.setItem(DEVICE_AVATAR_KEY, res.data.kid.avatar);
   kidPicker.classList.add("hidden");
   boot();
-}
+});
 
 switchKidLink.addEventListener("click", async (e) => {
   e.preventDefault();
   const ok = await askConfirm("Switch which kid this tablet belongs to?");
   if (!ok) return;
-  localStorage.removeItem(DEVICE_KID_KEY);
-  localStorage.removeItem(DEVICE_KID_NAME_KEY);
+  localStorage.removeItem(DEVICE_TOKEN_KEY);
+  localStorage.removeItem(DEVICE_NAME_KEY);
+  localStorage.removeItem(DEVICE_AVATAR_KEY);
   location.reload();
 });
 
-// --- Local + remote state -------------------------------------------------
+// --- Local cache + server sync -------------------------------------------
 
-function loadLocalState() {
+function loadLocalChecklist() {
   const saved = JSON.parse(localStorage.getItem(CHECKLIST_KEY) || "{}");
-  meta = Object.assign(meta, JSON.parse(localStorage.getItem(META_KEY) || "{}"));
   boxes.forEach((box) => {
     box.checked = !!saved[box.dataset.id];
     updateItem(box);
   });
 }
 
-function saveLocalState() {
+function saveLocalChecklist() {
   const state = {};
   boxes.forEach((box) => (state[box.dataset.id] = box.checked));
   localStorage.setItem(CHECKLIST_KEY, JSON.stringify(state));
-  localStorage.setItem(META_KEY, JSON.stringify(meta));
 }
 
-async function fetchRemoteState() {
-  if (!currentKid) return;
-  try {
-    const client = await getSupabase();
-    if (!client) {
-      lastSyncOk = false;
-      renderSyncStatus();
-      return;
-    }
-    const [{ data: items }, { data: streak }] = await Promise.all([
-      client.from("kid_checklist_state").select("item_id, checked").eq("kid_id", currentKid.id),
-      client.from("kid_streaks").select("*").eq("kid_id", currentKid.id).maybeSingle(),
-    ]);
-    if (items) {
-      const map = Object.fromEntries(items.map((i) => [i.item_id, i.checked]));
-      boxes.forEach((box) => {
-        if (box.dataset.id in map) {
-          box.checked = map[box.dataset.id];
-          updateItem(box);
-        }
-      });
-    }
-    if (streak) {
-      meta.streak = streak.current_streak || 0;
-      meta.bestStreak = streak.best_streak || 0;
-      meta.lastPassDate = streak.last_pass_date;
-      meta.mumResult = streak.mum_result || meta.mumResult;
-      meta.totalPoints = streak.total_points || 0;
-      meta.totalPasses = streak.total_passes || 0;
-    }
-    lastSyncOk = true;
-  } catch (err) {
-    lastSyncOk = false;
+function loadLocalStreakCache() {
+  const cached = JSON.parse(localStorage.getItem(STREAK_CACHE_KEY) || "null");
+  if (cached) {
+    streakState = cached;
+    lastKnownLevel = levelForPoints(streakState.total_points || 0).level;
   }
+}
+
+function saveLocalStreakCache() {
+  localStorage.setItem(STREAK_CACHE_KEY, JSON.stringify(streakState));
+}
+
+async function fetchAndReconcile() {
+  const res = await callApi("get_kid_state", { token });
+  if (!res.ok) {
+    lastSyncOk = false;
+    renderSyncStatus();
+    return;
+  }
+  lastSyncOk = true;
+  const serverMap = Object.fromEntries((res.data.items || []).map((i) => [i.item_id, i.checked]));
+  const toReconcile = [];
+  boxes.forEach((box) => {
+    const id = box.dataset.id;
+    if (id in serverMap) {
+      box.checked = serverMap[id];
+      updateItem(box);
+    } else if (box.checked) {
+      // checked while offline before this item ever synced - push it now
+      toReconcile.push(id);
+    }
+  });
+  applyStreak(res.data.streak, { celebrate: false });
+  saveLocalChecklist();
   renderSyncStatus();
+  updateEverything();
+  for (const id of toReconcile) syncItem(id, true);
 }
 
 async function syncItem(itemId, checked) {
-  if (!currentKid) return;
-  const client = await getSupabase();
-  if (!client) {
+  const res = await callApi("update_checklist_item", { token, item_id: itemId, checked });
+  if (!res.ok) {
     lastSyncOk = false;
     renderSyncStatus();
     return;
   }
-  client
-    .from("kid_checklist_state")
-    .upsert({ kid_id: currentKid.id, item_id: itemId, checked, updated_at: new Date().toISOString() })
-    .then(() => {
-      lastSyncOk = true;
-      renderSyncStatus();
-    })
-    .catch(() => {
-      lastSyncOk = false;
-      renderSyncStatus();
-    });
-}
-
-async function syncStreak() {
-  if (!currentKid) return;
-  const client = await getSupabase();
-  if (!client) {
-    lastSyncOk = false;
-    renderSyncStatus();
-    return;
+  lastSyncOk = true;
+  renderSyncStatus();
+  const pts = (res.data.points_awarded || 0) + (res.data.completion_bonus || 0);
+  if (res.data.completion_bonus > 0) {
+    showToast("🌟", `Room complete! +${res.data.completion_bonus} points`);
+    confettiBurst(28);
   }
-  client
-    .from("kid_streaks")
-    .upsert({
-      kid_id: currentKid.id,
-      current_streak: meta.streak || 0,
-      best_streak: meta.bestStreak || 0,
-      last_pass_date: meta.lastPassDate,
-      mum_result: meta.mumResult,
-      total_points: meta.totalPoints || 0,
-      total_passes: meta.totalPasses || 0,
-      updated_at: new Date().toISOString(),
-    })
-    .then(() => {
-      lastSyncOk = true;
-      renderSyncStatus();
-    })
-    .catch(() => {
-      lastSyncOk = false;
-      renderSyncStatus();
-    });
-}
-
-async function logProgress(eventType, done, total) {
-  if (!currentKid) return;
-  const client = await getSupabase();
-  if (!client) return;
-  client
-    .from("kid_progress_log")
-    .insert({
-      kid_id: currentKid.id,
-      items_done: done,
-      items_total: total,
-      percent_complete: total ? Math.round((done / total) * 100) : 0,
-      event_type: eventType,
-      mum_result: meta.mumResult,
-      streak_at_time: meta.streak || 0,
-    })
-    .then(() => {})
-    .catch(() => {});
+  applyStreak(res.data.streak, { celebrate: pts > 0 });
 }
 
 function renderSyncStatus() {
@@ -312,42 +213,26 @@ function renderSyncStatus() {
 window.addEventListener("online", renderSyncStatus);
 window.addEventListener("offline", renderSyncStatus);
 
-// --- Points, levels, badges ---------------------------------------------
+// --- Streak / level / badge UI --------------------------------------------
 
-function awardPoints(amount) {
-  const before = levelForPoints(meta.totalPoints || 0).level;
-  meta.totalPoints = (meta.totalPoints || 0) + amount;
-  const after = levelForPoints(meta.totalPoints).level;
-  if (after > before) {
-    const lvl = levelForPoints(meta.totalPoints);
-    showToast("🎉", `Level up! You're now a ${lvl.title}`, 3200);
+function applyStreak(streak, { celebrate = true } = {}) {
+  if (!streak) return;
+  streakState = streak;
+  saveLocalStreakCache();
+  const level = levelForPoints(streak.total_points || 0);
+  if (celebrate && level.level > lastKnownLevel) {
+    showToast("🎉", `Level up! You're now a ${level.title}`, 3200);
     confettiBurst(36);
   }
-}
-
-function checkCompletionBonus() {
-  const done = boxes.filter((b) => b.checked).length;
-  if (boxes.length > 0 && done === boxes.length && !meta.completionBonusAwarded) {
-    meta.completionBonusAwarded = true;
-    awardPoints(POINTS.DAY_COMPLETE_BONUS);
-    showToast("🌟", `Room complete! +${POINTS.DAY_COMPLETE_BONUS} points`, 2600);
-    confettiBurst(28);
-  }
-}
-
-function markChecked(box, checked) {
-  box.checked = checked;
-  updateItem(box);
-  if (checked && !meta.pointsAwardedItems.includes(box.dataset.id)) {
-    meta.pointsAwardedItems.push(box.dataset.id);
-    awardPoints(POINTS.ITEM_CHECK);
-  }
-  checkCompletionBonus();
+  lastKnownLevel = level.level;
+  updateProgress();
+  updateLevelUI();
+  updateBadgesUI();
 }
 
 function updateLevelUI() {
   if (!levelTitleEl) return;
-  const points = meta.totalPoints || 0;
+  const points = streakState.total_points || 0;
   const level = levelForPoints(points);
   const next = nextLevel(points);
   levelTitleEl.textContent = `Level ${level.level} - ${level.title}`;
@@ -367,9 +252,9 @@ function updateLevelUI() {
 function updateBadgesUI() {
   if (!badgeShelfEl) return;
   const stats = {
-    bestStreak: meta.bestStreak || 0,
-    totalPasses: meta.totalPasses || 0,
-    level: levelForPoints(meta.totalPoints || 0).level,
+    bestStreak: streakState.best_streak || 0,
+    totalPasses: streakState.total_passes || 0,
+    level: levelForPoints(streakState.total_points || 0).level,
   };
   const earnedIds = new Set(earnedBadges(stats).map((b) => b.id));
   badgeShelfEl.innerHTML = BADGES.map((b) => {
@@ -416,7 +301,7 @@ function showToast(emoji, text, duration = 2600) {
   }, duration);
 }
 
-// --- Confirm modal (replaces native confirm()) ---------------------------
+// --- Confirm modal ---------------------------------------------------------
 
 let confirmResolve = null;
 function askConfirm(text) {
@@ -441,6 +326,7 @@ confirmNoBtn.addEventListener("click", () => {
 
 let pinEntry = "";
 let pinResolve = null;
+let pinBusy = false;
 
 function buildPinPad() {
   pinPadEl.innerHTML = "";
@@ -465,10 +351,10 @@ function buildPinPad() {
     } else {
       btn.textContent = key;
       btn.addEventListener("click", () => {
-        if (pinEntry.length >= 4) return;
+        if (pinEntry.length >= 4 || pinBusy) return;
         pinEntry += key;
         updatePinDots();
-        if (pinEntry.length === 4) checkPin();
+        if (pinEntry.length === 4) submitPin();
       });
     }
     pinPadEl.appendChild(btn);
@@ -480,11 +366,16 @@ function updatePinDots() {
   dots.forEach((dot, i) => dot.classList.toggle("filled", i < pinEntry.length));
 }
 
-function checkPin() {
-  if (pinEntry === MUM_PIN) {
+async function submitPin() {
+  pinBusy = true;
+  const pin = pinEntry;
+  const result = await pinResolve.checkFn(pin);
+  pinBusy = false;
+  if (result.ok) {
     pinErrorEl.classList.add("hidden");
     setTimeout(() => closePinModal(true), 150);
   } else {
+    pinErrorEl.textContent = result.message || "Wrong PIN - try again.";
     pinErrorEl.classList.remove("hidden");
     pinDotsEl.classList.add("shake");
     setTimeout(() => {
@@ -495,20 +386,20 @@ function checkPin() {
   }
 }
 
-function requestMumPin(title) {
+function requestMumPin(title, checkFn) {
   pinTitleEl.textContent = title;
   pinEntry = "";
   updatePinDots();
   pinErrorEl.classList.add("hidden");
   pinModal.classList.remove("hidden");
   return new Promise((resolve) => {
-    pinResolve = resolve;
+    pinResolve = { resolve, checkFn };
   });
 }
 
 function closePinModal(result) {
   pinModal.classList.add("hidden");
-  if (pinResolve) pinResolve(result);
+  if (pinResolve) pinResolve.resolve(result);
   pinResolve = null;
 }
 
@@ -532,8 +423,8 @@ function updateProgress() {
   doneCount.textContent = done;
   percentText.textContent = `${percent}%`;
   pie.style.background = `conic-gradient(var(--green) ${degrees}deg, #efeadf ${degrees}deg)`;
-  streakCount.textContent = meta.streak || 0;
-  mumResult.textContent = meta.mumResult || "No Mum check yet today.";
+  streakCount.textContent = streakState.current_streak || 0;
+  mumResult.textContent = streakState.mum_result || "No Mum check yet today.";
 }
 
 function updateFocus() {
@@ -564,7 +455,6 @@ function updateEverything() {
   updateCategories();
   updateLevelUI();
   updateBadgesUI();
-  saveLocalState();
 }
 
 modeBtn.addEventListener("click", () => {
@@ -575,68 +465,61 @@ modeBtn.addEventListener("click", () => {
 focusDoneBtn.addEventListener("click", () => {
   const next = boxes.find((b) => !b.checked);
   if (!next) return;
-  markChecked(next, true);
+  next.checked = true;
+  updateItem(next);
   updateEverything();
+  saveLocalChecklist();
   syncItem(next.dataset.id, true);
-  syncStreak();
 });
 
 resetBtn.addEventListener("click", async () => {
   const ok = await askConfirm("Start a new day? This clears today's checklist. Streaks, points and badges are kept.");
   if (!ok) return;
-  const doneSnapshot = boxes.filter((b) => b.checked).length;
-  const totalSnapshot = boxes.length;
-  logProgress("reset", doneSnapshot, totalSnapshot);
+  const res = await callApi("reset_day", { token });
   boxes.forEach((box) => {
     box.checked = false;
     updateItem(box);
-    syncItem(box.dataset.id, false);
   });
-  meta.mumResult = "No Mum check yet today.";
-  meta.pointsAwardedItems = [];
-  meta.completionBonusAwarded = false;
+  saveLocalChecklist();
+  if (res.ok) applyStreak(res.data.streak, { celebrate: false });
   updateEverything();
-  syncStreak();
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
-function mumPass(emoji, label, eventType, points) {
-  const today = dateString(0);
-  const yesterday = dateString(-1);
-  const doneNow = boxes.filter((b) => b.checked).length;
-  const totalNow = boxes.length;
-  if (meta.lastPassDate === today) {
-    meta.mumResult = `${emoji} ${label} Already counted for today.`;
-  } else {
-    meta.streak = meta.lastPassDate === yesterday ? (meta.streak || 0) + 1 : 1;
-    meta.lastPassDate = today;
-    meta.bestStreak = Math.max(meta.bestStreak || 0, meta.streak);
-    meta.totalPasses = (meta.totalPasses || 0) + 1;
-    meta.mumResult = `${emoji} ${label} ${meta.streak > 1 ? "Streak continued!" : "New streak started!"}`;
-    awardPoints(points);
-    showToast(emoji, `${label} +${points} points`);
-    confettiBurst(28);
-  }
-  updateEverything();
-  syncStreak();
-  logProgress(eventType, doneNow, totalNow);
-}
+passBtn.addEventListener("click", () => {
+  requestMumPin("Mum Check - Pass", async (pin) => {
+    const res = await callApi("mum_check", { token, event_type: "mum_pass", pin });
+    if (res.ok) {
+      applyStreak(res.data.streak);
+      if (res.data.awarded_points > 0) showToast("✅", `Passed by Mum! +${res.data.awarded_points} points`);
+      updateEverything();
+      return { ok: true };
+    }
+    if (res.error === "wrong_pin") return { ok: false, message: "Wrong PIN - try again." };
+    return { ok: false, message: "Couldn't reach the server. Check the connection and try again." };
+  });
+});
 
-passBtn.addEventListener("click", async () => {
-  const ok = await requestMumPin("Mum Check - Pass");
-  if (ok) mumPass("✅", "Passed by Mum!", "mum_pass", POINTS.MUM_PASS);
+starBtn.addEventListener("click", () => {
+  requestMumPin("Mum Check - Great Job", async (pin) => {
+    const res = await callApi("mum_check", { token, event_type: "mum_star", pin });
+    if (res.ok) {
+      applyStreak(res.data.streak);
+      if (res.data.awarded_points > 0) showToast("⭐", `Great job from Mum! +${res.data.awarded_points} points`);
+      updateEverything();
+      return { ok: true };
+    }
+    if (res.error === "wrong_pin") return { ok: false, message: "Wrong PIN - try again." };
+    return { ok: false, message: "Couldn't reach the server. Check the connection and try again." };
+  });
 });
-starBtn.addEventListener("click", async () => {
-  const ok = await requestMumPin("Mum Check - Great Job");
-  if (ok) mumPass("⭐", "Great job from Mum!", "mum_star", POINTS.MUM_GREAT_JOB);
-});
-tryBtn.addEventListener("click", () => {
-  const doneNow = boxes.filter((b) => b.checked).length;
-  const totalNow = boxes.length;
-  meta.mumResult = "🔁 Try again. Fix the missed jobs, then ask Mum to check again.";
-  updateEverything();
-  syncStreak();
-  logProgress("mum_try_again", doneNow, totalNow);
+
+tryBtn.addEventListener("click", async () => {
+  const res = await callApi("mum_try_again", { token });
+  if (res.ok) {
+    applyStreak(res.data.streak, { celebrate: false });
+    updateEverything();
+  }
 });
 
 if ("serviceWorker" in navigator) {
@@ -646,22 +529,21 @@ if ("serviceWorker" in navigator) {
 }
 
 function boot() {
-  kidNameEl.textContent = currentKid.name;
-  document.title = `${currentKid.name}'s Bedroom Reset`;
+  kidNameEl.textContent = localStorage.getItem(DEVICE_NAME_KEY) || "…";
+  document.title = `${localStorage.getItem(DEVICE_NAME_KEY) || "Kid"}'s Bedroom Reset`;
   renderChecklist();
-  loadLocalState();
+  loadLocalChecklist();
+  loadLocalStreakCache();
   updateEverything();
   renderSyncStatus();
-  fetchRemoteState().then(() => updateEverything());
+  fetchAndReconcile();
 }
 
-const storedId = localStorage.getItem(DEVICE_KID_KEY);
-const storedKid = storedId && findKidById(storedId);
-if (storedKid) {
-  currentKid = storedKid;
+token = localStorage.getItem(DEVICE_TOKEN_KEY);
+if (token) {
   kidPicker.classList.add("hidden");
   boot();
 } else {
-  renderKidPicker();
   kidPicker.classList.remove("hidden");
+  codeInput.focus();
 }

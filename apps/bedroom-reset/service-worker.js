@@ -1,4 +1,4 @@
-const CACHE_NAME = "bedroom-reset-pwa-v5";
+const CACHE_NAME = "bedroom-reset-pwa-v6";
 const ASSETS = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const ASSETS = [
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "../shared/config.js",
+  "../shared/api.js",
 ];
 
 self.addEventListener("install", (event) => {

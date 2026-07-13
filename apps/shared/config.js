@@ -1,15 +1,12 @@
 export const SUPABASE_URL = "https://wumlrhswsyazbvmajhxg.supabase.co";
-export const SUPABASE_ANON_KEY = "sb_publishable_A4sb6VuyZeHvlYtlfzFpJw_COEX2h9P";
+export const FAMILY_API_URL = "https://wumlrhswsyazbvmajhxg.supabase.co/functions/v1/family-api";
 
-// Shared family PIN Mum enters to confirm a room Pass / Great Job.
-// Not real security - just enough friction that a kid can't tap it solo. Change any time.
-export const MUM_PIN = "2468";
-
-export const KIDS = [
-  { id: "a0000000-0000-4000-8000-000000000001", name: "Eira", avatar: "🦄" },
-  { id: "a0000000-0000-4000-8000-000000000002", name: "Iya", avatar: "🌸" },
-  { id: "a0000000-0000-4000-8000-000000000003", name: "Indie", avatar: "🐨" },
-];
+// Kid identity and the family's Mum PIN are no longer known to the client at
+// all - they live behind a parent_code / kid_code redeemed through the
+// family-api edge function, which is the only thing with access to the
+// database (see supabase/functions/family-api). This is what makes it safe
+// for multiple unrelated families to share this app: nobody's browser ever
+// holds a key that can read or write another family's data.
 
 export const CHECKLIST = [
   {
@@ -56,10 +53,12 @@ export const CHECKLIST = [
   },
 ];
 
+// Must match CHECKLIST_TOTAL in supabase/functions/family-api/index.ts
 export const CHECKLIST_TOTAL = CHECKLIST.reduce((sum, cat) => sum + cat.items.length, 0);
 
-// --- Gamification -----------------------------------------------------
-
+// Point values are enforced server-side (supabase/functions/family-api) -
+// this copy is for display/documentation only, e.g. showing "+2 points" in
+// the UI before the server confirms it. Keep both in sync.
 export const POINTS = {
   ITEM_CHECK: 2,
   DAY_COMPLETE_BONUS: 10,

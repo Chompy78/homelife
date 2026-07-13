@@ -13,13 +13,17 @@
 <body>
   <div class="kidPicker" id="kidPicker">
     <div class="kidPickerCard">
-      <h1>Who's checking their room?</h1>
-      <p>Tap your name. This tablet will remember you.</p>
-      <div class="kidGrid" id="kidGrid"></div>
+      <h1>Whose room is this?</h1>
+      <p>Ask a parent for your code. Enter it once - this tablet will remember you.</p>
+      <form id="codeForm">
+        <input id="codeInput" class="codeInput" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="XXX-XXX" maxlength="10" />
+        <button type="submit" class="codeSubmit">Continue</button>
+      </form>
+      <p class="codeError hidden" id="codeError"></p>
     </div>
   </div>
   <script>
-    if (localStorage.getItem('homelife_kid_id')) {
+    if (localStorage.getItem('homelife_kid_token')) {
       document.getElementById('kidPicker').classList.add('hidden');
     }
   </script>
@@ -29,7 +33,7 @@
   <div class="pinModal hidden" id="pinModal">
     <div class="pinCard">
       <h2 id="pinTitle">Mum Check</h2>
-      <p>Ask Mum to enter the family PIN.</p>
+      <p>Ask Mum or Dad to enter the family PIN.</p>
       <div class="pinDots" id="pinDots"><span></span><span></span><span></span><span></span></div>
       <div class="pinPad" id="pinPad"></div>
       <p class="pinError hidden" id="pinError">Wrong PIN - try again.</p>
@@ -111,7 +115,7 @@
         <button class="starBtn" id="starBtn" type="button">⭐ Great Job</button>
       </div>
       <div class="mumResult" id="mumResult">No Mum check yet today.</div>
-      <p class="pinHint">Pass and Great Job need Mum's PIN.</p>
+      <p class="pinHint">Pass and Great Job need the family PIN.</p>
     </section>
 
     <p class="newDayLink"><button id="resetBtn" class="resetLink" type="button">Start a new day (reset today's checklist)</button></p>

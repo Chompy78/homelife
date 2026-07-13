@@ -63,3 +63,71 @@ h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
 .historyRow { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; border-top: 1px solid var(--line); color: var(--muted); }
 .historyRow .who { color: var(--ink); font-weight: 700; }
 .error { color: var(--red); font-weight: 700; }
+
+.hidden { display: none !important; }
+.kidTag { margin: 10px 0 0; font-size: 0.9rem; opacity: 0.92; font-weight: 700; }
+.kidTag a { color: white; text-decoration: underline; }
+
+/* Gate (parent code entry) */
+.gate { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 50; padding: 20px; }
+.gate.hidden { display: none; }
+.gateCard { max-width: 420px; text-align: center; }
+.gateCard h1 { color: var(--ink); }
+.gateCard p { color: var(--muted); font-weight: 700; }
+#codeForm { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; align-items: center; }
+.codeInput {
+  width: 100%;
+  max-width: 260px;
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 14px;
+  border-radius: 16px;
+  border: 2px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+.codeSubmit { background: var(--blue); color: #fff; border: 0; border-radius: 14px; padding: 14px 28px; font-weight: 800; cursor: pointer; }
+.codeError { color: var(--red); font-weight: 700; margin-top: 14px; }
+
+/* Settings + add kid */
+.settingsCard, .addKidCard { margin-bottom: 16px; }
+.settingsCard h2, .addKidCard h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.settingsGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 12px; }
+.settingsGrid label, .addKidRow label { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; font-weight: 700; color: var(--muted); }
+.settingsGrid input, .addKidRow input, .addKidRow select {
+  font-size: 1rem;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  font-family: inherit;
+  color: var(--ink);
+}
+.publicToggle { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 12px; }
+.publicToggle input { width: 20px; height: 20px; }
+.saveBtn { background: var(--blue); color: #fff; border: 0; border-radius: 12px; padding: 10px 18px; font-weight: 800; cursor: pointer; }
+.settingsSaved { color: var(--green); font-weight: 800; margin-top: 8px; }
+.addKidRow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.addKidRow input { flex: 1 1 160px; }
+.addKidError { color: var(--red); font-weight: 700; margin-top: 8px; }
+
+/* Kid admin panel within each card */
+.kidAdmin { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.kidCodeRow { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.kidCodeLabel { font-size: 0.8rem; color: var(--muted); font-weight: 700; }
+.kidCode { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-weight: 900; font-size: 1.05rem; letter-spacing: 0.04em; background: #f7f3ea; padding: 4px 10px; border-radius: 8px; }
+.kidAdminButtons { display: flex; flex-wrap: wrap; gap: 8px; }
+.adminBtn { background: #f7f3ea; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 0.8rem; font-weight: 700; cursor: pointer; color: var(--ink); }
+.removeBtn { color: var(--red); border-color: #f2c9c9; }
+
+/* Confirm modal (shared pattern with the kid app) */
+.confirmModal { position: fixed; inset: 0; background: rgba(43,43,43,0.55); display: grid; place-items: center; z-index: 260; padding: 20px; }
+.confirmModal.hidden { display: none; }
+.confirmCard { background: #fff; border-radius: 22px; padding: 22px; max-width: 420px; box-shadow: var(--shadow); text-align: center; }
+.confirmCard p { font-size: 1.05rem; font-weight: 700; margin: 0 0 16px; color: var(--ink); }
+.confirmButtons { display: flex; gap: 10px; }
+.confirmButtons button { flex: 1; border: 0; border-radius: 14px; padding: 12px; font-weight: 800; cursor: pointer; }
+.confirmYes { background: var(--red); color: #fff; }
+.confirmNo { background: #efeadf; color: var(--ink); }

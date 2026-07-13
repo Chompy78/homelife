@@ -1,7 +1,7 @@
 {
   "name": "Bedroom Reset Checklist",
   "short_name": "Bedroom Reset",
-  "description": "A simple bedroom reset checklist for kids with Mum check, room score, one thing mode and streaks.",
+  "description": "A simple bedroom reset checklist for kids with Parent check, room score, one thing mode and streaks.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

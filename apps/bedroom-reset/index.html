@@ -24,11 +24,35 @@
     }
   </script>
 
+  <div class="toast hidden" id="toast"><span id="toastEmoji"></span><span id="toastText"></span></div>
+
+  <div class="pinModal hidden" id="pinModal">
+    <div class="pinCard">
+      <h2 id="pinTitle">Mum Check</h2>
+      <p>Ask Mum to enter the family PIN.</p>
+      <div class="pinDots" id="pinDots"><span></span><span></span><span></span><span></span></div>
+      <div class="pinPad" id="pinPad"></div>
+      <p class="pinError hidden" id="pinError">Wrong PIN - try again.</p>
+      <button class="pinCancel" id="pinCancel" type="button">Cancel</button>
+    </div>
+  </div>
+
+  <div class="confirmModal hidden" id="confirmModal">
+    <div class="confirmCard">
+      <p id="confirmText"></p>
+      <div class="confirmButtons">
+        <button id="confirmYes" type="button" class="confirmYes">Yes</button>
+        <button id="confirmNo" type="button" class="confirmNo">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <main class="app">
     <header>
       <h1>Bedroom Reset</h1>
       <p class="subtitle">Tap each box when it is properly done. Hidden, shoved or stuffed does not count.</p>
       <p class="kidTag">For <span id="kidName">…</span> · <a href="#" id="switchKidLink">not you? switch</a></p>
+      <p class="syncStatus" id="syncStatus">💾 Saved on this tablet</p>
     </header>
 
     <section class="gridTop">
@@ -43,15 +67,24 @@
         <div class="flame">🔥</div>
         <div>
           <div class="streakNo" id="streakCount">0</div>
-          <div class="streakLabel">day streak after Mum passes the room</div>
+          <div class="streakLabel">day streak</div>
         </div>
       </div>
     </section>
 
+    <section class="card levelCard">
+      <div class="levelHead">
+        <span class="levelTitle" id="levelTitle">Level 1 - Tidy Rookie</span>
+        <span class="levelPoints" id="levelPoints">0 points</span>
+      </div>
+      <div class="levelBar"><div class="levelBarFill" id="levelBarFill"></div></div>
+      <div class="levelNext" id="levelNext">Points to next level</div>
+      <div class="badgeShelf" id="badgeShelf"></div>
+    </section>
+
     <section class="card">
       <div class="buttons">
-        <button class="modeBtn" id="modeBtn" type="button">One Thing At A Time: OFF</button>
-        <button class="resetBtn" id="resetBtn" type="button">Big Reset / New Day</button>
+        <button class="modeBtn" id="modeBtn" type="button">Focus Mode: OFF</button>
       </div>
       <div class="installHint" id="installHint">Install tip: open this site in Chrome or Edge and choose Install app / Add to Home screen.</div>
     </section>
@@ -78,8 +111,12 @@
         <button class="starBtn" id="starBtn" type="button">⭐ Great Job</button>
       </div>
       <div class="mumResult" id="mumResult">No Mum check yet today.</div>
+      <p class="pinHint">Pass and Great Job need Mum's PIN.</p>
     </section>
-    <footer>Use Big Reset at the start of a new day. Progress syncs automatically when online.</footer>
+
+    <p class="newDayLink"><button id="resetBtn" class="resetLink" type="button">Start a new day (reset today's checklist)</button></p>
+
+    <footer>Streaks, points and badges are kept forever. Progress syncs automatically when online.</footer>
   </main>
 
   <script type="module" src="app.js"></script>

@@ -34,6 +34,7 @@ h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 5vw, 2.7rem); line-height: 1.05; 
 .subtitle { margin: 0; font-size: 1.05rem; opacity: 0.96; }
 .kidTag { margin: 10px 0 0; font-size: 0.95rem; opacity: 0.92; font-weight: 700; }
 .kidTag a { color: white; text-decoration: underline; }
+.syncStatus { margin: 6px 0 0; font-size: 0.85rem; opacity: 0.85; font-weight: 700; }
 .gridTop { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .card { background: var(--card); border-radius: 22px; padding: 14px; box-shadow: var(--shadow); border: 1px solid var(--line); }
 .pieWrap { display: grid; grid-template-columns: 138px 1fr; gap: 14px; align-items: center; }
@@ -49,7 +50,6 @@ h1 { margin: 0 0 8px; font-size: clamp(1.8rem, 5vw, 2.7rem); line-height: 1.05; 
 .goldenRule strong { display: block; margin-bottom: 6px; font-size: 1.15rem; }
 .buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 button { border: 0; border-radius: 18px; padding: 14px 16px; font-weight: 900; font-size: 1rem; cursor: pointer; min-height: 54px; box-shadow: var(--shadow); }
-.resetBtn { background: var(--red); color: #fff; }
 .modeBtn { background: var(--blue); color: #fff; }
 .doneBtn { background: var(--green); color: #fff; width: 100%; margin-top: 10px; }
 .passBtn { background: var(--green); color: #fff; }
@@ -62,6 +62,7 @@ button { border: 0; border-radius: 18px; padding: 14px 16px; font-weight: 900; f
 .hidden { display: none !important; }
 .category { background: var(--card); border-radius: 22px; padding: 14px; margin: 14px 0; border: 1px solid var(--line); box-shadow: var(--shadow); }
 .category h2 { margin: 4px 6px 12px; font-size: 1.25rem; color: #3d3a34; }
+.catBadge { font-size: 1.1rem; }
 label.item { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; min-height: 58px; padding: 12px; margin: 8px 0; border: 2px solid var(--line); border-radius: 18px; background: #fffdf8; font-size: 1.08rem; line-height: 1.25; user-select: none; }
 label.item.checked { background: var(--done); border-color: #a8d8ae; }
 input[type="checkbox"] { width: 32px; height: 32px; accent-color: var(--green); }
@@ -69,7 +70,117 @@ input[type="checkbox"] { width: 32px; height: 32px; accent-color: var(--green); 
 .mumCard { margin-top: 16px; }
 .mumResult { margin-top: 12px; font-weight: 900; font-size: 1.08rem; color: var(--muted); }
 .installHint { font-size: 0.95rem; color: var(--muted); margin-top: 8px; font-weight: 700; }
+.pinHint { margin: 8px 2px 0; font-size: 0.85rem; color: var(--muted); font-weight: 700; }
 footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size: 0.9rem; }
+
+.newDayLink { text-align: center; margin: 22px 0 8px; }
+.resetLink {
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  border: 1px solid var(--line);
+  min-height: unset;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  border-radius: 14px;
+}
+
+/* Level / points card */
+.levelCard { display: flex; flex-direction: column; gap: 8px; }
+.levelHead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.levelTitle { font-weight: 900; font-size: 1.1rem; color: #3d3a34; }
+.levelPoints { font-weight: 800; color: var(--blue); }
+.levelBar { height: 14px; border-radius: 8px; background: #efeadf; overflow: hidden; }
+.levelBarFill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--blue), var(--green)); transition: width 0.5s ease; }
+.levelNext { font-size: 0.85rem; color: var(--muted); font-weight: 700; }
+
+.badgeShelf { display: flex; gap: 10px; overflow-x: auto; padding: 6px 2px 2px; margin-top: 4px; }
+.badge {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 78px;
+  text-align: center;
+  padding: 8px 4px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+}
+.badge.earned { background: #fff7d6; border-color: #f1d06a; }
+.badge.locked { opacity: 0.4; filter: grayscale(1); }
+.badgeEmoji { font-size: 1.6rem; }
+.badgeLabel { font-size: 0.68rem; font-weight: 800; color: var(--ink); line-height: 1.1; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-140%);
+  background: #2b2b2b;
+  color: #fff;
+  padding: 14px 20px;
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  z-index: 300;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  max-width: 90vw;
+}
+.toast.hidden { display: none; }
+.toast.show { transform: translateX(-50%) translateY(0); }
+.toast #toastEmoji { font-size: 1.4rem; }
+
+/* Confetti */
+.confettiContainer { position: fixed; inset: 0; pointer-events: none; z-index: 250; overflow: hidden; }
+.confettiPiece {
+  position: absolute;
+  top: -20px;
+  width: 10px;
+  height: 14px;
+  opacity: 0.9;
+  border-radius: 2px;
+  animation: confettiFall 1.7s ease-in forwards;
+}
+@keyframes confettiFall {
+  to { transform: translateY(110vh) rotate(360deg); opacity: 0.3; }
+}
+
+/* Confirm modal */
+.confirmModal { position: fixed; inset: 0; background: rgba(43,43,43,0.55); display: grid; place-items: center; z-index: 260; padding: 20px; }
+.confirmModal.hidden { display: none; }
+.confirmCard { background: #fff; border-radius: 22px; padding: 22px; max-width: 420px; box-shadow: var(--shadow); text-align: center; }
+.confirmCard p { font-size: 1.1rem; font-weight: 700; margin: 0 0 16px; }
+.confirmButtons { display: flex; gap: 10px; }
+.confirmButtons button { flex: 1; }
+.confirmYes { background: var(--red); color: #fff; }
+.confirmNo { background: #efeadf; color: var(--ink); }
+
+/* Mum PIN modal */
+.pinModal { position: fixed; inset: 0; background: rgba(43,43,43,0.65); display: grid; place-items: center; z-index: 270; padding: 20px; }
+.pinModal.hidden { display: none; }
+.pinCard { background: #fff; border-radius: 24px; padding: 24px; max-width: 360px; width: 100%; box-shadow: var(--shadow); text-align: center; }
+.pinCard h2 { margin: 0 0 4px; }
+.pinCard p { color: var(--muted); font-weight: 700; margin: 0 0 14px; }
+.pinDots { display: flex; justify-content: center; gap: 14px; margin-bottom: 18px; }
+.pinDots span { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line); background: #fff; }
+.pinDots span.filled { background: var(--blue); border-color: var(--blue); }
+.pinDots.shake { animation: pinShake 0.4s; }
+@keyframes pinShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  75% { transform: translateX(8px); }
+}
+.pinPad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pinKey { background: #f7f3ea; color: var(--ink); border: 1px solid var(--line); border-radius: 14px; font-size: 1.2rem; min-height: 54px; box-shadow: none; }
+.pinKeyWide { grid-column: span 1; font-size: 0.85rem; }
+.pinError { color: var(--red); font-weight: 800; margin-top: 12px; }
+.pinCancel { background: transparent; color: var(--muted); box-shadow: none; margin-top: 14px; min-height: unset; padding: 8px; }
 
 .kidPicker { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 50; padding: 20px; }
 .kidPicker.hidden { display: none !important; }

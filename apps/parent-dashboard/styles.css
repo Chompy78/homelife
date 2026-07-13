@@ -31,11 +31,15 @@ header {
 h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
 .subtitle { margin: 0; font-size: 1rem; opacity: 0.95; }
 .loading { color: var(--muted); font-weight: 700; }
+.toolbar { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.refreshBtn { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 8px 14px; font-weight: 800; cursor: pointer; box-shadow: var(--shadow); color: var(--ink); }
+.lastUpdated { color: var(--muted); font-size: 0.85rem; font-weight: 700; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .kidCard { background: var(--card); border-radius: 22px; padding: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
 .kidCardHead { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .kidCardAvatar { font-size: 2.4rem; }
 .kidCardName { font-weight: 900; font-size: 1.3rem; }
+.kidCardLevel { color: var(--muted); font-size: 0.8rem; font-weight: 700; }
 .statRow { display: flex; justify-content: space-between; margin: 6px 0; font-weight: 700; }
 .statRow .value { color: var(--ink); }
 .pct { font-weight: 900; }
@@ -43,6 +47,17 @@ h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
 .pct.mid { color: var(--orange); }
 .pct.low { color: var(--red); }
 .mumResult { margin-top: 10px; font-weight: 700; color: var(--muted); font-size: 0.95rem; }
+
+.weekRow { display: flex; gap: 6px; margin-top: 12px; }
+.weekDot { flex: 1; text-align: center; }
+.weekDot .dot { width: 100%; aspect-ratio: 1; border-radius: 8px; background: #efeadf; display: block; margin-bottom: 3px; }
+.weekDot .dot.pass { background: var(--green); }
+.weekDot .day { font-size: 0.65rem; color: var(--muted); font-weight: 700; }
+
+.badgeMiniShelf { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.badgeMini { font-size: 1.1rem; opacity: 0.35; }
+.badgeMini.earned { opacity: 1; }
+
 .history { margin-top: 12px; }
 .historyTitle { font-weight: 900; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 6px; }
 .historyRow { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; border-top: 1px solid var(--line); color: var(--muted); }

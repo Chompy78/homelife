@@ -50,11 +50,9 @@ const photoInput = document.getElementById("photoInput");
 const lightbox = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightboxImg");
 const lightboxClose = document.getElementById("lightboxClose");
-const lightboxDelete = document.getElementById("lightboxDelete");
 
 const MAX_PHOTOS = 3;
 let photoUploadTarget = null; // { type: 'kid' | 'room', id }
-let lightboxPhoto = null; // { type: 'kid' | 'room', id }
 
 let token = null;
 let refreshTimer = null;
@@ -236,29 +234,26 @@ photoInput.addEventListener("change", async () => {
   }
 });
 
-function openLightbox(type, photo) {
+function openLightbox(photo) {
   if (!photo) return;
-  lightboxPhoto = { type, id: photo.id };
   lightboxImg.src = photo.url;
   lightbox.classList.remove("hidden");
 }
 function closeLightbox() {
   lightbox.classList.add("hidden");
-  lightboxPhoto = null;
 }
 lightboxClose.addEventListener("click", closeLightbox);
 lightbox.addEventListener("click", (e) => {
   if (e.target === lightbox) closeLightbox();
 });
-lightboxDelete.addEventListener("click", async () => {
-  if (!lightboxPhoto) return;
+
+async function removePhoto(type, photo) {
   const ok = await askConfirm("Remove this photo?");
   if (!ok) return;
-  if (lightboxPhoto.type === "kid") await callApi("delete_reference_photo", { token, photo_id: lightboxPhoto.id });
-  else await callApi("delete_family_room_photo", { token, photo_id: lightboxPhoto.id });
-  closeLightbox();
+  if (type === "kid") await callApi("delete_reference_photo", { token, photo_id: photo.id });
+  else await callApi("delete_family_room_photo", { token, photo_id: photo.id });
   render(false);
-});
+}
 
 // --- Rendering ------------------------------------------------------------
 
@@ -313,7 +308,9 @@ function renderKidCard(data) {
     .join("");
 
   const photos = data.kid.photos || [];
-  const photoTiles = photos.map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${p.url}" alt="Tidy room example" /></div>`).join("");
+  const photoTiles = photos
+    .map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${p.url}" alt="Tidy room example" /><button type="button" class="removePhotoBtn" data-photo-id="${p.id}">✕</button></div>`)
+    .join("");
   const addTile = photos.length < MAX_PHOTOS ? `<button type="button" class="addPhotoTile">+</button>` : "";
 
   const card = document.createElement("div");
@@ -358,7 +355,11 @@ function renderKidCard(data) {
   card.querySelector(".removeBtn").addEventListener("click", () => removeKid(data.kid));
   card.querySelectorAll(".photoTile").forEach((tile) => {
     const photo = photos.find((p) => p.id === tile.dataset.photoId);
-    tile.querySelector("img").addEventListener("click", () => openLightbox("kid", photo));
+    tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
+    tile.querySelector(".removePhotoBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      removePhoto("kid", photo);
+    });
   });
   const addPhotoTile = card.querySelector(".addPhotoTile");
   if (addPhotoTile) addPhotoTile.addEventListener("click", () => startPhotoUpload("kid", data.kid.id));
@@ -520,7 +521,9 @@ function renderRoomCard(data) {
     .join("");
 
   const photos = room.photos || [];
-  const photoTiles = photos.map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${p.url}" alt="Tidy room example" /></div>`).join("");
+  const photoTiles = photos
+    .map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${p.url}" alt="Tidy room example" /><button type="button" class="removePhotoBtn" data-photo-id="${p.id}">✕</button></div>`)
+    .join("");
   const addPhotoTileHtml = photos.length < MAX_PHOTOS ? `<button type="button" class="addPhotoTile">+</button>` : "";
 
   const itemRows = room.items
@@ -565,7 +568,11 @@ function renderRoomCard(data) {
   `;
   card.querySelectorAll(".photoTile").forEach((tile) => {
     const photo = photos.find((p) => p.id === tile.dataset.photoId);
-    tile.querySelector("img").addEventListener("click", () => openLightbox("room", photo));
+    tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
+    tile.querySelector(".removePhotoBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      removePhoto("room", photo);
+    });
   });
   const addPhotoTile = card.querySelector(".addPhotoTile");
   if (addPhotoTile) addPhotoTile.addEventListener("click", () => startPhotoUpload("room", room.id));

@@ -214,7 +214,7 @@ footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size
 }
 
 /* Confirm modal */
-.confirmModal { position: fixed; inset: 0; background: rgba(43,43,43,0.55); display: grid; place-items: center; z-index: 260; padding: 20px; }
+.confirmModal { position: fixed; inset: 0; background: rgba(43,43,43,0.55); display: grid; place-items: center; z-index: 290; padding: 20px; }
 .confirmModal.hidden { display: none; }
 .confirmCard { background: #fff; border-radius: 22px; padding: 22px; max-width: 420px; box-shadow: var(--shadow); text-align: center; }
 .confirmCard p { font-size: 1.1rem; font-weight: 700; margin: 0 0 16px; }

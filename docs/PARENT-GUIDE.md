@@ -31,6 +31,19 @@ In the dashboard:
 - You can see everyone's progress any time from the parent dashboard.
 - If you've added a shared room (like the kitchen), it shows up as a second
   tab at the top of their app - any kid can open and help finish it.
+- **Reference photos**: either you or a kid can upload up to 3 "what done
+  looks like" photos per room, right in the app - a visual target for what
+  tidy should look like.
+  - **Tip:** don't have a photo of a properly tidy room handy? Take a photo
+    of the room as-is, put it into an AI image tool (e.g. ChatGPT, Gemini)
+    and ask it to "make this room look neat and tidy" - gives the kids a
+    realistic target photo of their actual room, not a stock photo.
+  - **Tip:** AI-generated images can come out large. If yours feels slow to
+    upload, shrink it first at [squoosh.app](https://squoosh.app) (drag the
+    photo in, drag the quality slider down until the file size looks
+    reasonable, download). Homelife also compresses photos automatically
+    when you upload them, so this is optional - just handy on a slow
+    connection.
 
 ## Optional
 - **Public leaderboard**: turn on "Share our stats" in Settings to appear on

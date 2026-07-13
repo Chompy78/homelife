@@ -86,6 +86,48 @@ footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size
   border-radius: 14px;
 }
 
+/* What Done Looks Like gallery */
+.photoCard h2 { margin: 0 0 4px; font-size: 1.2rem; }
+.photoHint { color: var(--muted); font-weight: 700; font-size: 0.9rem; margin: 0 0 12px; }
+.photoGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.photoTile, .addPhotoTile {
+  aspect-ratio: 1;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 2px solid var(--line);
+  position: relative;
+}
+.photoTile img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: pointer; }
+.addPhotoTile {
+  background: #fffdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  color: var(--muted);
+  cursor: pointer;
+  border-style: dashed;
+}
+.addPhotoTile:disabled { opacity: 0.4; cursor: not-allowed; }
+.photoError { color: var(--red); font-weight: 700; margin: 10px 0 0; }
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.88);
+  z-index: 280;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  gap: 16px;
+}
+.lightbox.hidden { display: none; }
+.lightbox img { max-width: 100%; max-height: 70vh; border-radius: 12px; }
+.lightboxClose { position: absolute; top: 16px; right: 16px; background: rgba(255,255,255,0.15); color: #fff; border: 0; border-radius: 50%; width: 44px; height: 44px; font-size: 1.2rem; }
+.lightboxDelete { background: var(--red); color: #fff; }
+
 /* Level / points card */
 .levelCard { display: flex; flex-direction: column; gap: 8px; }
 .levelHead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }

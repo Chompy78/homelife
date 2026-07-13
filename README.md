@@ -19,10 +19,13 @@ codes, and can optionally share their stats on a public leaderboard.
 
 Data lives in a dedicated Supabase project ("homelife", `ap-southeast-2`).
 Every family-data table (`families`, `kids`, `kid_checklist_state`,
-`kid_streaks`, `kid_progress_log`, `sessions`) has Row Level Security enabled
-with **zero policies** - meaning nothing is reachable through the public
-API key at all, from any family. The only thing that can read or write this
-data is the `family-api` Supabase Edge Function
+`kid_streaks`, `kid_progress_log`, `sessions`, `kid_reference_photos`) has
+Row Level Security enabled with **zero policies** - meaning nothing is
+reachable through the public API key at all, from any family. Reference
+photos live in a private Storage bucket (`reference-photos`) with the same
+"nobody but the edge function touches this" posture - every photo is served
+through a short-lived signed URL, never a public link. The only thing that
+can read or write any of this is the `family-api` Supabase Edge Function
 ([`supabase/functions/family-api`](supabase/functions/family-api)), which
 uses the service role key (server-side only) and enforces per-family and
 per-kid scoping in code, based on an opaque session token issued when a
@@ -43,6 +46,7 @@ Tables:
 - `kid_streaks` - current streak, best streak, total points, total passes, last Mum result
 - `kid_progress_log` - append-only history of resets and Mum checks, used by the parent dashboard and leaderboard
 - `sessions` - opaque tokens issued on code redemption, mapping a device to a family (and a kid, for kid sessions)
+- `kid_reference_photos` - metadata (storage path, who uploaded it) for each kid's up-to-3 "what done looks like" photos; the actual images live in the `reference-photos` Storage bucket
 
 ## Onboarding a new family
 

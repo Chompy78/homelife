@@ -25,6 +25,11 @@ const POINTS = {
   MUM_GREAT_JOB: 35,
 };
 
+const PHOTO_BUCKET = "reference-photos";
+const MAX_PHOTOS_PER_KID = 3;
+const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
+const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour, regenerated on every fetch
+
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L
 
 function randomCode(length: number) {
@@ -73,6 +78,29 @@ async function freshStreak(kidId: string) {
   return data;
 }
 
+async function getPhotosWithUrls(kidId: string) {
+  const { data: rows } = await db
+    .from("kid_reference_photos")
+    .select("id, storage_path, uploaded_by, created_at")
+    .eq("kid_id", kidId)
+    .order("created_at", { ascending: true });
+  if (!rows || rows.length === 0) return [];
+  const withUrls = await Promise.all(
+    rows.map(async (row) => {
+      const { data: signed } = await db.storage.from(PHOTO_BUCKET).createSignedUrl(row.storage_path, SIGNED_URL_TTL_SECONDS);
+      return { id: row.id, url: signed?.signedUrl || null, uploaded_by: row.uploaded_by };
+    })
+  );
+  return withUrls.filter((p) => p.url);
+}
+
+function base64ToBytes(base64: string) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return json({}, 200);
   if (req.method !== "POST") return json({ ok: false, error: "Use POST" }, 405);
@@ -116,12 +144,82 @@ Deno.serve(async (req) => {
       case "get_kid_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: items }, streak, { data: kid }] = await Promise.all([
+        const [{ data: items }, streak, { data: kid }, photos] = await Promise.all([
           db.from("kid_checklist_state").select("item_id, checked").eq("kid_id", session.kid_id),
           freshStreak(session.kid_id),
           db.from("kids").select("id, name, avatar_emoji").eq("id", session.kid_id).single(),
+          getPhotosWithUrls(session.kid_id),
         ]);
-        return json({ ok: true, data: { kid, items: items || [], streak: streak || {} } });
+        return json({ ok: true, data: { kid, items: items || [], streak: streak || {}, photos } });
+      }
+
+      case "upload_reference_photo": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        let kidId: string;
+        if (session.role === "kid") {
+          kidId = session.kid_id;
+        } else if (session.role === "parent") {
+          const targetKidId = String(body.kid_id || "");
+          const { data: kid } = await db.from("kids").select("id").eq("id", targetKidId).eq("family_id", session.family_id).maybeSingle();
+          if (!kid) return json({ ok: false, error: "not_found" }, 404);
+          kidId = kid.id;
+        } else {
+          return json({ ok: false, error: "session_expired" }, 401);
+        }
+
+        const { count } = await db.from("kid_reference_photos").select("id", { count: "exact", head: true }).eq("kid_id", kidId);
+        if ((count || 0) >= MAX_PHOTOS_PER_KID) {
+          return json({ ok: false, error: `max_photos_reached` }, 400);
+        }
+
+        const base64 = String(body.image_base64 || "");
+        if (!base64) return json({ ok: false, error: "image_required" }, 400);
+        let bytes: Uint8Array;
+        try {
+          bytes = base64ToBytes(base64);
+        } catch {
+          return json({ ok: false, error: "bad_image_data" }, 400);
+        }
+        if (bytes.byteLength > MAX_PHOTO_BYTES) return json({ ok: false, error: "image_too_large" }, 400);
+
+        const contentType = String(body.content_type || "image/jpeg");
+        const ext = contentType.includes("png") ? "png" : "jpg";
+        const path = `${kidId}/${crypto.randomUUID()}.${ext}`;
+
+        const { error: uploadError } = await db.storage.from(PHOTO_BUCKET).upload(path, bytes, { contentType, upsert: false });
+        if (uploadError) return json({ ok: false, error: "upload_failed" }, 500);
+
+        await db.from("kid_reference_photos").insert({
+          kid_id: kidId,
+          storage_path: path,
+          uploaded_by: session.role,
+        });
+
+        const photos = await getPhotosWithUrls(kidId);
+        return json({ ok: true, data: { photos } });
+      }
+
+      case "delete_reference_photo": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const photoId = String(body.photo_id || "");
+        const { data: photo } = await db.from("kid_reference_photos").select("id, kid_id, storage_path").eq("id", photoId).maybeSingle();
+        if (!photo) return json({ ok: false, error: "not_found" }, 404);
+
+        if (session.role === "kid") {
+          if (photo.kid_id !== session.kid_id) return json({ ok: false, error: "not_found" }, 404);
+        } else if (session.role === "parent") {
+          const { data: kid } = await db.from("kids").select("id").eq("id", photo.kid_id).eq("family_id", session.family_id).maybeSingle();
+          if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        } else {
+          return json({ ok: false, error: "session_expired" }, 401);
+        }
+
+        await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
+        await db.from("kid_reference_photos").delete().eq("id", photo.id);
+        const photos = await getPhotosWithUrls(photo.kid_id);
+        return json({ ok: true, data: { photos } });
       }
 
       case "update_checklist_item": {
@@ -290,16 +388,19 @@ Deno.serve(async (req) => {
         const { data: family } = await db.from("families").select("*").eq("id", session.family_id).single();
         const { data: kids } = await db.from("kids").select("*").eq("family_id", session.family_id).order("sort_order");
         const kidIds = (kids || []).map((k) => k.id);
-        const [{ data: streaks }, { data: states }, { data: logs }] = await Promise.all([
+        const [{ data: streaks }, { data: states }, { data: logs }, photosByKid] = await Promise.all([
           kidIds.length ? db.from("kid_streaks").select("*").in("kid_id", kidIds) : Promise.resolve({ data: [] }),
           kidIds.length ? db.from("kid_checklist_state").select("kid_id, checked").in("kid_id", kidIds) : Promise.resolve({ data: [] }),
           kidIds.length
             ? db.from("kid_progress_log").select("*").in("kid_id", kidIds).order("created_at", { ascending: false }).limit(60)
             : Promise.resolve({ data: [] }),
+          Promise.all(kidIds.map(async (id) => [id, await getPhotosWithUrls(id)] as const)),
         ]);
+        const photoMap = Object.fromEntries(photosByKid);
+        const kidsWithPhotos = (kids || []).map((k) => ({ ...k, photos: photoMap[k.id] || [] }));
         return json({
           ok: true,
-          data: { family, kids: kids || [], streaks: streaks || [], states: states || [], logs: logs || [], checklist_total: CHECKLIST_TOTAL },
+          data: { family, kids: kidsWithPhotos, streaks: streaks || [], states: states || [], logs: logs || [], checklist_total: CHECKLIST_TOTAL },
         });
       }
 

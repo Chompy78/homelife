@@ -15,6 +15,7 @@ one is isolated by its own codes.
 - `icons/icon-192.png` and `icons/icon-512.png` - install icons
 - `../shared/config.js` - checklist items, points/levels/badges rules, the backend URL
 - `../shared/api.js` - the fetch helper used to call the backend
+- `../shared/image.js` - resizes/compresses a photo in the browser before it's uploaded
 
 ## How the auto-login works
 
@@ -56,6 +57,17 @@ a fun title (`LEVELS` in `../shared/config.js`), and unlock badges for
 streaks and rooms cleaned (`BADGES`) - shown on a shelf under the level bar,
 greyed out until earned. Levels and badges are visible on both the kid's own
 app and the parent dashboard.
+
+## What Done Looks Like
+
+A kid (or a parent, from the dashboard) can upload up to 3 reference photos
+showing what a properly tidy room looks like - a visual target to aim for,
+shown right above the checklist. Photos are resized/compressed in the
+browser before upload (`../shared/image.js`) so it's fast even on a slow
+connection, then stored privately in Supabase Storage - the bucket isn't
+public, and every photo is served through a short-lived signed URL minted
+by the edge function, never a permanent public link. Tap a photo to view it
+full-size; from there it can be removed.
 
 ## Android tablet install
 

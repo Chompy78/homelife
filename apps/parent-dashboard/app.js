@@ -1,5 +1,6 @@
 import { BADGES, levelForPoints, earnedBadges } from "../shared/config.js";
 import { callApi } from "../shared/api.js";
+import { compressImage } from "../shared/image.js";
 
 const TOKEN_KEY = "homelife_parent_token";
 const REFRESH_INTERVAL_MS = 45000;
@@ -31,6 +32,16 @@ const confirmModal = document.getElementById("confirmModal");
 const confirmTextEl = document.getElementById("confirmText");
 const confirmYesBtn = document.getElementById("confirmYes");
 const confirmNoBtn = document.getElementById("confirmNo");
+
+const photoInput = document.getElementById("photoInput");
+const lightbox = document.getElementById("lightbox");
+const lightboxImg = document.getElementById("lightboxImg");
+const lightboxClose = document.getElementById("lightboxClose");
+const lightboxDelete = document.getElementById("lightboxDelete");
+
+const MAX_PHOTOS = 3;
+let photoUploadTargetKidId = null;
+let lightboxPhotoId = null;
 
 let token = null;
 let refreshTimer = null;
@@ -185,6 +196,52 @@ function copyKidLink(kid) {
   navigator.clipboard?.writeText(url).catch(() => {});
 }
 
+// --- Reference photos --------------------------------------------------
+
+function startPhotoUpload(kidId) {
+  photoUploadTargetKidId = kidId;
+  photoInput.click();
+}
+
+photoInput.addEventListener("change", async () => {
+  const file = photoInput.files[0];
+  const kidId = photoUploadTargetKidId;
+  photoInput.value = "";
+  photoUploadTargetKidId = null;
+  if (!file || !kidId) return;
+  try {
+    const { base64, contentType } = await compressImage(file);
+    const res = await callApi("upload_reference_photo", { token, kid_id: kidId, image_base64: base64, content_type: contentType });
+    if (res.ok) render(false);
+    else alert(res.error === "max_photos_reached" ? "That kid already has 3 photos - remove one first." : "Couldn't upload that photo.");
+  } catch (err) {
+    alert("Couldn't read that photo. Try a different one.");
+  }
+});
+
+function openLightbox(photo) {
+  if (!photo) return;
+  lightboxPhotoId = photo.id;
+  lightboxImg.src = photo.url;
+  lightbox.classList.remove("hidden");
+}
+function closeLightbox() {
+  lightbox.classList.add("hidden");
+  lightboxPhotoId = null;
+}
+lightboxClose.addEventListener("click", closeLightbox);
+lightbox.addEventListener("click", (e) => {
+  if (e.target === lightbox) closeLightbox();
+});
+lightboxDelete.addEventListener("click", async () => {
+  if (!lightboxPhotoId) return;
+  const ok = await askConfirm("Remove this photo?");
+  if (!ok) return;
+  await callApi("delete_reference_photo", { token, photo_id: lightboxPhotoId });
+  closeLightbox();
+  render(false);
+});
+
 // --- Rendering ------------------------------------------------------------
 
 function buildKidView(family, kid, streaks, states, logs, checklistTotal) {
@@ -237,6 +294,10 @@ function renderKidCard(data) {
     )
     .join("");
 
+  const photos = data.kid.photos || [];
+  const photoTiles = photos.map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${p.url}" alt="Tidy room example" /></div>`).join("");
+  const addTile = photos.length < MAX_PHOTOS ? `<button type="button" class="addPhotoTile">+</button>` : "";
+
   const card = document.createElement("div");
   card.className = "kidCard";
   card.innerHTML = `
@@ -252,6 +313,10 @@ function renderKidCard(data) {
     <div class="mumResult">${data.mumResult}</div>
     <div class="weekRow">${week}</div>
     <div class="badgeMiniShelf">${badgeRow}</div>
+    <div class="kidPhotos">
+      <div class="kidPhotosLabel">What Done Looks Like</div>
+      <div class="photoGrid">${photoTiles}${addTile}</div>
+    </div>
     <div class="history">
       <div class="historyTitle">Recent activity</div>
       ${historyRows || '<div class="historyRow"><span>No activity yet</span></div>'}
@@ -273,6 +338,12 @@ function renderKidCard(data) {
   card.querySelector(".renameBtn").addEventListener("click", () => renameKid(data.kid));
   card.querySelector(".regenBtn").addEventListener("click", () => regenerateCode(data.kid));
   card.querySelector(".removeBtn").addEventListener("click", () => removeKid(data.kid));
+  card.querySelectorAll(".photoTile").forEach((tile) => {
+    const photo = photos.find((p) => p.id === tile.dataset.photoId);
+    tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
+  });
+  const addPhotoTile = card.querySelector(".addPhotoTile");
+  if (addPhotoTile) addPhotoTile.addEventListener("click", () => startPhotoUpload(data.kid.id));
   return card;
 }
 

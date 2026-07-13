@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#5b8def" />
+  <meta name="description" content="A simple bedroom reset checklist for kids." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Bedroom Reset</title>
+</head>
+<body>
+  <div class="kidPicker" id="kidPicker">
+    <div class="kidPickerCard">
+      <h1>Who's checking their room?</h1>
+      <p>Tap your name. This tablet will remember you.</p>
+      <div class="kidGrid" id="kidGrid"></div>
+    </div>
+  </div>
+  <script>
+    if (localStorage.getItem('homelife_kid_id')) {
+      document.getElementById('kidPicker').classList.add('hidden');
+    }
+  </script>
+
+  <main class="app">
+    <header>
+      <h1>Bedroom Reset</h1>
+      <p class="subtitle">Tap each box when it is properly done. Hidden, shoved or stuffed does not count.</p>
+      <p class="kidTag">For <span id="kidName">…</span> · <a href="#" id="switchKidLink">not you? switch</a></p>
+    </header>
+
+    <section class="gridTop">
+      <div class="card pieWrap" aria-live="polite">
+        <div class="pie" id="pie"><div class="pieInner" id="percentText">0%</div></div>
+        <div>
+          <div class="progressTitle">Room Score</div>
+          <div class="progressSub"><span id="doneCount">0</span>/<span id="totalCount">0</span> jobs done</div>
+        </div>
+      </div>
+      <div class="card streakBox">
+        <div class="flame">🔥</div>
+        <div>
+          <div class="streakNo" id="streakCount">0</div>
+          <div class="streakLabel">day streak after Mum passes the room</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="buttons">
+        <button class="modeBtn" id="modeBtn" type="button">One Thing At A Time: OFF</button>
+        <button class="resetBtn" id="resetBtn" type="button">Big Reset / New Day</button>
+      </div>
+      <div class="installHint" id="installHint">Install tip: open this site in Chrome or Edge and choose Install app / Add to Home screen.</div>
+    </section>
+
+    <section class="goldenRule">
+      <strong>Golden Rule</strong>
+      Everything has a home. If it is shoved, stuffed, hidden or piled up, it is not put away yet.
+    </section>
+
+    <section class="focusCard hidden" id="focusCard">
+      <div class="focusLabel">Current job</div>
+      <div class="focusTask" id="focusTask">Start with clothes.</div>
+      <div class="focusHint" id="focusHint">Do this one thing, then tap done.</div>
+      <button class="doneBtn" id="focusDoneBtn" type="button">Done</button>
+    </section>
+
+    <div id="checklist"></div>
+
+    <section class="card mumCard">
+      <h2>Mum Check</h2>
+      <div class="buttons">
+        <button class="passBtn" id="passBtn" type="button">✅ Pass</button>
+        <button class="tryBtn" id="tryBtn" type="button">🔁 Try Again</button>
+        <button class="starBtn" id="starBtn" type="button">⭐ Great Job</button>
+      </div>
+      <div class="mumResult" id="mumResult">No Mum check yet today.</div>
+    </section>
+    <footer>Use Big Reset at the start of a new day. Progress syncs automatically when online.</footer>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+:root {
+  --bg: #f7f3ea;
+  --card: #ffffff;
+  --ink: #2b2b2b;
+  --muted: #6f6a60;
+  --blue: #5b8def;
+  --green: #22a65a;
+  --orange: #f28c38;
+  --red: #d94b4b;
+  --line: #e4ded3;
+  --shadow: 0 6px 20px rgba(0,0,0,0.08);
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  padding: 16px;
+}
+.app { max-width: 900px; margin: 0 auto; }
+header {
+  background: linear-gradient(135deg, #5b8def, #7eb77f);
+  color: white;
+  border-radius: 24px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+  margin-bottom: 18px;
+}
+h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
+.subtitle { margin: 0; font-size: 1rem; opacity: 0.95; }
+.loading { color: var(--muted); font-weight: 700; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.kidCard { background: var(--card); border-radius: 22px; padding: 18px; box-shadow: var(--shadow); border: 1px solid var(--line); }
+.kidCardHead { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.kidCardAvatar { font-size: 2.4rem; }
+.kidCardName { font-weight: 900; font-size: 1.3rem; }
+.statRow { display: flex; justify-content: space-between; margin: 6px 0; font-weight: 700; }
+.statRow .value { color: var(--ink); }
+.pct { font-weight: 900; }
+.pct.high { color: var(--green); }
+.pct.mid { color: var(--orange); }
+.pct.low { color: var(--red); }
+.mumResult { margin-top: 10px; font-weight: 700; color: var(--muted); font-size: 0.95rem; }
+.history { margin-top: 12px; }
+.historyTitle { font-weight: 900; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 6px; }
+.historyRow { display: flex; justify-content: space-between; font-size: 0.9rem; padding: 4px 0; border-top: 1px solid var(--line); color: var(--muted); }
+.historyRow .who { color: var(--ink); font-weight: 700; }
+.error { color: var(--red); font-weight: 700; }

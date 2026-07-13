@@ -87,8 +87,8 @@ label.item { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-it
 label.item.checked { background: var(--done); border-color: #a8d8ae; }
 input[type="checkbox"] { width: 32px; height: 32px; accent-color: var(--green); }
 .itemText.done { text-decoration: line-through; color: var(--muted); }
-.mumCard { margin-top: 16px; }
-.mumResult { margin-top: 12px; font-weight: 900; font-size: 1.08rem; color: var(--muted); }
+.parentCheckCard { margin-top: 16px; }
+.parentResult { margin-top: 12px; font-weight: 900; font-size: 1.08rem; color: var(--muted); }
 .installHint { font-size: 0.95rem; color: var(--muted); margin-top: 8px; font-weight: 700; }
 .pinHint { margin: 8px 2px 0; font-size: 0.85rem; color: var(--muted); font-weight: 700; }
 footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size: 0.9rem; }
@@ -223,7 +223,7 @@ footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size
 .confirmYes { background: var(--red); color: #fff; }
 .confirmNo { background: #efeadf; color: var(--ink); }
 
-/* Mum PIN modal */
+/* Parent PIN modal */
 .pinModal { position: fixed; inset: 0; background: rgba(43,43,43,0.65); display: grid; place-items: center; z-index: 270; padding: 20px; }
 .pinModal.hidden { display: none; }
 .pinCard { background: #fff; border-radius: 24px; padding: 24px; max-width: 360px; width: 100%; box-shadow: var(--shadow); text-align: center; }

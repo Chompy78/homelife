@@ -79,9 +79,9 @@ confirmNoBtn.addEventListener("click", () => {
 });
 
 const EVENT_LABELS = {
-  mum_pass: "✅ Passed by Mum",
-  mum_star: "⭐ Great job from Mum",
-  mum_try_again: "🔁 Try again",
+  parent_pass: "✅ Passed by a parent",
+  parent_star: "⭐ Great job from a parent",
+  parent_try_again: "🔁 Try again",
   reset: "🔄 Big reset",
 };
 
@@ -150,7 +150,7 @@ function enterApp() {
 saveSettingsBtn.addEventListener("click", async () => {
   const patch = {};
   if (displayNameInput.value.trim()) patch.display_name = displayNameInput.value.trim();
-  if (/^\d{4}$/.test(pinInput.value.trim())) patch.mum_pin = pinInput.value.trim();
+  if (/^\d{4}$/.test(pinInput.value.trim())) patch.parent_pin = pinInput.value.trim();
   patch.icon = familyIconInput.value;
   patch.is_public = publicToggle.checked;
   saveSettingsBtn.disabled = true;
@@ -272,7 +272,7 @@ function buildKidView(family, kid, streaks, states, logs, checklistTotal) {
   const history = kidLogs.slice(0, 5);
   const since = last7Dates()[0].iso;
   const passedDates = new Set(
-    kidLogs.filter((l) => ["mum_pass", "mum_star"].includes(l.event_type) && l.log_date >= since).map((l) => l.log_date)
+    kidLogs.filter((l) => ["parent_pass", "parent_star"].includes(l.event_type) && l.log_date >= since).map((l) => l.log_date)
   );
   return {
     kid,
@@ -283,7 +283,7 @@ function buildKidView(family, kid, streaks, states, logs, checklistTotal) {
     bestStreak: streak.best_streak || 0,
     totalPoints: streak.total_points || 0,
     totalPasses: streak.total_passes || 0,
-    mumResult: streak.mum_result || "No Mum check yet today.",
+    parentResult: streak.parent_result || "No parent check yet today.",
     history,
     passedDates,
   };
@@ -328,7 +328,7 @@ function renderKidCard(data) {
     </div>
     <div class="statRow"><span>Today</span><span class="value pct ${pctClass(data.percent)}">${data.done}/${data.total} (${data.percent}%)</span></div>
     <div class="statRow"><span>Streak</span><span class="value">🔥 ${data.streak} day${data.streak === 1 ? "" : "s"} (best ${data.bestStreak})</span></div>
-    <div class="mumResult">${data.mumResult}</div>
+    <div class="parentResult">${data.parentResult}</div>
     <div class="weekRow">${week}</div>
     <div class="badgeMiniShelf">${badgeRow}</div>
     <div class="kidPhotos">
@@ -478,7 +478,7 @@ function buildRoomView(room) {
   const history = room.logs.slice(0, 5);
   const since = last7Dates()[0].iso;
   const passedDates = new Set(
-    room.logs.filter((l) => ["mum_pass", "mum_star"].includes(l.event_type) && l.log_date >= since).map((l) => l.log_date)
+    room.logs.filter((l) => ["parent_pass", "parent_star"].includes(l.event_type) && l.log_date >= since).map((l) => l.log_date)
   );
   return {
     room,
@@ -489,7 +489,7 @@ function buildRoomView(room) {
     bestStreak: room.progress.best_streak || 0,
     totalPoints: room.progress.total_points || 0,
     totalPasses: room.progress.total_passes || 0,
-    mumResult: room.progress.mum_result || "No Mum check yet today.",
+    parentResult: room.progress.parent_result || "No parent check yet today.",
     history,
     passedDates,
   };
@@ -539,7 +539,7 @@ function renderRoomCard(data) {
     </div>
     <div class="statRow"><span>Today</span><span class="value pct ${pctClass(data.percent)}">${data.done}/${data.total} (${data.percent}%)</span></div>
     <div class="statRow"><span>Streak</span><span class="value">🔥 ${data.streak} day${data.streak === 1 ? "" : "s"} (best ${data.bestStreak})</span></div>
-    <div class="mumResult">${data.mumResult}</div>
+    <div class="parentResult">${data.parentResult}</div>
     <div class="weekRow">${week}</div>
     <div class="badgeMiniShelf">${badgeRow}</div>
     <div class="kidPhotos">
@@ -599,7 +599,7 @@ async function render(showLoading) {
   const editingSettings = [displayNameInput, pinInput, familyIconInput].includes(document.activeElement);
   if (!editingSettings) {
     displayNameInput.value = family.display_name;
-    pinInput.value = family.mum_pin;
+    pinInput.value = family.parent_pin;
     familyIconInput.value = family.icon || "🏠";
     publicToggle.checked = family.is_public;
   }

@@ -9,7 +9,7 @@ repo back up cold can implement it without re-deriving the design.
 **Idea:** after a kid finishes a room, they take a photo, it gets scored by
 the user's self-hosted AI (Home Assistant + Ollama, on their home network),
 and the score/comment shows up next to the photo - informational only, a
-complement to Mum Check, not a replacement for it (the PIN check stays the
+complement to Parent Check, not a replacement for it (the PIN check stays the
 source of truth for whether a room "counts").
 
 **Status: not started.** Blocked on the user's home AI setup being ready.
@@ -59,7 +59,7 @@ Each run:
 
 **Display:** score + comment shown as a badge/note near the submitted
 photo in the kid app and parent dashboard. Explicitly framed as fun
-feedback, not a gate - Mum Check (PIN-confirmed, server-side) remains the
+feedback, not a gate - Parent Check (PIN-confirmed, server-side) remains the
 only thing that actually marks a room passed.
 
 ### What building this involves

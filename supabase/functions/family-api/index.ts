@@ -24,8 +24,8 @@ const db = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 const POINTS = {
   ITEM_CHECK: 2,
   DAY_COMPLETE_BONUS: 10,
-  MUM_PASS: 20,
-  MUM_GREAT_JOB: 35,
+  PARENT_PASS: 20,
+  PARENT_GREAT_JOB: 35,
 };
 
 const PHOTO_BUCKET = "reference-photos";
@@ -387,32 +387,32 @@ Deno.serve(async (req) => {
         return json({ ok: true, data: { points_awarded: pointsAwarded, completion_bonus: completionBonus, streak } });
       }
 
-      case "mum_check": {
+      case "parent_check": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
         const eventType = String(body.event_type || "");
-        if (!["mum_pass", "mum_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
+        if (!["parent_pass", "parent_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
 
-        const { data: family } = await db.from("families").select("mum_pin").eq("id", session.family_id).single();
-        if (String(body.pin || "") !== family?.mum_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
+        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
 
         const streakRow = await freshStreak(session.kid_id);
         const today = todayStr();
         const yesterday = yesterdayStr();
-        const emoji = eventType === "mum_star" ? "⭐" : "✅";
-        const label = eventType === "mum_star" ? "Great job from Mum!" : "Passed by Mum!";
-        const points = eventType === "mum_star" ? POINTS.MUM_GREAT_JOB : POINTS.MUM_PASS;
+        const emoji = eventType === "parent_star" ? "⭐" : "✅";
+        const label = eventType === "parent_star" ? "Great job from a parent!" : "Passed by a parent!";
+        const points = eventType === "parent_star" ? POINTS.PARENT_GREAT_JOB : POINTS.PARENT_PASS;
 
         let current = streakRow?.current_streak || 0;
         let best = streakRow?.best_streak || 0;
         let totalPoints = streakRow?.total_points || 0;
         let totalPasses = streakRow?.total_passes || 0;
         let lastPassDate = streakRow?.last_pass_date ?? null;
-        let mumResult: string;
+        let parentResult: string;
         let awarded = 0;
 
         if (lastPassDate === today) {
-          mumResult = `${emoji} ${label} Already counted for today.`;
+          parentResult = `${emoji} ${label} Already counted for today.`;
         } else {
           current = lastPassDate === yesterday ? current + 1 : 1;
           best = Math.max(best, current);
@@ -420,7 +420,7 @@ Deno.serve(async (req) => {
           awarded = points;
           totalPoints += points;
           lastPassDate = today;
-          mumResult = `${emoji} ${label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
+          parentResult = `${emoji} ${label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
         }
 
         await db.from("kid_streaks").upsert({
@@ -428,7 +428,7 @@ Deno.serve(async (req) => {
           current_streak: current,
           best_streak: best,
           last_pass_date: lastPassDate,
-          mum_result: mumResult,
+          parent_result: parentResult,
           total_points: totalPoints,
           total_passes: totalPasses,
           updated_at: new Date().toISOString(),
@@ -441,7 +441,7 @@ Deno.serve(async (req) => {
           items_total: total,
           percent_complete: total ? Math.round((done / total) * 100) : 0,
           event_type: eventType,
-          mum_result: mumResult,
+          parent_result: parentResult,
           streak_at_time: current,
         });
 
@@ -449,19 +449,19 @@ Deno.serve(async (req) => {
         return json({ ok: true, data: { awarded_points: awarded, streak } });
       }
 
-      case "mum_try_again": {
+      case "parent_try_again": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
-        const mumResult = "🔁 Try again. Fix the missed jobs, then ask Mum to check again.";
-        await db.from("kid_streaks").upsert({ kid_id: session.kid_id, mum_result: mumResult, updated_at: new Date().toISOString() });
+        const parentResult = "🔁 Try again. Fix the missed jobs, then ask a parent to check again.";
+        await db.from("kid_streaks").upsert({ kid_id: session.kid_id, parent_result: parentResult, updated_at: new Date().toISOString() });
         const { done, total } = await bedroomProgressCounts(session.family_id, session.kid_id);
         await db.from("kid_progress_log").insert({
           kid_id: session.kid_id,
           items_done: done,
           items_total: total,
           percent_complete: total ? Math.round((done / total) * 100) : 0,
-          event_type: "mum_try_again",
-          mum_result: mumResult,
+          event_type: "parent_try_again",
+          parent_result: parentResult,
           streak_at_time: (await freshStreak(session.kid_id))?.current_streak || 0,
         });
         const streak = await freshStreak(session.kid_id);
@@ -480,14 +480,14 @@ Deno.serve(async (req) => {
           items_total: total,
           percent_complete: total ? Math.round((done / total) * 100) : 0,
           event_type: "reset",
-          mum_result: streakRow?.mum_result ?? null,
+          parent_result: streakRow?.parent_result ?? null,
           streak_at_time: streakRow?.current_streak || 0,
         });
 
         await db.from("kid_checklist_state").update({ checked: false, updated_at: new Date().toISOString() }).eq("kid_id", session.kid_id);
         await db.from("kid_streaks").upsert({
           kid_id: session.kid_id,
-          mum_result: "No Mum check yet today.",
+          parent_result: "No parent check yet today.",
           last_bonus_date: null,
           updated_at: new Date().toISOString(),
         });
@@ -542,7 +542,7 @@ Deno.serve(async (req) => {
         const patch: Record<string, unknown> = {};
         if (typeof body.display_name === "string" && body.display_name.trim()) patch.display_name = body.display_name.trim().slice(0, 60);
         if (typeof body.is_public === "boolean") patch.is_public = body.is_public;
-        if (typeof body.mum_pin === "string" && /^\d{4}$/.test(body.mum_pin)) patch.mum_pin = body.mum_pin;
+        if (typeof body.parent_pin === "string" && /^\d{4}$/.test(body.parent_pin)) patch.parent_pin = body.parent_pin;
         if (typeof body.icon === "string" && body.icon.trim()) patch.icon = body.icon.trim().slice(0, 8);
         if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
         await db.from("families").update(patch).eq("id", session.family_id);
@@ -803,34 +803,34 @@ Deno.serve(async (req) => {
         return json({ ok: true, data: { points_awarded: pointsAwarded, completion_bonus: completionBonus, progress, room_total: roomTotal, done_count: doneCount } });
       }
 
-      case "family_room_mum_check": {
+      case "family_room_parent_check": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
         const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
         if (!room) return json({ ok: false, error: "not_found" }, 404);
         const eventType = String(body.event_type || "");
-        if (!["mum_pass", "mum_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
+        if (!["parent_pass", "parent_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
 
-        const { data: family } = await db.from("families").select("mum_pin").eq("id", session.family_id).single();
-        if (String(body.pin || "") !== family?.mum_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
+        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
 
         const progressRow = await freshRoomProgress(room.id);
         const today = todayStr();
         const yesterday = yesterdayStr();
-        const emoji = eventType === "mum_star" ? "⭐" : "✅";
-        const label = eventType === "mum_star" ? "Great job from Mum!" : "Passed by Mum!";
-        const points = eventType === "mum_star" ? POINTS.MUM_GREAT_JOB : POINTS.MUM_PASS;
+        const emoji = eventType === "parent_star" ? "⭐" : "✅";
+        const label = eventType === "parent_star" ? "Great job from a parent!" : "Passed by a parent!";
+        const points = eventType === "parent_star" ? POINTS.PARENT_GREAT_JOB : POINTS.PARENT_PASS;
 
         let current = progressRow?.current_streak || 0;
         let best = progressRow?.best_streak || 0;
         let totalPoints = progressRow?.total_points || 0;
         let totalPasses = progressRow?.total_passes || 0;
         let lastPassDate = progressRow?.last_pass_date ?? null;
-        let mumResult: string;
+        let parentResult: string;
         let awarded = 0;
 
         if (lastPassDate === today) {
-          mumResult = `${emoji} ${label} Already counted for today.`;
+          parentResult = `${emoji} ${label} Already counted for today.`;
         } else {
           current = lastPassDate === yesterday ? current + 1 : 1;
           best = Math.max(best, current);
@@ -838,7 +838,7 @@ Deno.serve(async (req) => {
           awarded = points;
           totalPoints += points;
           lastPassDate = today;
-          mumResult = `${emoji} ${label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
+          parentResult = `${emoji} ${label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
         }
 
         await db.from("family_room_progress").upsert({
@@ -846,7 +846,7 @@ Deno.serve(async (req) => {
           current_streak: current,
           best_streak: best,
           last_pass_date: lastPassDate,
-          mum_result: mumResult,
+          parent_result: parentResult,
           total_points: totalPoints,
           total_passes: totalPasses,
           updated_at: new Date().toISOString(),
@@ -866,7 +866,7 @@ Deno.serve(async (req) => {
           items_total: roomTotal,
           percent_complete: roomTotal ? Math.round((done / roomTotal) * 100) : 0,
           event_type: eventType,
-          mum_result: mumResult,
+          parent_result: parentResult,
           streak_at_time: current,
         });
 
@@ -879,8 +879,8 @@ Deno.serve(async (req) => {
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
         const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
         if (!room) return json({ ok: false, error: "not_found" }, 404);
-        const mumResult = "🔁 Try again. Fix the missed jobs, then ask Mum to check again.";
-        await db.from("family_room_progress").upsert({ room_id: room.id, mum_result: mumResult, updated_at: new Date().toISOString() });
+        const parentResult = "🔁 Try again. Fix the missed jobs, then ask a parent to check again.";
+        await db.from("family_room_progress").upsert({ room_id: room.id, parent_result: parentResult, updated_at: new Date().toISOString() });
         const progress = await freshRoomProgress(room.id);
         return json({ ok: true, data: { progress } });
       }
@@ -905,7 +905,7 @@ Deno.serve(async (req) => {
           items_total: roomTotal,
           percent_complete: roomTotal ? Math.round((done / roomTotal) * 100) : 0,
           event_type: "reset",
-          mum_result: progressRow?.mum_result ?? null,
+          parent_result: progressRow?.parent_result ?? null,
           streak_at_time: progressRow?.current_streak || 0,
         });
 
@@ -914,7 +914,7 @@ Deno.serve(async (req) => {
         }
         await db.from("family_room_progress").upsert({
           room_id: room.id,
-          mum_result: "No Mum check yet today.",
+          parent_result: "No parent check yet today.",
           last_bonus_date: null,
           updated_at: new Date().toISOString(),
         });

@@ -33,7 +33,7 @@ const focusDoneBtn = document.getElementById("focusDoneBtn");
 const passBtn = document.getElementById("passBtn");
 const tryBtn = document.getElementById("tryBtn");
 const starBtn = document.getElementById("starBtn");
-const mumResult = document.getElementById("mumResult");
+const parentResult = document.getElementById("parentResult");
 const syncStatusEl = document.getElementById("syncStatus");
 const levelTitleEl = document.getElementById("levelTitle");
 const levelPointsEl = document.getElementById("levelPoints");
@@ -74,7 +74,7 @@ let oneThingMode = false;
 let token = null;
 let lastSyncOk = null;
 let lastKnownLevel = 1;
-let streakState = { current_streak: 0, best_streak: 0, total_points: 0, total_passes: 0, mum_result: "No Mum check yet today." };
+let streakState = { current_streak: 0, best_streak: 0, total_points: 0, total_passes: 0, parent_result: "No parent check yet today." };
 
 // A kid always has their own bedroom (type "bedroom"), plus zero or more
 // shared family rooms (type "shared") fetched at login. Everything below is
@@ -99,14 +99,14 @@ function updateRoomItem(itemId, checked) {
     ? callApi("update_checklist_item", { token, item_id: itemId, checked })
     : callApi("update_family_room_item", { token, room_id: activeRoom.id, item_id: itemId, checked });
 }
-function roomMumCheck(eventType, pin) {
+function roomParentCheck(eventType, pin) {
   return activeRoom.type === "bedroom"
-    ? callApi("mum_check", { token, event_type: eventType, pin })
-    : callApi("family_room_mum_check", { token, room_id: activeRoom.id, event_type: eventType, pin });
+    ? callApi("parent_check", { token, event_type: eventType, pin })
+    : callApi("family_room_parent_check", { token, room_id: activeRoom.id, event_type: eventType, pin });
 }
 function roomTryAgain() {
   return activeRoom.type === "bedroom"
-    ? callApi("mum_try_again", { token })
+    ? callApi("parent_try_again", { token })
     : callApi("family_room_try_again", { token, room_id: activeRoom.id });
 }
 function roomResetDay() {
@@ -261,7 +261,7 @@ function saveLocalChecklist() {
 
 function loadLocalStreakCache() {
   const cached = JSON.parse(localStorage.getItem(roomStorageKey(STREAK_CACHE_KEY_PREFIX)) || "null");
-  streakState = cached || { current_streak: 0, best_streak: 0, total_points: 0, total_passes: 0, mum_result: "No Mum check yet today." };
+  streakState = cached || { current_streak: 0, best_streak: 0, total_points: 0, total_passes: 0, parent_result: "No parent check yet today." };
   lastKnownLevel = levelForPoints(streakState.total_points || 0).level;
 }
 
@@ -537,7 +537,7 @@ confirmNoBtn.addEventListener("click", () => {
   confirmResolve = null;
 });
 
-// --- Mum PIN modal ---------------------------------------------------------
+// --- Parent PIN modal ---------------------------------------------------------
 
 let pinEntry = "";
 let pinResolve = null;
@@ -601,7 +601,7 @@ async function submitPin() {
   }
 }
 
-function requestMumPin(title, checkFn) {
+function requestParentPin(title, checkFn) {
   pinTitleEl.textContent = title;
   pinEntry = "";
   updatePinDots();
@@ -639,7 +639,7 @@ function updateProgress() {
   percentText.textContent = `${percent}%`;
   pie.style.background = `conic-gradient(var(--green) ${degrees}deg, #efeadf ${degrees}deg)`;
   streakCount.textContent = streakState.current_streak || 0;
-  mumResult.textContent = streakState.mum_result || "No Mum check yet today.";
+  parentResult.textContent = streakState.parent_result || "No parent check yet today.";
 }
 
 function updateFocus() {
@@ -655,7 +655,7 @@ function updateFocus() {
   const next = boxes.find((b) => !b.checked);
   if (!next) {
     focusTask.textContent = "All jobs are done.";
-    focusHint.textContent = "Ask Mum for the final room check.";
+    focusHint.textContent = "Ask a parent for the final room check.";
     focusDoneBtn.classList.add("hidden");
     return;
   }
@@ -702,11 +702,11 @@ resetBtn.addEventListener("click", async () => {
 });
 
 passBtn.addEventListener("click", () => {
-  requestMumPin("Mum Check - Pass", async (pin) => {
-    const res = await roomMumCheck("mum_pass", pin);
+  requestParentPin("Parent Check - Pass", async (pin) => {
+    const res = await roomParentCheck("parent_pass", pin);
     if (res.ok) {
       applyStreak(progressOf(res.data));
-      if (res.data.awarded_points > 0) showToast("✅", `Passed by Mum! +${res.data.awarded_points} points`);
+      if (res.data.awarded_points > 0) showToast("✅", `Passed by a parent! ++${res.data.awarded_points} points`);
       updateEverything();
       return { ok: true };
     }
@@ -716,11 +716,11 @@ passBtn.addEventListener("click", () => {
 });
 
 starBtn.addEventListener("click", () => {
-  requestMumPin("Mum Check - Great Job", async (pin) => {
-    const res = await roomMumCheck("mum_star", pin);
+  requestParentPin("Parent Check - Great Job", async (pin) => {
+    const res = await roomParentCheck("parent_star", pin);
     if (res.ok) {
       applyStreak(progressOf(res.data));
-      if (res.data.awarded_points > 0) showToast("⭐", `Great job from Mum! +${res.data.awarded_points} points`);
+      if (res.data.awarded_points > 0) showToast("⭐", `Great job from a parent! ++${res.data.awarded_points} points`);
       updateEverything();
       return { ok: true };
     }

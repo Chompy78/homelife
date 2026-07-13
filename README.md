@@ -6,13 +6,13 @@ codes, and can optionally share their stats on a public leaderboard.
 
 ## Apps
 
-- [`apps/bedroom-reset`](apps/bedroom-reset) - kids' bedroom checklist PWA. A kid enters their code once (a parent gives it to them), then the tablet remembers them. PIN-gated Mum Check, streaks, points/levels/badges. A room switcher at the top also gives access to the family's shared rooms (kitchen, etc.) - any kid can open and help finish one.
-- [`apps/parent-dashboard`](apps/parent-dashboard) - a parent enters their family's parent code once, then can see every kid's progress, manage kids (add/rename/remove, get their codes), add/remove shared rooms and edit their checklist items, change the family's Mum PIN, and opt in to the public leaderboard.
+- [`apps/bedroom-reset`](apps/bedroom-reset) - kids' bedroom checklist PWA. A kid enters their code once (a parent gives it to them), then the tablet remembers them. PIN-gated Parent Check, streaks, points/levels/badges. A room switcher at the top also gives access to the family's shared rooms (kitchen, etc.) - any kid can open and help finish one.
+- [`apps/parent-dashboard`](apps/parent-dashboard) - a parent enters their family's parent code once, then can see every kid's progress, manage kids (add/rename/remove, get their codes), add/remove shared rooms and edit their checklist items, change the family's confirmation PIN, and opt in to the public leaderboard.
 - [`apps/leaderboard`](apps/leaderboard) - public, no code needed. Shows aggregate stats (total points, best streak, rooms passed) for families that have opted in. Never shows individual kids' names or checklist details, even for opted-in families.
 
 ## Shared
 
-- [`apps/shared/config.js`](apps/shared/config.js) - the family-api URL, the shared checklist item definitions, and the points/levels/badges rules. No family or kid identity lives here anymore.
+- [`apps/shared/config.js`](apps/shared/config.js) - the family-api URL and the levels/badges rules. No family or kid identity, checklist items, or point values live here anymore - those come from the backend so every family can customize them.
 - [`apps/shared/api.js`](apps/shared/api.js) - a small `callApi(action, payload)` helper every app uses to talk to the backend, with a hard timeout so a bad connection fails fast instead of hanging.
 
 ## Backend
@@ -40,12 +40,12 @@ is comparing families against each other.
 
 Tables:
 
-- `families` - name, public display name, parent_code, mum_pin, icon, is_public (leaderboard opt-in)
+- `families` - name, public display name, parent_code, parent_pin, icon, is_public (leaderboard opt-in)
 - `kids` - name, avatar, kid_code, belongs to a family
 - `family_bedroom_items` - the family's own bedroom checklist (category + label per item), fully editable by a parent from the dashboard. Seeded with a 17-item default checklist automatically when a family is created (a database trigger, so it works even though families themselves are created by raw SQL - see "Onboarding a new family" below); a kid's checklist total is however many items their family currently has, not a fixed number
 - `kid_checklist_state` - today's checkbox state per kid (bedroom only - personal), keyed against the family's current `family_bedroom_items`
-- `kid_streaks` - current streak, best streak, total points, total passes, last Mum result (bedroom only)
-- `kid_progress_log` - append-only history of resets and Mum checks, used by the parent dashboard and leaderboard
+- `kid_streaks` - current streak, best streak, total points, total passes, last parent-check result (bedroom only)
+- `kid_progress_log` - append-only history of resets and parent checks, used by the parent dashboard and leaderboard
 - `sessions` - opaque tokens issued on code redemption, mapping a device to a family (and a kid, for kid sessions)
 - `kid_reference_photos` - metadata for each kid's up-to-3 "what done looks like" bedroom photos
 - `family_rooms` / `family_room_items` - shared rooms (kitchen, etc.) belonging to a family, not one kid, and their checklist items - both fully editable by a parent from the dashboard
@@ -60,7 +60,7 @@ control who's on the platform. To add one, run this in the Supabase SQL
 editor (or ask Claude to run it), then send the parent their `parent_code`:
 
 ```sql
-insert into families (name, display_name, parent_code, mum_pin)
+insert into families (name, display_name, parent_code, parent_pin)
 values ('The Smiths', 'The Smiths', '<generate an 8-char code>', '<a 4-digit PIN of their choosing>')
 returning id, parent_code;
 ```

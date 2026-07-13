@@ -1,7 +1,7 @@
 # Bedroom Reset PWA
 
 A tablet-friendly bedroom checklist for kids, with a one-time code-based
-auto-login per tablet, PIN-gated Mum Check, room score, Focus Mode, daily
+auto-login per tablet, PIN-gated Parent Check, room score, Focus Mode, daily
 streaks, points, levels and badges. Works for any number of families - each
 one is isolated by its own codes.
 
@@ -46,7 +46,7 @@ talks to the backend. A status line under the header shows "Synced" /
 connection. Points, streaks and levels always reflect the backend's numbers
 (never guessed locally), since those are calculated server-side.
 
-## Mum Check PIN
+## Parent Check PIN
 
 Tapping **Pass** or **Great Job** asks for the family's 4-digit PIN before
 it counts - otherwise a kid could just tap their own room as passed. The PIN
@@ -65,7 +65,7 @@ category or a new one of its own.
 
 ## Points, levels and badges
 
-Checking an item, finishing the whole room, and a Mum Pass/Great Job all
+Checking an item, finishing the whole room, and a Parent Pass/Great Job all
 award points - calculated and stored server-side (`supabase/functions/family-api`)
 so they can't be spoofed by editing the page. Points add up to a level with
 a fun title (`LEVELS` in `../shared/config.js`), and unlock badges for

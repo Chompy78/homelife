@@ -1,6 +1,5 @@
 import { LEVELS, levelForPoints, nextLevel, BADGES, earnedBadges } from "../shared/config.js";
 import { callApi } from "../shared/api.js";
-import { compressImage } from "../shared/image.js";
 
 const DEVICE_TOKEN_KEY = "homelife_kid_token";
 const DEVICE_NAME_KEY = "homelife_kid_name";
@@ -58,16 +57,11 @@ const toastEmojiEl = document.getElementById("toastEmoji");
 const toastTextEl = document.getElementById("toastText");
 
 const photoGrid = document.getElementById("photoGrid");
-const photoInput = document.getElementById("photoInput");
-const photoError = document.getElementById("photoError");
 const lightbox = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightboxImg");
 const lightboxClose = document.getElementById("lightboxClose");
-const lightboxDelete = document.getElementById("lightboxDelete");
 
-const MAX_PHOTOS = 3;
 let photos = [];
-let lightboxPhotoId = null;
 
 let boxes = [];
 let oneThingMode = false;
@@ -113,16 +107,6 @@ function roomResetDay() {
   return activeRoom.type === "bedroom"
     ? callApi("reset_day", { token })
     : callApi("family_room_reset_day", { token, room_id: activeRoom.id });
-}
-function uploadRoomPhoto(base64, contentType) {
-  return activeRoom.type === "bedroom"
-    ? callApi("upload_reference_photo", { token, image_base64: base64, content_type: contentType })
-    : callApi("upload_family_room_photo", { token, room_id: activeRoom.id, image_base64: base64, content_type: contentType });
-}
-function deleteRoomPhoto(photoId) {
-  return activeRoom.type === "bedroom"
-    ? callApi("delete_reference_photo", { token, photo_id: photoId })
-    : callApi("delete_family_room_photo", { token, photo_id: photoId });
 }
 // The bedroom's progress lives under `streak`, a shared room's under `progress` - same shape either way.
 function progressOf(data) {
@@ -423,6 +407,7 @@ function updateCategories() {
 // --- Reference photo gallery ------------------------------------------
 
 function renderPhotos() {
+  // View-only for kids - adding/removing reference photos is a parent-dashboard action.
   photoGrid.innerHTML = "";
   photos.forEach((photo) => {
     const tile = document.createElement("div");
@@ -431,60 +416,18 @@ function renderPhotos() {
     tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
     photoGrid.appendChild(tile);
   });
-  if (photos.length < MAX_PHOTOS) {
-    const addTile = document.createElement("button");
-    addTile.type = "button";
-    addTile.className = "addPhotoTile";
-    addTile.textContent = "+";
-    addTile.addEventListener("click", () => photoInput.click());
-    photoGrid.appendChild(addTile);
-  }
 }
 
-photoInput.addEventListener("change", async () => {
-  const file = photoInput.files[0];
-  photoInput.value = "";
-  if (!file) return;
-  photoError.classList.add("hidden");
-  try {
-    const { base64, contentType } = await compressImage(file);
-    const res = await uploadRoomPhoto(base64, contentType);
-    if (!res.ok) {
-      photoError.textContent = res.error === "max_photos_reached" ? "You already have 3 photos - remove one first." : "Couldn't upload that photo. Try again.";
-      photoError.classList.remove("hidden");
-      return;
-    }
-    photos = res.data.photos;
-    renderPhotos();
-  } catch (err) {
-    photoError.textContent = "Couldn't read that photo. Try a different one.";
-    photoError.classList.remove("hidden");
-  }
-});
-
 function openLightbox(photo) {
-  lightboxPhotoId = photo.id;
   lightboxImg.src = photo.url;
   lightbox.classList.remove("hidden");
 }
 function closeLightbox() {
   lightbox.classList.add("hidden");
-  lightboxPhotoId = null;
 }
 lightboxClose.addEventListener("click", closeLightbox);
 lightbox.addEventListener("click", (e) => {
   if (e.target === lightbox) closeLightbox();
-});
-lightboxDelete.addEventListener("click", async () => {
-  if (!lightboxPhotoId) return;
-  const ok = await askConfirm("Remove this photo?");
-  if (!ok) return;
-  const res = await deleteRoomPhoto(lightboxPhotoId);
-  if (res.ok) {
-    photos = res.data.photos;
-    renderPhotos();
-  }
-  closeLightbox();
 });
 
 function confettiBurst(count = 24) {

@@ -270,18 +270,11 @@ Deno.serve(async (req) => {
 
       case "upload_reference_photo": {
         const session = await getSession(body.token);
-        if (!session) return json({ ok: false, error: "session_expired" }, 401);
-        let kidId: string;
-        if (session.role === "kid") {
-          kidId = session.kid_id;
-        } else if (session.role === "parent") {
-          const targetKidId = String(body.kid_id || "");
-          const { data: kid } = await db.from("kids").select("id").eq("id", targetKidId).eq("family_id", session.family_id).maybeSingle();
-          if (!kid) return json({ ok: false, error: "not_found" }, 404);
-          kidId = kid.id;
-        } else {
-          return json({ ok: false, error: "session_expired" }, 401);
-        }
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const targetKidId = String(body.kid_id || "");
+        const { data: kid } = await db.from("kids").select("id").eq("id", targetKidId).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        const kidId = kid.id;
 
         const { count } = await db.from("kid_reference_photos").select("id", { count: "exact", head: true }).eq("kid_id", kidId);
         if ((count || 0) >= MAX_PHOTOS_PER_ROOM) {
@@ -317,19 +310,13 @@ Deno.serve(async (req) => {
 
       case "delete_reference_photo": {
         const session = await getSession(body.token);
-        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
         const photoId = String(body.photo_id || "");
         const { data: photo } = await db.from("kid_reference_photos").select("id, kid_id, storage_path").eq("id", photoId).maybeSingle();
         if (!photo) return json({ ok: false, error: "not_found" }, 404);
 
-        if (session.role === "kid") {
-          if (photo.kid_id !== session.kid_id) return json({ ok: false, error: "not_found" }, 404);
-        } else if (session.role === "parent") {
-          const { data: kid } = await db.from("kids").select("id").eq("id", photo.kid_id).eq("family_id", session.family_id).maybeSingle();
-          if (!kid) return json({ ok: false, error: "not_found" }, 404);
-        } else {
-          return json({ ok: false, error: "session_expired" }, 401);
-        }
+        const { data: kid } = await db.from("kids").select("id").eq("id", photo.kid_id).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
 
         await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
         await db.from("kid_reference_photos").delete().eq("id", photo.id);
@@ -964,7 +951,7 @@ Deno.serve(async (req) => {
 
       case "upload_family_room_photo": {
         const session = await getSession(body.token);
-        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
         const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
         if (!room) return json({ ok: false, error: "not_found" }, 404);
 
@@ -991,7 +978,6 @@ Deno.serve(async (req) => {
         await db.from("family_room_photos").insert({
           room_id: room.id,
           storage_path: path,
-          uploaded_by_kid_id: session.role === "kid" ? session.kid_id : null,
         });
 
         const photos = await getRoomPhotosWithUrls(room.id);
@@ -1000,7 +986,7 @@ Deno.serve(async (req) => {
 
       case "delete_family_room_photo": {
         const session = await getSession(body.token);
-        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
         const photoId = String(body.photo_id || "");
         const { data: photo } = await db.from("family_room_photos").select("id, room_id, storage_path").eq("id", photoId).maybeSingle();
         if (!photo) return json({ ok: false, error: "not_found" }, 404);

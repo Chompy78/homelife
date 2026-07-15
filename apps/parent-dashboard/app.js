@@ -17,6 +17,9 @@ const displayNameInput = document.getElementById("displayNameInput");
 const pinInput = document.getElementById("pinInput");
 const familyIconInput = document.getElementById("familyIconInput");
 const publicToggle = document.getElementById("publicToggle");
+const aiScoreModeInput = document.getElementById("aiScoreModeInput");
+const aiScoreThresholdInput = document.getElementById("aiScoreThresholdInput");
+const aiScoreThresholdRow = document.getElementById("aiScoreThresholdRow");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const settingsSaved = document.getElementById("settingsSaved");
 
@@ -81,7 +84,14 @@ const EVENT_LABELS = {
   parent_star: "⭐ Great job from a parent",
   parent_try_again: "🔁 Try again",
   reset: "🔄 Big reset",
+  ai_auto_pass: "🤖 Auto-approved by AI",
 };
+
+function aiScoreLineHtml(aiScore) {
+  if (!aiScore) return "";
+  if (aiScore.status === "pending") return `<div class="aiScoreLine">🤖 Waiting for AI score...</div>`;
+  return `<div class="aiScoreLine">🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${aiScore.comment}` : ""}</div>`;
+}
 
 function pctClass(pct) {
   if (pct >= 100) return "high";
@@ -145,12 +155,21 @@ function enterApp() {
 
 // --- Settings ---------------------------------------------------------------
 
+function updateAiScoreThresholdVisibility() {
+  const needsThreshold = aiScoreModeInput.value === "nudge" || aiScoreModeInput.value === "auto_approve";
+  aiScoreThresholdRow.classList.toggle("hidden", !needsThreshold);
+}
+aiScoreModeInput.addEventListener("change", updateAiScoreThresholdVisibility);
+
 saveSettingsBtn.addEventListener("click", async () => {
   const patch = {};
   if (displayNameInput.value.trim()) patch.display_name = displayNameInput.value.trim();
   if (/^\d{4}$/.test(pinInput.value.trim())) patch.parent_pin = pinInput.value.trim();
   patch.icon = familyIconInput.value;
   patch.is_public = publicToggle.checked;
+  patch.ai_score_mode = aiScoreModeInput.value;
+  const threshold = parseInt(aiScoreThresholdInput.value, 10);
+  if (Number.isInteger(threshold) && threshold >= 1 && threshold <= 10) patch.ai_score_auto_threshold = threshold;
   saveSettingsBtn.disabled = true;
   const res = await callApi("update_family_settings", { token, ...patch });
   saveSettingsBtn.disabled = false;
@@ -326,6 +345,7 @@ function renderKidCard(data) {
     <div class="statRow"><span>Today</span><span class="value pct ${pctClass(data.percent)}">${data.done}/${data.total} (${data.percent}%)</span></div>
     <div class="statRow"><span>Streak</span><span class="value">🔥 ${data.streak} day${data.streak === 1 ? "" : "s"} (best ${data.bestStreak})</span></div>
     <div class="parentResult">${data.parentResult}</div>
+    ${aiScoreLineHtml(data.kid.ai_score)}
     <div class="weekRow">${week}</div>
     <div class="badgeMiniShelf">${badgeRow}</div>
     <div class="kidPhotos">
@@ -543,6 +563,7 @@ function renderRoomCard(data) {
     <div class="statRow"><span>Today</span><span class="value pct ${pctClass(data.percent)}">${data.done}/${data.total} (${data.percent}%)</span></div>
     <div class="statRow"><span>Streak</span><span class="value">🔥 ${data.streak} day${data.streak === 1 ? "" : "s"} (best ${data.bestStreak})</span></div>
     <div class="parentResult">${data.parentResult}</div>
+    ${aiScoreLineHtml(data.room.ai_score)}
     <div class="weekRow">${week}</div>
     <div class="badgeMiniShelf">${badgeRow}</div>
     <div class="kidPhotos">
@@ -603,12 +624,15 @@ async function render(showLoading) {
   familyHeading.textContent = `${family.icon || "🏠"} ${family.name}`;
   renderBedroomItemsAdmin(bedroom_items || []);
   // Don't clobber the settings fields while someone's mid-edit on an auto-refresh tick.
-  const editingSettings = [displayNameInput, pinInput, familyIconInput].includes(document.activeElement);
+  const editingSettings = [displayNameInput, pinInput, familyIconInput, aiScoreModeInput, aiScoreThresholdInput].includes(document.activeElement);
   if (!editingSettings) {
     displayNameInput.value = family.display_name;
     pinInput.value = family.parent_pin;
     familyIconInput.value = family.icon || "🏠";
     publicToggle.checked = family.is_public;
+    aiScoreModeInput.value = family.ai_score_mode || "off";
+    aiScoreThresholdInput.value = family.ai_score_auto_threshold || 8;
+    updateAiScoreThresholdVisibility();
   }
 
   cardsEl.innerHTML = "";

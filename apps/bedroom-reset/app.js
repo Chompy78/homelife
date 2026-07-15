@@ -1,5 +1,6 @@
 import { LEVELS, levelForPoints, nextLevel, BADGES, earnedBadges } from "../shared/config.js";
 import { callApi } from "../shared/api.js";
+import { compressImage } from "../shared/image.js";
 
 const DEVICE_TOKEN_KEY = "homelife_kid_token";
 const DEVICE_NAME_KEY = "homelife_kid_name";
@@ -61,7 +62,17 @@ const lightbox = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightboxImg");
 const lightboxClose = document.getElementById("lightboxClose");
 
+const aiScoreCard = document.getElementById("aiScoreCard");
+const aiScoreBtn = document.getElementById("aiScoreBtn");
+const aiScoreInput = document.getElementById("aiScoreInput");
+const aiScoreStatus = document.getElementById("aiScoreStatus");
+const aiScoreError = document.getElementById("aiScoreError");
+
 let photos = [];
+let aiScore = null;
+let aiScoreMode = "off";
+let aiScoreThreshold = 8;
+let aiScorePollTimeout = null;
 
 let boxes = [];
 let oneThingMode = false;
@@ -112,6 +123,11 @@ function roomResetDay() {
 function progressOf(data) {
   return activeRoom.type === "bedroom" ? data.streak : data.progress;
 }
+function submitRoomPhotoForScoring(base64, contentType) {
+  return activeRoom.type === "bedroom"
+    ? callApi("submit_photo_for_scoring", { token, image_base64: base64, content_type: contentType })
+    : callApi("submit_photo_for_scoring", { token, room_id: activeRoom.id, image_base64: base64, content_type: contentType });
+}
 
 // --- Room switcher -----------------------------------------------------
 
@@ -134,6 +150,7 @@ function renderRoomSwitcher() {
 }
 
 function switchRoom(room) {
+  clearTimeout(aiScorePollTimeout);
   activeRoom = { ...room, items: null };
   oneThingMode = false;
   bootRoom();
@@ -280,6 +297,7 @@ async function fetchAndReconcile() {
     applyStreak(res.data.progress, { celebrate: false });
     photos = res.data.photos || [];
     renderPhotos();
+    applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold);
     saveLocalChecklist();
     renderSyncStatus();
     updateEverything();
@@ -305,6 +323,7 @@ async function fetchAndReconcile() {
   applyStreak(res.data.streak, { celebrate: false });
   photos = res.data.photos || [];
   renderPhotos();
+  applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold);
   sharedRoomsList = res.data.shared_rooms || [];
   renderRoomSwitcher();
   saveLocalChecklist();
@@ -429,6 +448,85 @@ lightboxClose.addEventListener("click", closeLightbox);
 lightbox.addEventListener("click", (e) => {
   if (e.target === lightbox) closeLightbox();
 });
+
+// --- AI room score -------------------------------------------------------
+// Optional, off by default per family. A kid can snap a photo and a
+// self-hosted vision model (polled by a local worker, not run here) scores
+// it for tidiness. Never a substitute for Parent Check unless a parent has
+// explicitly turned on auto-approve for their family.
+
+function applyAiScore(score, mode, threshold) {
+  aiScore = score;
+  aiScoreMode = mode || "off";
+  aiScoreThreshold = threshold || 8;
+  renderAiScoreCard();
+  scheduleAiScorePollIfNeeded();
+}
+
+function scheduleAiScorePollIfNeeded() {
+  clearTimeout(aiScorePollTimeout);
+  if (aiScore?.status === "pending") {
+    aiScorePollTimeout = setTimeout(() => fetchAndReconcile(), 20000);
+  }
+}
+
+function renderAiScoreCard() {
+  if (!aiScoreCard) return;
+  if (aiScoreMode === "off") {
+    aiScoreCard.classList.add("hidden");
+    return;
+  }
+  aiScoreCard.classList.remove("hidden");
+  aiScoreError.classList.add("hidden");
+
+  const pending = aiScore?.status === "pending";
+  aiScoreBtn.disabled = pending;
+  aiScoreBtn.textContent = pending ? "⏳ Scoring in progress..." : "📸 Score my room with AI";
+
+  if (!aiScore) {
+    aiScoreStatus.textContent = "Take a photo and see what the AI thinks!";
+    aiScoreStatus.className = "aiScoreStatus";
+    return;
+  }
+  if (pending) {
+    aiScoreStatus.textContent = "⏳ Waiting for your AI score...";
+    aiScoreStatus.className = "aiScoreStatus";
+    return;
+  }
+
+  const passed = (aiScore.score || 0) >= aiScoreThreshold;
+  aiScoreStatus.className = "aiScoreStatus scored" + (passed ? " good" : "");
+  let text = `🤖 ${aiScore.score}/10 - ${aiScore.comment || ""}`;
+  if (passed && aiScoreMode === "nudge") text += " Looks great - go ask a parent to check!";
+  if (passed && aiScoreMode === "auto_approve") text += " Auto-approved!";
+  aiScoreStatus.textContent = text;
+}
+
+if (aiScoreBtn) aiScoreBtn.addEventListener("click", () => aiScoreInput.click());
+if (aiScoreInput) {
+  aiScoreInput.addEventListener("change", async () => {
+    const file = aiScoreInput.files[0];
+    aiScoreInput.value = "";
+    if (!file) return;
+    aiScoreError.classList.add("hidden");
+    try {
+      const { base64, contentType } = await compressImage(file, { maxDim: 900, quality: 0.6 });
+      const res = await submitRoomPhotoForScoring(base64, contentType);
+      if (!res.ok) {
+        aiScoreError.textContent =
+          res.error === "already_pending" ? "You already have a photo waiting to be scored." : "Couldn't submit that photo. Try again.";
+        aiScoreError.classList.remove("hidden");
+        return;
+      }
+      aiScore = res.data.request;
+      renderAiScoreCard();
+      scheduleAiScorePollIfNeeded();
+    } catch (err) {
+      aiScoreError.textContent = "Couldn't read that photo. Try a different one.";
+      aiScoreError.classList.remove("hidden");
+    }
+  });
+}
 
 function confettiBurst(count = 24) {
   const container = document.createElement("div");
@@ -687,6 +785,9 @@ if ("serviceWorker" in navigator) {
 }
 
 function bootRoom() {
+  aiScore = null;
+  aiScoreMode = "off";
+  if (aiScoreCard) aiScoreCard.classList.add("hidden");
   const kidName = localStorage.getItem(DEVICE_NAME_KEY) || "Kid";
   if (activeRoom.type === "bedroom") {
     roomTitleEl.textContent = "Bedroom Reset";

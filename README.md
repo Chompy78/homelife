@@ -40,7 +40,7 @@ is comparing families against each other.
 
 Tables:
 
-- `families` - name, public display name, parent_code, parent_pin, icon, is_public (leaderboard opt-in)
+- `families` - name, public display name, parent_code, parent_pin, icon, is_public (leaderboard opt-in), ai_score_mode (`off`/`informational`/`nudge`/`auto_approve`), ai_score_auto_threshold (1-10)
 - `kids` - name, avatar, kid_code, belongs to a family
 - `family_bedroom_items` - the family's own bedroom checklist (category + label per item), fully editable by a parent from the dashboard. Seeded with a 17-item default checklist automatically when a family is created (a database trigger, so it works even though families themselves are created by raw SQL - see "Onboarding a new family" below); a kid's checklist total is however many items their family currently has, not a fixed number
 - `kid_checklist_state` - today's checkbox state per kid (bedroom only - personal), keyed against the family's current `family_bedroom_items`
@@ -50,6 +50,7 @@ Tables:
 - `kid_reference_photos` - metadata for each kid's up-to-3 "what done looks like" bedroom photos
 - `family_rooms` / `family_room_items` - shared rooms (kitchen, etc.) belonging to a family, not one kid, and their checklist items - both fully editable by a parent from the dashboard
 - `family_room_state` / `family_room_progress` / `family_room_log` / `family_room_photos` - the shared-room equivalents of the kid_* tables above. Progress here is a single row per room (the whole family's, not any one kid's) - deliberately parallel to, not merged with, the kid_* tables, so bedrooms keep working exactly as before
+- `photo_score_requests` - a kid's "score my room" submission for the self-hosted AI photo-scoring feature: family_id, kid_id or room_id, storage_path, status (`pending`/`scored`/`failed`), score (1-10), comment, timestamps. A partial unique index caps it at one pending request per kid/room at a time. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the full design
 
 The actual reference photo images (both kids' and shared rooms') live in one private Storage bucket, `reference-photos`.
 

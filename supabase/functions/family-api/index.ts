@@ -33,6 +33,16 @@ const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour, regenerated on every fetch
 
+// The local AI-scoring worker isn't a parent or a kid, so it doesn't get a
+// session token - it authenticates with this separate static secret instead,
+// set as a Supabase Edge Function secret (never shipped to any browser).
+// If the secret isn't configured, this always fails closed.
+const WORKER_TOKEN = Deno.env.get("WORKER_TOKEN") || "";
+function checkWorkerToken(body: Record<string, unknown>) {
+  const token = String(body.worker_token || "");
+  return WORKER_TOKEN.length > 0 && token === WORKER_TOKEN;
+}
+
 // Starting checklists for a shared room, seeded when a parent adds one -
 // fully editable afterwards via manage_room_items, this is just a head start.
 const ROOM_TEMPLATES: Record<string, { label: string; icon: string; items: string[] }> = {
@@ -120,6 +130,140 @@ async function freshStreak(kidId: string) {
   return data;
 }
 
+async function getLatestPhotoScore(column: "kid_id" | "room_id", id: string) {
+  const { data } = await db
+    .from("photo_score_requests")
+    .select("id, status, score, comment, created_at, scored_at")
+    .eq(column, id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data || null;
+}
+
+// Shared by a PIN-confirmed Parent Check and an AI auto-approval (when a
+// family's ai_score_mode is "auto_approve") - same points/streak/history
+// logic either way, just a different event_type so parents can always tell
+// the two apart in their activity history.
+async function awardBedroomPass(
+  kidId: string,
+  familyId: string,
+  opts: { eventType: string; emoji: string; label: string; points: number }
+) {
+  const streakRow = await freshStreak(kidId);
+  const today = todayStr();
+  const yesterday = yesterdayStr();
+
+  let current = streakRow?.current_streak || 0;
+  let best = streakRow?.best_streak || 0;
+  let totalPoints = streakRow?.total_points || 0;
+  let totalPasses = streakRow?.total_passes || 0;
+  let lastPassDate = streakRow?.last_pass_date ?? null;
+  let parentResult: string;
+  let awarded = 0;
+
+  if (lastPassDate === today) {
+    parentResult = `${opts.emoji} ${opts.label} Already counted for today.`;
+  } else {
+    current = lastPassDate === yesterday ? current + 1 : 1;
+    best = Math.max(best, current);
+    totalPasses += 1;
+    awarded = opts.points;
+    totalPoints += opts.points;
+    lastPassDate = today;
+    parentResult = `${opts.emoji} ${opts.label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
+  }
+
+  await db.from("kid_streaks").upsert({
+    kid_id: kidId,
+    current_streak: current,
+    best_streak: best,
+    last_pass_date: lastPassDate,
+    parent_result: parentResult,
+    total_points: totalPoints,
+    total_passes: totalPasses,
+    updated_at: new Date().toISOString(),
+  });
+
+  const { done, total } = await bedroomProgressCounts(familyId, kidId);
+  await db.from("kid_progress_log").insert({
+    kid_id: kidId,
+    items_done: done,
+    items_total: total,
+    percent_complete: total ? Math.round((done / total) * 100) : 0,
+    event_type: opts.eventType,
+    parent_result: parentResult,
+    streak_at_time: current,
+  });
+
+  const streak = await freshStreak(kidId);
+  return { awarded, streak };
+}
+
+// Same as awardBedroomPass but for a shared room. triggeredByKidId is null
+// for an AI auto-approval (nobody in particular tapped Pass).
+async function awardRoomPass(
+  roomId: string,
+  triggeredByKidId: string | null,
+  opts: { eventType: string; emoji: string; label: string; points: number }
+) {
+  const progressRow = await freshRoomProgress(roomId);
+  const today = todayStr();
+  const yesterday = yesterdayStr();
+
+  let current = progressRow?.current_streak || 0;
+  let best = progressRow?.best_streak || 0;
+  let totalPoints = progressRow?.total_points || 0;
+  let totalPasses = progressRow?.total_passes || 0;
+  let lastPassDate = progressRow?.last_pass_date ?? null;
+  let parentResult: string;
+  let awarded = 0;
+
+  if (lastPassDate === today) {
+    parentResult = `${opts.emoji} ${opts.label} Already counted for today.`;
+  } else {
+    current = lastPassDate === yesterday ? current + 1 : 1;
+    best = Math.max(best, current);
+    totalPasses += 1;
+    awarded = opts.points;
+    totalPoints += opts.points;
+    lastPassDate = today;
+    parentResult = `${opts.emoji} ${opts.label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
+  }
+
+  await db.from("family_room_progress").upsert({
+    room_id: roomId,
+    current_streak: current,
+    best_streak: best,
+    last_pass_date: lastPassDate,
+    parent_result: parentResult,
+    total_points: totalPoints,
+    total_passes: totalPasses,
+    updated_at: new Date().toISOString(),
+  });
+
+  const { data: allItems } = await db.from("family_room_items").select("id").eq("room_id", roomId);
+  const roomTotal = allItems?.length || 0;
+  const { data: allState } = await db
+    .from("family_room_state")
+    .select("checked")
+    .in("item_id", (allItems || []).map((i) => i.id));
+  const done = (allState || []).filter((s) => s.checked).length;
+  await db.from("family_room_log").insert({
+    room_id: roomId,
+    kid_id: triggeredByKidId,
+    items_done: done,
+    items_total: roomTotal,
+    percent_complete: roomTotal ? Math.round((done / roomTotal) * 100) : 0,
+    event_type: opts.eventType,
+    parent_result: parentResult,
+    streak_at_time: current,
+  });
+
+  const progress = await freshRoomProgress(roomId);
+  return { awarded, progress };
+}
+
 async function getBedroomItems(familyId: string) {
   const { data } = await db
     .from("family_bedroom_items")
@@ -187,13 +331,14 @@ async function assertFamilyRoomAccess(session: { family_id: string }, roomId: st
 async function buildRoomPayload(room: Record<string, unknown>) {
   const { data: items } = await db.from("family_room_items").select("id, label").eq("room_id", room.id as string).order("sort_order");
   const itemIds = (items || []).map((i) => i.id);
-  const [{ data: state }, progress, photos, { data: logs }] = await Promise.all([
+  const [{ data: state }, progress, photos, { data: logs }, aiScore] = await Promise.all([
     itemIds.length ? db.from("family_room_state").select("item_id, checked, checked_by_kid_id").in("item_id", itemIds) : Promise.resolve({ data: [] }),
     freshRoomProgress(room.id as string),
     getRoomPhotosWithUrls(room.id as string),
     db.from("family_room_log").select("*").eq("room_id", room.id as string).order("created_at", { ascending: false }).limit(10),
+    getLatestPhotoScore("room_id", room.id as string),
   ]);
-  return { ...room, items: items || [], state: state || [], progress: progress || {}, photos, logs: logs || [] };
+  return { ...room, items: items || [], state: state || [], progress: progress || {}, photos, logs: logs || [], ai_score: aiScore };
 }
 
 function base64ToBytes(base64: string) {
@@ -254,17 +399,29 @@ Deno.serve(async (req) => {
       case "get_kid_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: items }, streak, { data: kid }, photos, { data: sharedRooms }, bedroomItems] = await Promise.all([
+        const [{ data: items }, streak, { data: kid }, photos, { data: sharedRooms }, bedroomItems, aiScore, { data: family }] = await Promise.all([
           db.from("kid_checklist_state").select("item_id, checked").eq("kid_id", session.kid_id),
           freshStreak(session.kid_id),
           db.from("kids").select("id, name, avatar_emoji").eq("id", session.kid_id).single(),
           getPhotosWithUrls(session.kid_id),
           db.from("family_rooms").select("id, name, icon").eq("family_id", session.family_id).order("sort_order"),
           getBedroomItems(session.family_id),
+          getLatestPhotoScore("kid_id", session.kid_id),
+          db.from("families").select("ai_score_mode, ai_score_auto_threshold").eq("id", session.family_id).maybeSingle(),
         ]);
         return json({
           ok: true,
-          data: { kid, items: items || [], streak: streak || {}, photos, shared_rooms: sharedRooms || [], bedroom_items: bedroomItems },
+          data: {
+            kid,
+            items: items || [],
+            streak: streak || {},
+            photos,
+            shared_rooms: sharedRooms || [],
+            bedroom_items: bedroomItems,
+            ai_score: aiScore,
+            ai_score_mode: family?.ai_score_mode || "off",
+            ai_score_auto_threshold: family?.ai_score_auto_threshold || 8,
+          },
         });
       }
 
@@ -383,56 +540,11 @@ Deno.serve(async (req) => {
         const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
         if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
 
-        const streakRow = await freshStreak(session.kid_id);
-        const today = todayStr();
-        const yesterday = yesterdayStr();
         const emoji = eventType === "parent_star" ? "⭐" : "✅";
         const label = eventType === "parent_star" ? "Great job from a parent!" : "Passed by a parent!";
         const points = eventType === "parent_star" ? POINTS.PARENT_GREAT_JOB : POINTS.PARENT_PASS;
 
-        let current = streakRow?.current_streak || 0;
-        let best = streakRow?.best_streak || 0;
-        let totalPoints = streakRow?.total_points || 0;
-        let totalPasses = streakRow?.total_passes || 0;
-        let lastPassDate = streakRow?.last_pass_date ?? null;
-        let parentResult: string;
-        let awarded = 0;
-
-        if (lastPassDate === today) {
-          parentResult = `${emoji} ${label} Already counted for today.`;
-        } else {
-          current = lastPassDate === yesterday ? current + 1 : 1;
-          best = Math.max(best, current);
-          totalPasses += 1;
-          awarded = points;
-          totalPoints += points;
-          lastPassDate = today;
-          parentResult = `${emoji} ${label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
-        }
-
-        await db.from("kid_streaks").upsert({
-          kid_id: session.kid_id,
-          current_streak: current,
-          best_streak: best,
-          last_pass_date: lastPassDate,
-          parent_result: parentResult,
-          total_points: totalPoints,
-          total_passes: totalPasses,
-          updated_at: new Date().toISOString(),
-        });
-
-        const { done, total } = await bedroomProgressCounts(session.family_id, session.kid_id);
-        await db.from("kid_progress_log").insert({
-          kid_id: session.kid_id,
-          items_done: done,
-          items_total: total,
-          percent_complete: total ? Math.round((done / total) * 100) : 0,
-          event_type: eventType,
-          parent_result: parentResult,
-          streak_at_time: current,
-        });
-
-        const streak = await freshStreak(session.kid_id);
+        const { awarded, streak } = await awardBedroomPass(session.kid_id, session.family_id, { eventType, emoji, label, points });
         return json({ ok: true, data: { awarded_points: awarded, streak } });
       }
 
@@ -491,7 +603,7 @@ Deno.serve(async (req) => {
         const kidIds = (kids || []).map((k) => k.id);
         const bedroomItems = await getBedroomItems(session.family_id);
         const bedroomItemIds = bedroomItems.map((i) => i.id);
-        const [{ data: streaks }, { data: states }, { data: logs }, photosByKid] = await Promise.all([
+        const [{ data: streaks }, { data: states }, { data: logs }, photosByKid, aiScoresByKid] = await Promise.all([
           kidIds.length ? db.from("kid_streaks").select("*").in("kid_id", kidIds) : Promise.resolve({ data: [] }),
           kidIds.length && bedroomItemIds.length
             ? db.from("kid_checklist_state").select("kid_id, checked").in("kid_id", kidIds).in("item_id", bedroomItemIds)
@@ -500,9 +612,11 @@ Deno.serve(async (req) => {
             ? db.from("kid_progress_log").select("*").in("kid_id", kidIds).order("created_at", { ascending: false }).limit(60)
             : Promise.resolve({ data: [] }),
           Promise.all(kidIds.map(async (id) => [id, await getPhotosWithUrls(id)] as const)),
+          Promise.all(kidIds.map(async (id) => [id, await getLatestPhotoScore("kid_id", id)] as const)),
         ]);
         const photoMap = Object.fromEntries(photosByKid);
-        const kidsWithPhotos = (kids || []).map((k) => ({ ...k, photos: photoMap[k.id] || [] }));
+        const aiScoreMap = Object.fromEntries(aiScoresByKid);
+        const kidsWithPhotos = (kids || []).map((k) => ({ ...k, photos: photoMap[k.id] || [], ai_score: aiScoreMap[k.id] || null }));
 
         const { data: sharedRooms } = await db.from("family_rooms").select("*").eq("family_id", session.family_id).order("sort_order");
         const roomsWithData = await Promise.all((sharedRooms || []).map((r) => buildRoomPayload(r)));
@@ -531,6 +645,13 @@ Deno.serve(async (req) => {
         if (typeof body.is_public === "boolean") patch.is_public = body.is_public;
         if (typeof body.parent_pin === "string" && /^\d{4}$/.test(body.parent_pin)) patch.parent_pin = body.parent_pin;
         if (typeof body.icon === "string" && body.icon.trim()) patch.icon = body.icon.trim().slice(0, 8);
+        if (typeof body.ai_score_mode === "string" && ["off", "informational", "nudge", "auto_approve"].includes(body.ai_score_mode)) {
+          patch.ai_score_mode = body.ai_score_mode;
+        }
+        if (body.ai_score_auto_threshold !== undefined) {
+          const threshold = Number(body.ai_score_auto_threshold);
+          if (Number.isInteger(threshold) && threshold >= 1 && threshold <= 10) patch.ai_score_auto_threshold = threshold;
+        }
         if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
         await db.from("families").update(patch).eq("id", session.family_id);
         return json({ ok: true });
@@ -732,8 +853,14 @@ Deno.serve(async (req) => {
         if (!session) return json({ ok: false, error: "session_expired" }, 401);
         const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
         if (!room) return json({ ok: false, error: "not_found" }, 404);
-        const data = await buildRoomPayload(room);
-        return json({ ok: true, data });
+        const [data, { data: family }] = await Promise.all([
+          buildRoomPayload(room),
+          db.from("families").select("ai_score_mode, ai_score_auto_threshold").eq("id", session.family_id).maybeSingle(),
+        ]);
+        return json({
+          ok: true,
+          data: { ...data, ai_score_mode: family?.ai_score_mode || "off", ai_score_auto_threshold: family?.ai_score_auto_threshold || 8 },
+        });
       }
 
       case "update_family_room_item": {
@@ -801,63 +928,11 @@ Deno.serve(async (req) => {
         const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
         if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
 
-        const progressRow = await freshRoomProgress(room.id);
-        const today = todayStr();
-        const yesterday = yesterdayStr();
         const emoji = eventType === "parent_star" ? "⭐" : "✅";
         const label = eventType === "parent_star" ? "Great job from a parent!" : "Passed by a parent!";
         const points = eventType === "parent_star" ? POINTS.PARENT_GREAT_JOB : POINTS.PARENT_PASS;
 
-        let current = progressRow?.current_streak || 0;
-        let best = progressRow?.best_streak || 0;
-        let totalPoints = progressRow?.total_points || 0;
-        let totalPasses = progressRow?.total_passes || 0;
-        let lastPassDate = progressRow?.last_pass_date ?? null;
-        let parentResult: string;
-        let awarded = 0;
-
-        if (lastPassDate === today) {
-          parentResult = `${emoji} ${label} Already counted for today.`;
-        } else {
-          current = lastPassDate === yesterday ? current + 1 : 1;
-          best = Math.max(best, current);
-          totalPasses += 1;
-          awarded = points;
-          totalPoints += points;
-          lastPassDate = today;
-          parentResult = `${emoji} ${label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
-        }
-
-        await db.from("family_room_progress").upsert({
-          room_id: room.id,
-          current_streak: current,
-          best_streak: best,
-          last_pass_date: lastPassDate,
-          parent_result: parentResult,
-          total_points: totalPoints,
-          total_passes: totalPasses,
-          updated_at: new Date().toISOString(),
-        });
-
-        const { data: allItems } = await db.from("family_room_items").select("id").eq("room_id", room.id);
-        const roomTotal = allItems?.length || 0;
-        const { data: allState } = await db
-          .from("family_room_state")
-          .select("checked")
-          .in("item_id", (allItems || []).map((i) => i.id));
-        const done = (allState || []).filter((s) => s.checked).length;
-        await db.from("family_room_log").insert({
-          room_id: room.id,
-          kid_id: session.kid_id,
-          items_done: done,
-          items_total: roomTotal,
-          percent_complete: roomTotal ? Math.round((done / roomTotal) * 100) : 0,
-          event_type: eventType,
-          parent_result: parentResult,
-          streak_at_time: current,
-        });
-
-        const progress = await freshRoomProgress(room.id);
+        const { awarded, progress } = await awardRoomPass(room.id, session.kid_id, { eventType, emoji, label, points });
         return json({ ok: true, data: { awarded_points: awarded, progress } });
       }
 
@@ -997,6 +1072,127 @@ Deno.serve(async (req) => {
         await db.from("family_room_photos").delete().eq("id", photo.id);
         const photos = await getRoomPhotosWithUrls(photo.room_id);
         return json({ ok: true, data: { photos } });
+      }
+
+      // --- AI photo scoring (self-hosted vision model, polled by a local worker) ---
+
+      case "submit_photo_for_scoring": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+
+        const { data: family } = await db.from("families").select("ai_score_mode").eq("id", session.family_id).maybeSingle();
+        if (!family || family.ai_score_mode === "off") return json({ ok: false, error: "ai_scoring_disabled" }, 400);
+
+        const roomId = body.room_id ? String(body.room_id) : null;
+        if (roomId) {
+          const room = await assertFamilyRoomAccess(session, roomId);
+          if (!room) return json({ ok: false, error: "not_found" }, 404);
+        }
+
+        const base64 = String(body.image_base64 || "");
+        if (!base64) return json({ ok: false, error: "image_required" }, 400);
+        let bytes: Uint8Array;
+        try {
+          bytes = base64ToBytes(base64);
+        } catch {
+          return json({ ok: false, error: "bad_image_data" }, 400);
+        }
+        if (bytes.byteLength > MAX_PHOTO_BYTES) return json({ ok: false, error: "image_too_large" }, 400);
+
+        const contentType = String(body.content_type || "image/jpeg");
+        const ext = contentType.includes("png") ? "png" : "jpg";
+        const target = roomId ? `room-${roomId}` : session.kid_id;
+        const path = `score-submissions/${target}/${crypto.randomUUID()}.${ext}`;
+
+        const { error: uploadError } = await db.storage.from(PHOTO_BUCKET).upload(path, bytes, { contentType, upsert: false });
+        if (uploadError) return json({ ok: false, error: "upload_failed" }, 500);
+
+        const { data: request, error } = await db
+          .from("photo_score_requests")
+          .insert({
+            family_id: session.family_id,
+            kid_id: roomId ? null : session.kid_id,
+            room_id: roomId,
+            storage_path: path,
+          })
+          .select()
+          .single();
+
+        if (error || !request) {
+          await db.storage.from(PHOTO_BUCKET).remove([path]);
+          // 23505 = unique_violation - the one-pending-per-target index caught a duplicate.
+          if (error?.code === "23505") return json({ ok: false, error: "already_pending" }, 400);
+          return json({ ok: false, error: "could_not_submit" }, 500);
+        }
+
+        return json({ ok: true, data: { request } });
+      }
+
+      case "get_pending_photo_scores": {
+        if (!checkWorkerToken(body)) return json({ ok: false, error: "unauthorized" }, 401);
+
+        const { data: pending } = await db
+          .from("photo_score_requests")
+          .select("*")
+          .eq("status", "pending")
+          .order("created_at")
+          .limit(10);
+
+        const jobs = await Promise.all(
+          (pending || []).map(async (req) => {
+            const { data: signed } = await db.storage.from(PHOTO_BUCKET).createSignedUrl(req.storage_path, SIGNED_URL_TTL_SECONDS);
+            const referencePhotos = req.kid_id ? await getPhotosWithUrls(req.kid_id) : await getRoomPhotosWithUrls(req.room_id as string);
+            return {
+              id: req.id,
+              kid_id: req.kid_id,
+              room_id: req.room_id,
+              submitted_photo_url: signed?.signedUrl || null,
+              reference_photos: referencePhotos,
+              created_at: req.created_at,
+            };
+          })
+        );
+        return json({ ok: true, data: jobs });
+      }
+
+      case "submit_photo_score": {
+        if (!checkWorkerToken(body)) return json({ ok: false, error: "unauthorized" }, 401);
+
+        const requestId = String(body.request_id || "");
+        const score = Number(body.score);
+        const comment = String(body.comment || "").slice(0, 280);
+        if (!Number.isInteger(score) || score < 1 || score > 10) return json({ ok: false, error: "bad_score" }, 400);
+
+        // Guarding on status = 'pending' makes a retried/duplicate submit a
+        // harmless no-op instead of double-awarding points on auto-approve.
+        const { data: updated } = await db
+          .from("photo_score_requests")
+          .update({ status: "scored", score, comment, scored_at: new Date().toISOString() })
+          .eq("id", requestId)
+          .eq("status", "pending")
+          .select()
+          .maybeSingle();
+
+        if (!updated) return json({ ok: true, data: { applied: false } });
+
+        const { data: family } = await db
+          .from("families")
+          .select("ai_score_mode, ai_score_auto_threshold")
+          .eq("id", updated.family_id)
+          .maybeSingle();
+
+        let autoApproved = false;
+        if (family?.ai_score_mode === "auto_approve" && score >= family.ai_score_auto_threshold) {
+          const opts = { eventType: "ai_auto_pass", emoji: "🤖", label: "Auto-approved by AI!", points: POINTS.PARENT_PASS };
+          if (updated.kid_id) {
+            await awardBedroomPass(updated.kid_id, updated.family_id, opts);
+          } else if (updated.room_id) {
+            await awardRoomPass(updated.room_id, null, opts);
+          }
+          autoApproved = true;
+        }
+
+        return json({ ok: true, data: { applied: true, auto_approved: autoApproved } });
       }
 
       default:

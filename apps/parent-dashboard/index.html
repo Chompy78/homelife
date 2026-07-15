@@ -74,6 +74,24 @@
         <input type="checkbox" id="publicToggle" />
         Share our stats on the public leaderboard
       </label>
+
+      <div class="aiScoreSettings">
+        <div class="settingsGrid">
+          <label>AI room scoring (optional)
+            <select id="aiScoreModeInput">
+              <option value="off">Off</option>
+              <option value="informational">Informational only</option>
+              <option value="nudge">Informational + nudge kid to ask for a check</option>
+              <option value="auto_approve">Auto-approve above a score</option>
+            </select>
+          </label>
+          <label id="aiScoreThresholdRow">Auto-approve / nudge threshold (score out of 10)
+            <input type="number" id="aiScoreThresholdInput" min="1" max="10" step="1" />
+          </label>
+        </div>
+        <p class="aiScoreHint">Lets a kid snap a photo and have your self-hosted AI rate its tidiness. "Informational" just shows the score. "Auto-approve" lets a high enough AI score count as a pass on its own, without you entering the PIN - only turn this on once your AI setup is actually running.</p>
+      </div>
+
       <div class="buttons">
         <button id="saveSettingsBtn" type="button" class="saveBtn">Save settings</button>
       </div>

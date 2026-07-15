@@ -57,6 +57,7 @@ h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
 .pct.mid { color: var(--orange); }
 .pct.low { color: var(--red); }
 .parentResult { margin-top: 10px; font-weight: 700; color: var(--muted); font-size: 0.95rem; }
+.aiScoreLine { margin-top: 4px; font-weight: 700; color: var(--muted); font-size: 0.85rem; }
 
 .weekRow { display: flex; gap: 6px; margin-top: 12px; }
 .weekDot { flex: 1; text-align: center; }
@@ -117,6 +118,9 @@ h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
 }
 .publicToggle { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 12px; }
 .publicToggle input { width: 20px; height: 20px; }
+.aiScoreSettings { border-top: 1px dashed var(--line); padding-top: 12px; margin-bottom: 12px; }
+.settingsGrid select { font-size: 1rem; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); font-family: inherit; color: var(--ink); }
+.aiScoreHint { color: var(--muted); font-weight: 700; font-size: 0.82rem; margin: 0; }
 .saveBtn { background: var(--blue); color: #fff; border: 0; border-radius: 12px; padding: 10px 18px; font-weight: 800; cursor: pointer; }
 .settingsSaved { color: var(--green); font-weight: 800; margin-top: 8px; }
 .addKidRow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }

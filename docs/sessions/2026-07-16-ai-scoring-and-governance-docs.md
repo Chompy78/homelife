@@ -118,6 +118,25 @@ guide, then set up this project's governance docs (`AGENTS.md`,
 - Wrote a self-contained problem writeup (model/hardware, what was
   tried, what failed, what's being tried next) for the user to get a
   second opinion elsewhere.
+- User brought back three independent outside reviews of that writeup.
+  All three converged on the same root-cause diagnosis - "completion
+  bias" (a model asked to both gatekeep and perform a task in the same
+  call biases toward performing it) - and the same core fix (never let
+  the model self-assert a `valid` boolean it has an incentive to bias;
+  have it report evidence only, let code decide). Evaluated all three
+  in detail, agreed with the core diagnosis and fix, and pushed back on
+  or deferred the heavier suggestions (a trained CNN scene classifier,
+  image-embedding similarity, new VLM downloads, a daily anti-cheat
+  token, a formal parent-review state) as real new engineering/product
+  scope rather than a quick follow-up.
+- Rebuilt `poller.py` a third time around the agreed architecture: a
+  `moondream` pre-gate, then a `llava:13b` perception-only gate
+  (reports evidence, code decides pass/fail), then the scorer - all
+  using Ollama's `format` JSON-schema parameter instead of regex-
+  extracted prose JSON. Logged as `D-2026-07-16-gate-scorer-split`.
+  Logged the five deferred ideas as 🟢 LATER tasks on
+  `docs/TASK_BOARD.md`. Delivered the rebuilt `poller.py` to the user;
+  live confirmation is the one thing left.
 
 ## Files touched
 
@@ -131,15 +150,19 @@ guide, then set up this project's governance docs (`AGENTS.md`,
 
 ## Related
 
-- All 12 entries in `DECISIONS.md`, dated 2026-07-13 through
+- All 13 entries in `DECISIONS.md`, dated 2026-07-13 through
   2026-07-16.
 - All entries in `CHANGELOG.md`.
 
 ## Carried forward
 
-- Confirming, on the user's real worker, that the blank/blurry check
-  and the duplicate-photo check both fire correctly (no AI call in the
-  log for either), and re-testing the AI layer's room-validity judgment
-  now that it's the last line of defense rather than the only one
-  (`docs/TASK_BOARD.md`, 🔴 NOW) - the only thing left on the board
-  besides the 🟢 LATER custom-icon idea.
+- Confirming, on the user's real worker, that every layer of the
+  rebuilt pipeline actually fires correctly - blank/blurry and
+  duplicate checks with no AI call, `moondream`'s pre-gate, the
+  `llava:13b` evidence-based gate, and the scorer - is the one item
+  left on `docs/TASK_BOARD.md`, 🔴 NOW.
+- Five hardening ideas sit on 🟢 LATER, deliberately deferred rather
+  than built this round: a deterministic scene-classifier gate,
+  reference-photo embedding similarity, evaluating newer local VLMs, a
+  daily anti-cheat capture token, and a parent-review state for
+  uncertain results.

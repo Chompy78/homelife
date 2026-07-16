@@ -57,6 +57,21 @@ on `TASK_BOARD.md`.
   reaches the vision model, so the AI is only asked the judgment calls
   that actually need it. Delivered to the user; live confirmation of
   the AI layer's room-validity check specifically is still pending.
+- Rebuilt `poller.py` again around a gate/scorer split after getting a
+  second opinion from three independent outside reviews on that
+  pending room-validity failure. The `llava:13b` vision step no longer
+  decides validity itself - it only reports observed evidence (setting,
+  visible items, room/invalid evidence, confidence) via Ollama's
+  `format` JSON-schema parameter, and plain code applies the pass/fail
+  rule. Added a `moondream` pre-gate (already-pulled model, only
+  auto-rejects on a confident "not a room") ahead of the fuller gate.
+  Delivered to the user; live confirmation on the real worker still
+  pending. See `D-2026-07-16-gate-scorer-split` in `DECISIONS.md`.
+- Logged five hardening ideas surfaced by that same review round
+  (deterministic scene-classifier gate, reference-photo embedding
+  similarity, newer local VLM evaluation, a daily anti-cheat capture
+  token, a parent-review state for uncertain results) as 🟢 LATER on
+  `docs/TASK_BOARD.md` rather than building them all in immediately.
 
 ## 2026-07-15
 

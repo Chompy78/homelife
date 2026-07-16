@@ -54,6 +54,16 @@ section sitting there — that's what the changelog is for), and if the
 task represented a real decision along the way, log that in
 DECISIONS.md too.
 
+### docs/sessions/
+
+A chronological narrative log, one file per working session (see
+`docs/sessions/README.md` for the naming convention and template).
+This is where operational actions that don't fit the other three docs
+belong — things that are neither a shipped feature (CHANGELOG.md) nor
+a design decision (DECISIONS.md), e.g. creating a parent code for a
+new family, or handing off a setup guide. Add or update the current
+session's entry as you go, same as the other three.
+
 ## File editing rules
 
 - Read a file in full immediately before editing it, even if you edited

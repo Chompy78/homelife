@@ -93,3 +93,5 @@ redeploy it after editing `supabase/functions/family-api/index.ts`.
   shipped, newest on top.
 - **[`DECISIONS.md`](DECISIONS.md)** - why non-obvious choices were
   made, in the same Context/Options/Decision/Why format throughout.
+- **[`docs/sessions/`](docs/sessions/)** - a chronological log, one
+  file per working session.

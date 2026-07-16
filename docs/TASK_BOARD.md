@@ -1,10 +1,12 @@
-# Task List
+# Task Board
 
-Scoped, forward-looking work for this repo. Every task carries enough
-detail (tags, status, a concrete "done when") that it can be picked up
-cold — by an AI assistant or a human — without re-deriving the design.
-Bigger tasks also carry a **Design notes** block with the technical
-detail (schema, files, endpoints) needed to actually build them.
+Open work only — see `CHANGELOG.md` for what's already shipped and
+`DECISIONS.md` for why non-obvious choices were made. Every task
+carries enough detail (tags, status, a concrete "done when") that it
+can be picked up cold — by an AI assistant or a human — without
+re-deriving the design. Bigger tasks also carry a **Design notes**
+block with the technical detail (schema, files, endpoints) needed to
+actually build them.
 
 **Tags in use:** `ai-vision`, `prompt`, `validation`, `feature`, `ux`,
 `infra`, `refactor`. Reuse these rather than inventing near-duplicates,
@@ -207,20 +209,6 @@ same points, on purpose — revisit if that undervalues the human check).
   not requested yet.
 - **Done when:** a parent can set a custom image as a kid's avatar and
   it shows consistently across the dashboard and leaderboard.
-
----
-
-## ✅ Recently done (for context, not action)
-
-- **Per-family icon** — a parent picks one from Settings
-  (`families.icon`), shown on the dashboard header and the leaderboard.
-- **Bedroom checklist customization** — per-family and parent-editable
-  (`family_bedroom_items`, seeded with the original 17-item default),
-  same as shared rooms (`manage_bedroom_items` / `manage_room_items` in
-  `supabase/functions/family-api`).
-- **AI photo scoring — Supabase side** — schema, edge function actions,
-  kid-app UI, and parent-dashboard settings are all built and deployed;
-  see the worker task at the top of NOW for what's still open.
 
 ---
 

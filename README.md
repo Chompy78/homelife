@@ -50,7 +50,7 @@ Tables:
 - `kid_reference_photos` - metadata for each kid's up-to-3 "what done looks like" bedroom photos
 - `family_rooms` / `family_room_items` - shared rooms (kitchen, etc.) belonging to a family, not one kid, and their checklist items - both fully editable by a parent from the dashboard
 - `family_room_state` / `family_room_progress` / `family_room_log` / `family_room_photos` - the shared-room equivalents of the kid_* tables above. Progress here is a single row per room (the whole family's, not any one kid's) - deliberately parallel to, not merged with, the kid_* tables, so bedrooms keep working exactly as before
-- `photo_score_requests` - a kid's "score my room" submission for the self-hosted AI photo-scoring feature: family_id, kid_id or room_id, storage_path, status (`pending`/`scored`/`failed`), score (1-10), comment, timestamps. A partial unique index caps it at one pending request per kid/room at a time. See [`docs/TASK-LIST.md`](docs/TASK-LIST.md) for the full design
+- `photo_score_requests` - a kid's "score my room" submission for the self-hosted AI photo-scoring feature: family_id, kid_id or room_id, storage_path, status (`pending`/`scored`/`failed`), score (1-10), comment, timestamps. A partial unique index caps it at one pending request per kid/room at a time. See [`docs/TASK_BOARD.md`](docs/TASK_BOARD.md) for the full design
 
 The actual reference photo images (both kids' and shared rooms') live in one private Storage bucket, `reference-photos`.
 
@@ -82,8 +82,14 @@ The edge function deploys separately (via the Supabase MCP tool or `supabase
 functions deploy family-api`), not through the GitHub Pages workflow -
 redeploy it after editing `supabase/functions/family-api/index.ts`.
 
-## Task list
+## Project docs
 
-Scoped, forward-looking work - what's next, what's blocked, and full
-design detail for bigger items like the AI photo-scoring anti-cheat
-work - lives in [`docs/TASK-LIST.md`](docs/TASK-LIST.md).
+- **[`AGENTS.md`](AGENTS.md)** - canonical instructions for working on
+  this repo (conventions, file-editing rules) - read this first.
+- **[`docs/TASK_BOARD.md`](docs/TASK_BOARD.md)** - open work only:
+  what's next, what's blocked, and full design detail for bigger items
+  like the AI photo-scoring anti-cheat work.
+- **[`CHANGELOG.md`](CHANGELOG.md)** - the permanent record of what's
+  shipped, newest on top.
+- **[`DECISIONS.md`](DECISIONS.md)** - why non-obvious choices were
+  made, in the same Context/Options/Decision/Why format throughout.

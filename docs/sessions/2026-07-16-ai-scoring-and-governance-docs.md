@@ -137,32 +137,62 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   Logged the five deferred ideas as 🟢 LATER tasks on
   `docs/TASK_BOARD.md`. Delivered the rebuilt `poller.py` to the user;
   live confirmation is the one thing left.
+- User confirmed it working live, then reported two issues: the "Score
+  my room with AI" photo input opened a gallery picker instead of the
+  camera, and asked to confirm the freshness metadata check was
+  actually wired up (it was, from earlier this session). Fixed the
+  camera issue with `capture="environment"` on the file input.
+- User reported a real photo of their own room got rejected as a "room
+  mismatch," and separately flagged that an earlier test photo (a
+  stylized fantasy-creature illustration) had slipped past both AI
+  gates and was only caught by that same room-match step. Diagnosed
+  the mismatch as a real bug: the scorer compares raw reference photos
+  every time, so ordinary bedding differences were being read as
+  evidence of a different room.
+- User proposed the fix directly: generate a room "fingerprint" once
+  (parent uploads photos, AI derives fixed/stable features) instead of
+  comparing live photos each time. Built it: migration adding
+  `room_fingerprint` to `kids`/`family_rooms` (invalidated on any
+  reference-photo change), a new `submit_room_fingerprint` worker
+  action, `get_pending_photo_scores` returning the current value.
+  Deployed as edge function v11, verified via Node script (8 checks).
+  Rebuilt `poller.py` (fourth iteration) to generate a fingerprint
+  lazily on first use and reuse it for room-identity matching, while
+  still using raw reference photos for the separate tidiness-scoring
+  step. Also hardened the gate prompt with an
+  `illustration_or_fictional` category/example for the fantasy-creature
+  case. This reverses part of the earlier
+  `D-2026-07-16-ai-anti-cheat-simplification` decision - logged as
+  `D-2026-07-16-room-fingerprint`, with a note added to the original
+  entry explaining what changed and why. Delivered the rebuilt
+  `poller.py`; live confirmation that it actually fixes the
+  bedding-driven false rejection is pending.
 
 ## Files touched
 
 `AGENTS.md`, `DECISIONS.md`, `CHANGELOG.md`, `docs/TASK_BOARD.md`,
 `docs/PARENT-GUIDE.md`, `README.md`, `supabase/functions/family-api/index.ts`
 (+ migrations `rename_mum_to_parent`, `ai_photo_scoring`,
-`photo_score_freshness_and_rejection`, `photo_score_hash`),
-`apps/bedroom-reset/app.js`, `apps/bedroom-reset/service-worker.js`,
+`photo_score_freshness_and_rejection`, `photo_score_hash`,
+`room_fingerprint`), `apps/bedroom-reset/app.js`,
+`apps/bedroom-reset/index.html`, `apps/bedroom-reset/service-worker.js`,
 `apps/parent-dashboard/app.js`, `apps/parent-dashboard/styles.css`,
 `assets/images/homelife_favicon.png`.
 
 ## Related
 
-- All 13 entries in `DECISIONS.md`, dated 2026-07-13 through
+- All 14 entries in `DECISIONS.md`, dated 2026-07-13 through
   2026-07-16.
 - All entries in `CHANGELOG.md`.
 
 ## Carried forward
 
-- Confirming, on the user's real worker, that every layer of the
-  rebuilt pipeline actually fires correctly - blank/blurry and
-  duplicate checks with no AI call, `moondream`'s pre-gate, the
-  `llava:13b` evidence-based gate, and the scorer - is the one item
-  left on `docs/TASK_BOARD.md`, 🔴 NOW.
-- Five hardening ideas sit on 🟢 LATER, deliberately deferred rather
-  than built this round: a deterministic scene-classifier gate,
-  reference-photo embedding similarity, evaluating newer local VLMs, a
-  daily anti-cheat capture token, and a parent-review state for
-  uncertain results.
+- Confirming, on the user's real worker, that the full fingerprint-
+  based pipeline works end to end - including the specific case that
+  motivated it: a real photo of the kid's own room, with different
+  bedding than the reference photos, should now be accepted rather
+  than rejected (`docs/TASK_BOARD.md`, 🔴 NOW).
+- Five hardening ideas still sit on 🟢 LATER, deliberately deferred: a
+  deterministic scene-classifier gate, reference-photo embedding
+  similarity, evaluating newer local VLMs, a daily anti-cheat capture
+  token, and a parent-review state for uncertain results.

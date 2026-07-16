@@ -482,6 +482,9 @@ Deno.serve(async (req) => {
           storage_path: path,
           uploaded_by: session.role,
         });
+        // The stored fingerprint (if any) was generated from the old photo
+        // set - invalidate it so the worker regenerates on next use.
+        await db.from("kids").update({ room_fingerprint: null }).eq("id", kidId);
 
         const photos = await getPhotosWithUrls(kidId);
         return json({ ok: true, data: { photos } });
@@ -499,6 +502,7 @@ Deno.serve(async (req) => {
 
         await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
         await db.from("kid_reference_photos").delete().eq("id", photo.id);
+        await db.from("kids").update({ room_fingerprint: null }).eq("id", photo.kid_id);
         const photos = await getPhotosWithUrls(photo.kid_id);
         return json({ ok: true, data: { photos } });
       }
@@ -1076,6 +1080,9 @@ Deno.serve(async (req) => {
           room_id: room.id,
           storage_path: path,
         });
+        // The stored fingerprint (if any) was generated from the old photo
+        // set - invalidate it so the worker regenerates on next use.
+        await db.from("family_rooms").update({ room_fingerprint: null }).eq("id", room.id);
 
         const photos = await getRoomPhotosWithUrls(room.id);
         return json({ ok: true, data: { photos } });
@@ -1092,6 +1099,7 @@ Deno.serve(async (req) => {
 
         await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
         await db.from("family_room_photos").delete().eq("id", photo.id);
+        await db.from("family_rooms").update({ room_fingerprint: null }).eq("id", photo.room_id);
         const photos = await getRoomPhotosWithUrls(photo.room_id);
         return json({ ok: true, data: { photos } });
       }
@@ -1177,6 +1185,9 @@ Deno.serve(async (req) => {
             const previousPhotoHash = req.kid_id
               ? await getLatestPhotoHash("kid_id", req.kid_id)
               : await getLatestPhotoHash("room_id", req.room_id as string);
+            const { data: target } = req.kid_id
+              ? await db.from("kids").select("room_fingerprint").eq("id", req.kid_id).maybeSingle()
+              : await db.from("family_rooms").select("room_fingerprint").eq("id", req.room_id as string).maybeSingle();
             return {
               id: req.id,
               kid_id: req.kid_id,
@@ -1184,11 +1195,30 @@ Deno.serve(async (req) => {
               submitted_photo_url: signed?.signedUrl || null,
               reference_photos: referencePhotos,
               previous_photo_hash: previousPhotoHash,
+              room_fingerprint: target?.room_fingerprint || null,
               created_at: req.created_at,
             };
           })
         );
         return json({ ok: true, data: jobs });
+      }
+
+      case "submit_room_fingerprint": {
+        if (!checkWorkerToken(body)) return json({ ok: false, error: "unauthorized" }, 401);
+
+        const fingerprint = String(body.fingerprint || "").trim().slice(0, 2000);
+        if (!fingerprint) return json({ ok: false, error: "fingerprint_required" }, 400);
+
+        const kidId = body.kid_id ? String(body.kid_id) : null;
+        const roomId = body.room_id ? String(body.room_id) : null;
+        if ((!kidId && !roomId) || (kidId && roomId)) return json({ ok: false, error: "exactly_one_target_required" }, 400);
+
+        if (kidId) {
+          await db.from("kids").update({ room_fingerprint: fingerprint }).eq("id", kidId);
+        } else {
+          await db.from("family_rooms").update({ room_fingerprint: fingerprint }).eq("id", roomId as string);
+        }
+        return json({ ok: true });
       }
 
       case "submit_photo_score": {

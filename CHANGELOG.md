@@ -72,6 +72,35 @@ on `TASK_BOARD.md`.
   similarity, newer local VLM evaluation, a daily anti-cheat capture
   token, a parent-review state for uncertain results) as 🟢 LATER on
   `docs/TASK_BOARD.md` rather than building them all in immediately.
+- Confirmed the rebuilt worker running live: fixed an Ollama model-tag
+  mismatch on the way (`llava` resolves to `llava:latest`, which was
+  never pulled - the actual model is `llava:13b`), then verified both
+  a real anti-cheat rejection and a real tidy-room score with 3
+  specific actions.
+- Fixed the "Score my room with AI" photo input opening a generic
+  upload/gallery picker instead of the camera - added
+  `capture="environment"` so mobile browsers launch the camera
+  directly, matching the "take a fresh photo right now" intent of the
+  freshness check.
+- Replaced raw reference-photo comparison for room-identity matching
+  with a one-time "room fingerprint": a text description of a room's
+  fixed, structural features (walls, flooring, windows, fixed
+  furniture) generated once by the worker from a kid's/room's
+  reference photos, explicitly excluding bedding/linens/clutter since
+  those are expected to change. Fixes a real false-rejection bug found
+  in live testing - the raw-photo room-match check was rejecting a
+  kid's own genuine room because the bedding looked different from the
+  reference photos. Added a `room_fingerprint` column on `kids` and
+  `family_rooms` (invalidated automatically whenever reference photos
+  change), and a worker-token-gated `submit_room_fingerprint` action.
+  Deployed as edge function v11, verified via Node script (8 checks
+  covering pre-seeded/invalidated/regenerated fingerprint states and
+  worker-token auth). Also hardened the room-validity gate's prompt
+  with a new `illustration_or_fictional` category and example, after a
+  stylized fantasy-creature image slipped past both `moondream` and
+  the `llava:13b` gate and was only caught by the (now fingerprint-
+  based) room-match step. See `D-2026-07-16-room-fingerprint` in
+  `DECISIONS.md`.
 
 ## 2026-07-15
 

@@ -19,28 +19,38 @@ so the list stays scannable by tag.
 
 ## 🔴 NOW
 
-### Confirm the layered anti-cheat pipeline on the real worker
+### Confirm the fingerprint-based pipeline on the real worker
 - **Tags:** ai-vision, prompt, validation
 - **Status:** in-progress
-- `poller.py` is now a 5-layer pipeline, cheapest/most-reliable checks
-  first — see Design notes. This is the third iteration of the AI-layer
-  design: the first (one compound "validate then score" prompt) failed
-  live-testing - `llava:13b` scored a photo of shoes on outdoor pavement
-  as if it were a messy bedroom rather than rejecting it. A second
-  opinion was sought (three independent reviews, converging on the same
-  root cause) - the failure is a known VLM behavior where asking one
-  model call to both gatekeep *and* perform a task biases it toward
-  performing the task even on nonsensical input ("completion bias").
-  The fix: never let the model self-report `valid: true/false` for a
-  decision it has an incentive to bias; have it report only observed
-  evidence, and let plain code apply the pass/fail rule.
-- **Done when:** on the real worker, confirm each layer actually fires
-  correctly: (a) blank/blurry rejected with no Ollama call at all
-  (check the log for "no AI needed"), (b) a resubmitted photo rejected
-  as a duplicate, (c) `moondream` correctly fast-rejects an obviously
-  non-room photo, (d) the `llava:13b` gate rejects a room-shaped-but-
-  wrong photo the pre-gate didn't catch, (e) a real tidy-room photo
-  still comes back scored with 3 specific actions.
+- `poller.py` is now on its fourth iteration - see Design notes for the
+  full layer order and the failure each iteration fixed. The two most
+  recent rounds: (1) a gate/scorer split after `llava:13b` scored an
+  obviously-wrong photo (shoes on pavement) instead of rejecting it -
+  root cause was "completion bias" (a model asked to both gatekeep and
+  perform a task in one call biases toward performing it), fixed by
+  never letting the model self-report `valid: true/false`, only
+  evidence, with code applying the pass/fail rule; (2) a room
+  **fingerprint** system after the fix from (1) surfaced the opposite
+  failure - the scorer's room-match step rejected the kid's own real
+  room because the bedding looked different from the reference photos.
+  Comparing raw photos every time meant normal day-to-day bedding
+  variation (the whole point of a tidiness check) got read as "a
+  different room." A fingerprint - a one-time, structural-only
+  description (walls, flooring, windows, fixed furniture, explicitly
+  *not* bedding/linens) generated once per kid/room and reused - fixes
+  this by removing the noisy signal from the comparison entirely rather
+  than hoping the model discounts it correctly every time.
+- **Done when:** on the real worker, confirm: (a) blank/blurry rejected
+  with no Ollama call at all, (b) a resubmitted photo rejected as a
+  duplicate, (c) `moondream` fast-rejects an obviously non-room photo,
+  (d) the `llava:13b` gate rejects a room-shaped-but-wrong photo (and,
+  specifically, an illustrated/fictional image like a stylized fantasy
+  creature - the case that slipped past both AI gates last round and
+  was only caught by the room-match step), (e) a fingerprint gets
+  generated on first use and logged, (f) a real photo of the kid's own
+  room - **even with different bedding than the reference photos** -
+  is NOT falsely rejected, and (g) a genuinely different room still is
+  rejected.
 
 <details>
 <summary>Design notes</summary>
@@ -59,30 +69,47 @@ so the list stays scannable by tag.
    rejected submission's hash can never become the comparison point).
 3. **`moondream` pre-gate** (cheap AI) - a narrow yes/no "is this
    indoors, showing a room?" Only auto-rejects on a *confident* no;
-   anything else (yes, or low/medium-confidence no) falls through to
-   the fuller gate rather than being trusted outright, since it's a
-   much smaller model.
+   anything else falls through to the fuller gate rather than being
+   trusted outright, since it's a much smaller model.
 4. **`llava:13b` room-validity gate** - perception only. The model
    reports `literal_visible_items` / `room_evidence` /
-   `invalid_evidence` / `confidence` - it is never asked for a bare
-   `valid` boolean. Code decides: valid only if `setting ==
-   "indoor_room"`, confidence is `"high"`, `room_evidence` has ≥2
-   items, and `invalid_evidence` is empty. Includes few-shot examples
-   of invalid photos (shoes on pavement, a dog, a close-up object) and
-   runs at `temperature: 0`.
-5. **`llava:13b` scorer** - only reached if all four above pass. Two
-   jobs: confirm the photo matches the target's *own* reference photos
-   (not just "a room" - catches e.g. a sibling's room), then score
-   tidiness 1-10 with explicit ranges and write one encouraging
-   sentence + exactly 3 specific actions.
+   `invalid_evidence` / `confidence` and a `setting` category
+   (`indoor_room` / `outdoor` / `close_up_object` /
+   `illustration_or_fictional` / `unclear` / `other_invalid`) - never a
+   bare `valid` boolean. Code decides: valid only if `setting ==
+   "indoor_room"`, confidence `"high"`, `room_evidence` has ≥2 items,
+   `invalid_evidence` empty. Few-shot examples include shoes-on-pavement,
+   a dog, a close-up object, *and* a stylized fantasy-creature
+   illustration (added after one slipped through - see below). Runs at
+   `temperature: 0`.
+5. **Room fingerprint** (generated lazily, cached) - if the target has
+   no stored fingerprint yet, one `llava:13b` call over the reference
+   photos produces a 3-5 sentence structural-only description, stored
+   via `submit_room_fingerprint` and reused for every future job until
+   reference photos change (`kids.room_fingerprint` /
+   `family_rooms.room_fingerprint`, invalidated to `null` by
+   `upload_reference_photo` / `delete_reference_photo` /
+   `upload_family_room_photo` / `delete_family_room_photo`). If no
+   reference photos exist at all, the submission is rejected with a
+   message to ask a parent to add some first.
+6. **`llava:13b` scorer** - only reached if all above pass. Compares
+   the submission against the fingerprint text (room-identity, ignoring
+   bedding/clutter) and, separately, against the raw reference photos
+   (tidiness scoring 1-10 with explicit ranges, one encouraging
+   sentence + exactly 3 specific actions).
 
 All Ollama calls use the `format` JSON-schema parameter (constrained
-output) instead of asking for JSON in prose and regex-extracting it -
-more robust than the first iteration's approach.
+output) instead of asking for JSON in prose and regex-extracting it.
 
-**Why no stored "room fingerprint":** every scoring request already
-returns the room's reference photos alongside the submitted photo, so
-the scorer can judge "is this the same room" directly in the same call.
+**The illustration gap:** during testing, a stylized fantasy-creature
+illustration (not even a real photograph) was scored instead of
+rejected - it slipped past both `moondream` and the `llava:13b` gate,
+and was only stopped by the (then raw-photo-based) room-match step.
+The gate prompt now has an explicit `illustration_or_fictional`
+category and a few-shot example for this case, but it's a real
+reminder that these AI layers are not infallible even after the
+gate/scorer split - see 🟢 LATER for the deterministic (non-AI)
+hardening ideas that would close this kind of gap more reliably.
 
 **Why a real `rejected` status instead of `score: 0`:** the schema
 already allowed `status = 'failed'` and nothing ever set it - a real
@@ -93,18 +120,18 @@ is a special sentinel.
 `photo_score_freshness_and_rejection`): client-side compression
 (`apps/shared/image.js`) strips EXIF, so the kid app captures
 `file.lastModified` *before* compression and sends it as
-`photo_taken_at`; rejected server-side if missing or >24h old.
+`photo_taken_at`; rejected server-side if missing or >24h old. The
+"Score my room with AI" file input also has `capture="environment"` so
+mobile browsers open the camera directly rather than a gallery picker.
 
-**Known open risk:** the two no-AI layers are solid (direct
-measurements, can't hallucinate). The AI layers are now narrower in
-scope than before (the gate never decides validity itself, only
-reports evidence), but this narrows the risk rather than eliminating
-it - it's still ultimately vision-model judgment underneath the
-software rule. Low-stakes for `informational`/`nudge` modes (a parent's
-still in the loop); worth being cautious about before relying on
-`auto_approve` for a family. See 🟢 LATER below for further hardening
-ideas that were deliberately deferred rather than built into this
-round.
+**Known open risk:** the two no-AI layers (blank/blur, duplicate) are
+solid - direct measurements, can't hallucinate. The fingerprint system
+removes one specific noisy signal (bedding) from one specific judgment
+(room-match), but the AI layers overall are still vision-model
+judgment underneath software rules, not proven infallible - see the
+illustration gap above. Low-stakes for `informational`/`nudge` modes (a
+parent's still in the loop); worth being cautious about before relying
+on `auto_approve` for a family.
 </details>
 
 ---

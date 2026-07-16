@@ -57,6 +57,12 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   (backfilled with what actually shipped), per the user's request to
   use these consistently going forward.
 - Created this `docs/sessions/` directory and convention.
+- Backfilled the pre-session service-role/session-token auth
+  architecture into `DECISIONS.md` (`D-2026-07-13-service-role-session-auth`),
+  after confirming the approach is still sound for this app's scale —
+  flagged the tradeoff that it's the sole line of defense, with no
+  RLS-policy backup, so every new edge-function action needs its
+  permission check reviewed carefully.
 
 ## Files touched
 
@@ -68,7 +74,7 @@ apps under `apps/` (bedroom-reset, parent-dashboard, leaderboard),
 
 ## Related
 
-- All 9 entries in `DECISIONS.md` dated 2026-07-13 through
+- All 10 entries in `DECISIONS.md`, dated 2026-07-13 through
   2026-07-16.
 - All entries in `CHANGELOG.md`.
 
@@ -78,8 +84,3 @@ apps under `apps/` (bedroom-reset, parent-dashboard, leaderboard),
   still open (`docs/TASK_BOARD.md`, 🔴 NOW) — the setup guide has been
   handed off but not yet confirmed working.
 - The AI scoring-quality/anti-cheat task cluster is open, not started.
-- Two open questions from the end of this session, not yet answered:
-  whether to backfill the pre-session session-token/RLS auth decision
-  into `DECISIONS.md`, and whether operational actions like parent-code
-  creation should be tracked somewhere (this session log now covers
-  that gap going forward).

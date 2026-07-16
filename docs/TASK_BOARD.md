@@ -19,71 +19,86 @@ so the list stays scannable by tag.
 
 ## 🔴 NOW
 
-### Redeploy the updated worker prompt (consolidated scoring + anti-cheat)
+### Confirm the layered anti-cheat checks on the real worker
 - **Tags:** ai-vision, prompt, validation
 - **Status:** in-progress
-- The whole scoring-quality/anti-cheat cluster (consistency, structured
-  output, room detection, invalid-photo rejection, room matching,
-  actionable feedback, child-friendly tone) collapsed into **one
-  consolidated prompt** for the home worker script — see Design notes.
-  The repo side (freshness validation, and a real `failed` status for
-  rejections) is built, deployed, and verified. What's left is entirely
-  on the user's Ubuntu/Ollama box: replacing `poller.py` with the
-  updated version (handed to the user directly, not committed here —
-  it embeds the `WORKER_TOKEN` secret) and confirming it live.
-- **Done when:** a photo of the wrong room (or something that isn't a
-  room at all) gets rejected with a specific reason instead of scored,
-  and a real tidy-room photo comes back with a score plus exactly 3
-  specific actions - using the *new* poller, not the old one.
+- The scoring-quality/anti-cheat work is now a **layered pipeline** in
+  `poller.py`, cheapest/most-reliable checks first — see Design notes.
+  Two rounds of real-world testing on the user's actual hardware
+  (`llava:13b` on an Ubuntu/Ollama box) found real gaps that reshaped
+  this design: (1) the model tag has to be the exact one `ollama list`
+  shows (`llava:13b`, not `llava`) or every call 404s; (2) a single
+  compound "is this valid, and if so score it" prompt did not reliably
+  reject an obviously-wrong photo (a flat-lay of shoes on outdoor
+  pavement got scored as if it were a messy bedroom). Neither is a bug
+  in this repo - both are worker-side/model-side findings, addressed by
+  adding two deterministic (no-AI) checks *before* the model ever sees
+  the photo, so the AI is only responsible for the judgment calls that
+  actually need a vision model.
+- **Done when:** on the real worker, (a) a blank/near-solid-color or
+  heavily blurred photo is rejected without an Ollama call at all
+  (check the log for "no AI needed"), (b) resubmitting the same photo
+  twice in a row is rejected as a duplicate, and (c) a photo of the
+  wrong room (or something that isn't a room) still gets rejected by
+  the AI layer with a specific reason - the AI layer's reliability
+  after test (b) failed on a real photo is not yet re-confirmed.
 
 <details>
 <summary>Design notes</summary>
 
+**Layer order, cheapest and most trustworthy first:**
+1. **Blank/blurry check** (`local_quality_check` in `poller.py`, no AI)
+   - grayscale pixel standard deviation catches blank/near-solid-color
+   photos; a Laplacian (edge-detection) filter's variance catches blur.
+   Both are direct measurements, not judgment calls, so they're more
+   reliable than asking a model "is this blurry."
+2. **Reused-photo check** (`duplicate_check`, no AI) - a perceptual
+   hash (`imagehash.average_hash`) of the submitted photo compared
+   against the target's last *scored* photo's hash (`photo_hash`
+   column, round-tripped through `get_pending_photo_scores` as
+   `previous_photo_hash` and stored via `submit_photo_score`). Catches
+   a kid resubmitting the same photo (e.g. re-saving an old screenshot,
+   which would otherwise get a fresh `photo_taken_at` and pass the
+   freshness check). A rejected submission's hash is stored too, but
+   `getLatestPhotoHash` only ever looks at the last *scored* row, so
+   comparing against something that was itself already rejected can't
+   happen.
+3. **The vision model** (`llava:13b`) - only reached if 1 and 2 both
+   pass. One consolidated prompt covering room validity (blank/unusable/
+   wrong-room), tidiness scoring with explicit 1-3/4-6/7-8/9-10 ranges,
+   and structured child-friendly feedback (one encouraging sentence +
+   exactly 3 specific actions):
+   ```json
+   {"valid": false, "reject_reason": "..."}
+   ```
+   or
+   ```json
+   {"valid": true, "score": 7, "comment": "...", "actions": ["...", "...", "..."]}
+   ```
+
 **Why no stored "room fingerprint":** every scoring request already
-returns the room's reference photos alongside the submitted photo
-(`get_pending_photo_scores`), so the model can judge "is this the same
-room" directly in the same call - no need to pre-compute and store a
-fingerprint. This replaced what was originally scoped as two separate
-tasks (generate + compare a fingerprint).
+returns the room's reference photos alongside the submitted photo, so
+the model can judge "is this the same room" directly in the same call.
 
 **Why a real `rejected` status instead of `score: 0`:** the schema
-already allowed `status = 'failed'` and nothing ever set it. Overloading
-`score` with a fake `0` would have meant every consumer of `ai_score`
-had to know `0` is special-cased - a real status is clearer and the UI
-already branches on `status` anyway.
+already allowed `status = 'failed'` and nothing ever set it - a real
+status is clearer than teaching every consumer of `ai_score` that `0`
+is a special sentinel.
 
-**One consolidated prompt, not several model calls:** the worker sends
-one prompt covering validity (blank/unusable/wrong-room), tidiness
-scoring with explicit 1-3/4-6/7-8/9-10 ranges, and structured
-child-friendly feedback (one encouraging sentence + exactly 3 specific
-actions), and expects back either:
-```json
-{"valid": false, "reject_reason": "..."}
-```
-or
-```json
-{"valid": true, "score": 7, "comment": "...", "actions": ["...", "...", "..."]}
-```
-The poller then calls `submit_photo_score` with either
-`{request_id, rejected: true, reason}` or `{request_id, score, comment}`
-(actions get folded into the comment string server-side has no opinion
-on that shape - it's just text, truncated to 280 chars).
-
-**Freshness validation** (already deployed - migration
+**Freshness validation** (deployed - migration
 `photo_score_freshness_and_rejection`): client-side compression
-(`apps/shared/image.js`) re-encodes photos through a canvas, which
-strips any EXIF timestamp - so freshness can't be read from the
-uploaded file. Instead the kid app captures `file.lastModified` *before*
-compression and sends it as `photo_taken_at`; `submit_photo_for_scoring`
-rejects with `photo_too_old` if it's more than 24h old, or
-`photo_timestamp_required`/`photo_timestamp_invalid` if it's missing or
-nonsensical. Verified via a disposable test family covering: stale
-photo rejected, missing timestamp rejected, fresh photo accepted,
-duplicate-while-pending rejected, worker rejection sets `status=failed`
-with a stored `rejection_reason`, resubmission allowed after a failure
-(the partial unique index only blocks `status='pending'`), a real score
-still auto-approves correctly, and a retried score submit stays a
-no-op (idempotency regression check).
+(`apps/shared/image.js`) strips EXIF, so the kid app captures
+`file.lastModified` *before* compression and sends it as
+`photo_taken_at`; rejected server-side if missing or >24h old.
+
+**Known open risk:** the two no-AI layers are solid (they're direct
+measurements), but the AI layer's room-validity judgment is only as
+good as `llava:13b`'s willingness to say "this doesn't make sense" -
+smaller/older vision models are known to be inconsistent at refusing
+rather than guessing. This is a real limitation of the local model, not
+something more prompt engineering can fully close. Low-stakes for
+`informational`/`nudge` modes (a parent's still in the loop); worth
+being cautious about before relying on `auto_approve` for a family.
 </details>
 
 ---

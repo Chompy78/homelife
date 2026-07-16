@@ -89,27 +89,57 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   - embeds `WORKER_TOKEN`) with one consolidated prompt covering
   room-type detection, invalid-photo rejection, room matching, explicit
   1-10 scoring ranges, and structured feedback (one sentence + exactly
-  3 actions). Redeploying it on the Ubuntu box is the one remaining
-  step.
+  3 actions).
+- Walked the user through getting it onto their actual server (WinSCP,
+  then discovered their real layout - `/data/projects/homelife-poller/
+  scripts`, not the `~/homelife-poller` originally assumed - and fixed
+  the cron entry to match) and confirmed it runs.
+- Found and fixed a real bug during live testing: the Ollama model tag
+  has to match exactly (`llava:13b`, not `llava`) or every call 404s.
+- Live-tested the new prompt against a real photo (a tidy room) - got
+  back a real score with 3 specific actions, confirming the scoring
+  path works. Then live-tested against an obviously-wrong photo (shoes
+  on outdoor pavement) - the model scored it anyway instead of
+  rejecting it, revealing the single-prompt anti-cheat check isn't
+  reliable on `llava:13b`. Discussed why (small/older vision models are
+  inconsistent at refusing vs. guessing) and why simple repeated-vote
+  ensembling wouldn't fix a consistent failure, only an inconsistent one.
+- Designed and shipped a layered fix: two deterministic, no-AI checks
+  (blank/blurry detection via pixel/edge variance; reused-photo
+  detection via perceptual hashing) that run before the photo ever
+  reaches the model, narrowing what the AI is actually responsible for.
+  Added a `photo_hash` column and edge-function plumbing
+  (`previous_photo_hash` on `get_pending_photo_scores`, stored via
+  `submit_photo_score`), deployed as edge function v10, verified via
+  Node script. Rebuilt `poller.py` with the layered pipeline and
+  delivered it. Logged as `D-2026-07-16-layered-anti-cheat-checks`.
+  Confirming the two new checks and re-testing the AI layer's
+  room-validity judgment on the real worker is still pending.
+- Wrote a self-contained problem writeup (model/hardware, what was
+  tried, what failed, what's being tried next) for the user to get a
+  second opinion elsewhere.
 
 ## Files touched
 
 `AGENTS.md`, `DECISIONS.md`, `CHANGELOG.md`, `docs/TASK_BOARD.md`,
 `docs/PARENT-GUIDE.md`, `README.md`, `supabase/functions/family-api/index.ts`
 (+ migrations `rename_mum_to_parent`, `ai_photo_scoring`,
-`photo_score_freshness_and_rejection`), `apps/bedroom-reset/app.js`,
-`apps/bedroom-reset/service-worker.js`, `apps/parent-dashboard/app.js`,
-`apps/parent-dashboard/styles.css`, `assets/images/homelife_favicon.png`.
+`photo_score_freshness_and_rejection`, `photo_score_hash`),
+`apps/bedroom-reset/app.js`, `apps/bedroom-reset/service-worker.js`,
+`apps/parent-dashboard/app.js`, `apps/parent-dashboard/styles.css`,
+`assets/images/homelife_favicon.png`.
 
 ## Related
 
-- All 11 entries in `DECISIONS.md`, dated 2026-07-13 through
+- All 12 entries in `DECISIONS.md`, dated 2026-07-13 through
   2026-07-16.
 - All entries in `CHANGELOG.md`.
 
 ## Carried forward
 
-- Redeploying the updated `poller.py` on the user's Ubuntu box, and
-  confirming a live test photo comes back through the new
-  validate-and-score prompt (`docs/TASK_BOARD.md`, 🔴 NOW) - the only
-  thing left on the board besides the 🟢 LATER custom-icon idea.
+- Confirming, on the user's real worker, that the blank/blurry check
+  and the duplicate-photo check both fire correctly (no AI call in the
+  log for either), and re-testing the AI layer's room-validity judgment
+  now that it's the last line of defense rather than the only one
+  (`docs/TASK_BOARD.md`, 🔴 NOW) - the only thing left on the board
+  besides the 🟢 LATER custom-icon idea.

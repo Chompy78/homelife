@@ -37,6 +37,26 @@ on `TASK_BOARD.md`.
   scoring ranges, and structured feedback (one encouraging sentence +
   exactly 3 specific actions). Redeploying it on the user's Ubuntu box
   is the one remaining step - see `docs/TASK_BOARD.md`.
+- Live testing on the user's real hardware surfaced two real findings:
+  the Ollama model tag has to match exactly (`llava:13b`, not `llava`)
+  or every call 404s, and the single-prompt anti-cheat check did not
+  reliably reject an obviously-wrong photo (shoes on outdoor pavement
+  got scored as a bedroom). Neither is a repo bug - both are
+  worker-side/model-capability findings.
+- Added a `photo_hash` column and edge-function plumbing
+  (`get_pending_photo_scores` returns the target's last-scored photo's
+  hash as `previous_photo_hash`; `submit_photo_score` accepts and
+  stores a new one on both the scored and rejected paths) so the
+  worker can detect a reused photo. Deployed as edge function v10,
+  verified via a Node script covering the round-trip and the "a
+  rejected submission's hash never becomes the comparison point"
+  edge case.
+- Rebuilt `poller.py` as a layered pipeline: two deterministic, no-AI
+  checks (blank/blurry detection via pixel and edge variance; reused-
+  photo detection via perceptual hashing) run before the photo ever
+  reaches the vision model, so the AI is only asked the judgment calls
+  that actually need it. Delivered to the user; live confirmation of
+  the AI layer's room-validity check specifically is still pending.
 
 ## 2026-07-15
 

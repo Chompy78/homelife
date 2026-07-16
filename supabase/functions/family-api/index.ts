@@ -147,6 +147,22 @@ async function getLatestPhotoScore(column: "kid_id" | "room_id", id: string) {
   return data || null;
 }
 
+// The worker's own reused-photo check: the hash of the target's most recently
+// *scored* submission (not a rejected one - comparing a new photo against a
+// photo that was itself already rejected isn't useful).
+async function getLatestPhotoHash(column: "kid_id" | "room_id", id: string) {
+  const { data } = await db
+    .from("photo_score_requests")
+    .select("photo_hash")
+    .eq(column, id)
+    .eq("status", "scored")
+    .not("photo_hash", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.photo_hash || null;
+}
+
 // Shared by a PIN-confirmed Parent Check and an AI auto-approval (when a
 // family's ai_score_mode is "auto_approve") - same points/streak/history
 // logic either way, just a different event_type so parents can always tell
@@ -1158,12 +1174,16 @@ Deno.serve(async (req) => {
           (pending || []).map(async (req) => {
             const { data: signed } = await db.storage.from(PHOTO_BUCKET).createSignedUrl(req.storage_path, SIGNED_URL_TTL_SECONDS);
             const referencePhotos = req.kid_id ? await getPhotosWithUrls(req.kid_id) : await getRoomPhotosWithUrls(req.room_id as string);
+            const previousPhotoHash = req.kid_id
+              ? await getLatestPhotoHash("kid_id", req.kid_id)
+              : await getLatestPhotoHash("room_id", req.room_id as string);
             return {
               id: req.id,
               kid_id: req.kid_id,
               room_id: req.room_id,
               submitted_photo_url: signed?.signedUrl || null,
               reference_photos: referencePhotos,
+              previous_photo_hash: previousPhotoHash,
               created_at: req.created_at,
             };
           })
@@ -1175,17 +1195,21 @@ Deno.serve(async (req) => {
         if (!checkWorkerToken(body)) return json({ ok: false, error: "unauthorized" }, 401);
 
         const requestId = String(body.request_id || "");
+        // Opaque to Postgres - whatever the worker computed (e.g. a perceptual
+        // hash). Stored either way so a future submission can be compared
+        // against it via getLatestPhotoHash, even if this one was rejected.
+        const photoHash = body.photo_hash != null ? String(body.photo_hash).slice(0, 120) : null;
 
         // The worker's anti-cheat checks (wrong room, not a room, unusable
-        // photo) failed - no score, just a reason. Uses the 'failed' status
-        // already allowed by the schema rather than a fake numeric score.
-        // Guarding on status = 'pending' makes a retried/duplicate submit a
-        // harmless no-op either way.
+        // photo, reused photo) failed - no score, just a reason. Uses the
+        // 'failed' status already allowed by the schema rather than a fake
+        // numeric score. Guarding on status = 'pending' makes a retried/
+        // duplicate submit a harmless no-op either way.
         if (body.rejected === true) {
           const reason = String(body.reason || "").slice(0, 280);
           const { data: rejectedRow } = await db
             .from("photo_score_requests")
-            .update({ status: "failed", rejection_reason: reason, scored_at: new Date().toISOString() })
+            .update({ status: "failed", rejection_reason: reason, photo_hash: photoHash, scored_at: new Date().toISOString() })
             .eq("id", requestId)
             .eq("status", "pending")
             .select()
@@ -1200,7 +1224,7 @@ Deno.serve(async (req) => {
 
         const { data: updated } = await db
           .from("photo_score_requests")
-          .update({ status: "scored", score, comment, scored_at: new Date().toISOString() })
+          .update({ status: "scored", score, comment, photo_hash: photoHash, scored_at: new Date().toISOString() })
           .eq("id", requestId)
           .eq("status", "pending")
           .select()

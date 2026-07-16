@@ -19,23 +19,14 @@ so the list stays scannable by tag.
 
 ## 🔴 NOW
 
-### Get the home AI worker actually running
-- **Tags:** infra, ai-vision
-- **Status:** in-progress
-- The Supabase side (schema, edge function actions, worker-token auth,
-  kid-app UI, parent-dashboard settings) is fully built and deployed.
-  What's left is entirely on the home-network side: the poller script
-  that fetches pending photos and calls the local vision model. A full
-  copy-paste setup walkthrough has been handed to the user (Ubuntu +
-  Ollama + cron); confirming it's actually running end-to-end is the
-  remaining step.
-- **Done when:** a kid submits a photo via "Score my room with AI," the
-  home worker picks it up, scores it, and the score shows up on the
-  parent dashboard — with the family's mode still set to
-  `informational` (not `auto_approve`) until this is proven reliable.
+The home AI worker is confirmed running end-to-end (Ubuntu/Ollama box
+polling Supabase, scoring photos, posting results back — see
+`CHANGELOG.md`, 2026-07-16). The tasks below are all scoring-quality
+and anti-cheat improvements on top of that now-working pipeline, and
+they build directly on the architecture summarized here.
 
 <details>
-<summary>Design notes</summary>
+<summary>Reference: AI scoring architecture</summary>
 
 **Key constraint:** the Supabase edge function runs in the cloud and
 cannot reach into a home network. The home network *can* reach out to

@@ -63,6 +63,8 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   flagged the tradeoff that it's the sole line of defense, with no
   RLS-policy backup, so every new edge-function action needs its
   permission check reviewed carefully.
+- User confirmed the home AI worker is running end-to-end — the AI
+  photo-scoring feature is fully live, not just built.
 
 ## Files touched
 
@@ -80,7 +82,5 @@ apps under `apps/` (bedroom-reset, parent-dashboard, leaderboard),
 
 ## Carried forward
 
-- Confirming the home AI worker is actually running end-to-end is
-  still open (`docs/TASK_BOARD.md`, 🔴 NOW) — the setup guide has been
-  handed off but not yet confirmed working.
-- The AI scoring-quality/anti-cheat task cluster is open, not started.
+- The AI scoring-quality/anti-cheat task cluster (`docs/TASK_BOARD.md`,
+  🔴 NOW) is open, not started — now the only thing left on the board.

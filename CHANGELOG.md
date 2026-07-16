@@ -8,6 +8,10 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-16
 
+- Confirmed the home AI photo-scoring worker running end-to-end: the
+  Ubuntu/Ollama box polls Supabase for pending photos, scores them
+  with a local vision model, and posts results back. The AI
+  photo-scoring feature is now fully live, not just built.
 - Restructured task tracking: renamed `ROADMAP.md` to `TASK_BOARD.md`,
   switched to a NOW/NEXT/LATER format with tags, status, and a "done
   when" condition per task, and folded in the AI-scoring quality/

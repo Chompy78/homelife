@@ -19,174 +19,72 @@ so the list stays scannable by tag.
 
 ## 🔴 NOW
 
-The home AI worker is confirmed running end-to-end (Ubuntu/Ollama box
-polling Supabase, scoring photos, posting results back — see
-`CHANGELOG.md`, 2026-07-16). The tasks below are all scoring-quality
-and anti-cheat improvements on top of that now-working pipeline, and
-they build directly on the architecture summarized here.
+### Redeploy the updated worker prompt (consolidated scoring + anti-cheat)
+- **Tags:** ai-vision, prompt, validation
+- **Status:** in-progress
+- The whole scoring-quality/anti-cheat cluster (consistency, structured
+  output, room detection, invalid-photo rejection, room matching,
+  actionable feedback, child-friendly tone) collapsed into **one
+  consolidated prompt** for the home worker script — see Design notes.
+  The repo side (freshness validation, and a real `failed` status for
+  rejections) is built, deployed, and verified. What's left is entirely
+  on the user's Ubuntu/Ollama box: replacing `poller.py` with the
+  updated version (handed to the user directly, not committed here —
+  it embeds the `WORKER_TOKEN` secret) and confirming it live.
+- **Done when:** a photo of the wrong room (or something that isn't a
+  room at all) gets rejected with a specific reason instead of scored,
+  and a real tidy-room photo comes back with a score plus exactly 3
+  specific actions - using the *new* poller, not the old one.
 
 <details>
-<summary>Reference: AI scoring architecture</summary>
+<summary>Design notes</summary>
 
-**Key constraint:** the Supabase edge function runs in the cloud and
-cannot reach into a home network. The home network *can* reach out to
-Supabase. So this is a **pull/poll** design — the home side polls for
-work, not the cloud side pushing to home. No port forwarding, tunnel,
-or public endpoint needed.
+**Why no stored "room fingerprint":** every scoring request already
+returns the room's reference photos alongside the submitted photo
+(`get_pending_photo_scores`), so the model can judge "is this the same
+room" directly in the same call - no need to pre-compute and store a
+fingerprint. This replaced what was originally scoped as two separate
+tasks (generate + compare a fingerprint).
 
-**Schema** (migration `ai_photo_scoring`):
-- `families.ai_score_mode` (`'off' | 'informational' | 'nudge' | 'auto_approve'`, default `'informational'`) and `families.ai_score_auto_threshold` (1-10, default `8`) — set from the parent dashboard Settings card.
-- `photo_score_requests`: `id, family_id, kid_id (nullable), room_id (nullable), storage_path, status ('pending'|'scored'|'failed'), score (1-10, nullable), comment (nullable), created_at, scored_at`. RLS enabled, zero policies — same "only the edge function touches this" pattern as every other table. A partial unique index caps it at **one pending request per kid/room at a time**.
+**Why a real `rejected` status instead of `score: 0`:** the schema
+already allowed `status = 'failed'` and nothing ever set it. Overloading
+`score` with a fake `0` would have meant every consumer of `ai_score`
+had to know `0` is special-cased - a real status is clearer and the UI
+already branches on `status` anyway.
 
-**Kid-app flow:** a "📸 Score my room with AI" button (bedroom-reset
-app, hidden entirely when a family's mode is `off`) — separate from the
-existing "what done looks like" reference photos, which stay
-parent-only. Photo is compressed client-side (`apps/shared/image.js`,
-`maxDim: 900, quality: 0.6`) then uploaded via `submit_photo_for_scoring`.
-While a request is pending, the kid app polls every ~20s for a result.
+**One consolidated prompt, not several model calls:** the worker sends
+one prompt covering validity (blank/unusable/wrong-room), tidiness
+scoring with explicit 1-3/4-6/7-8/9-10 ranges, and structured
+child-friendly feedback (one encouraging sentence + exactly 3 specific
+actions), and expects back either:
+```json
+{"valid": false, "reject_reason": "..."}
+```
+or
+```json
+{"valid": true, "score": 7, "comment": "...", "actions": ["...", "...", "..."]}
+```
+The poller then calls `submit_photo_score` with either
+`{request_id, rejected: true, reason}` or `{request_id, score, comment}`
+(actions get folded into the comment string server-side has no opinion
+on that shape - it's just text, truncated to 280 chars).
 
-**Edge-function actions** (`supabase/functions/family-api/index.ts`):
-- `submit_photo_for_scoring` (kid session) — uploads to
-  `score-submissions/{kid_id or room-{room_id}}/...` in the existing
-  `reference-photos` bucket, inserts a `pending` row. Rejects with
-  `ai_scoring_disabled` if the family's mode is `off`, or
-  `already_pending` if one's already queued.
-- `get_pending_photo_scores` (**worker-token gated**) — returns up to
-  10 pending jobs, each with a signed URL for the submitted photo *and*
-  the kid's/room's existing reference photos.
-- `submit_photo_score` (**worker-token gated**) — takes
-  `{request_id, score, comment}`, marks the row `scored`. Idempotent:
-  guarded on `status = 'pending'`, so a retried POST is a no-op. If the
-  family's mode is `auto_approve` and `score >= ai_score_auto_threshold`,
-  awards the same points/streak as a PIN-confirmed Parent Check via
-  `awardBedroomPass` / `awardRoomPass` — logged as `ai_auto_pass`.
-
-**Worker-token auth:** the poller authenticates with a static secret
-(`WORKER_TOKEN`, an Edge Function secret, never shipped to any
-browser). If unset, every worker-gated call fails closed.
-
-**Poller script contract:** POST `get_pending_photo_scores` with
-`{worker_token}` → for each job, download `submitted_photo_url` +
-`reference_photos[].url`, send to a local Ollama vision model with a
-tidiness-rating prompt → POST `submit_photo_score` with
-`{worker_token, request_id, score, comment}`.
-
-**Open questions:** exact poll interval (started at ~2 min, tune once
-running for real); which Ollama vision model ends up in use, and
-prompt tuning once real photos are tested; whether `auto_approve`
-should award fewer points than a real Parent Check pass (currently:
-same points, on purpose — revisit if that undervalues the human check).
+**Freshness validation** (already deployed - migration
+`photo_score_freshness_and_rejection`): client-side compression
+(`apps/shared/image.js`) re-encodes photos through a canvas, which
+strips any EXIF timestamp - so freshness can't be read from the
+uploaded file. Instead the kid app captures `file.lastModified` *before*
+compression and sends it as `photo_taken_at`; `submit_photo_for_scoring`
+rejects with `photo_too_old` if it's more than 24h old, or
+`photo_timestamp_required`/`photo_timestamp_invalid` if it's missing or
+nonsensical. Verified via a disposable test family covering: stale
+photo rejected, missing timestamp rejected, fresh photo accepted,
+duplicate-while-pending rejected, worker rejection sets `status=failed`
+with a stored `rejection_reason`, resubmission allowed after a failure
+(the partial unique index only blocks `status='pending'`), a real score
+still auto-approves correctly, and a retried score submit stays a
+no-op (idempotency regression check).
 </details>
-
----
-
-### Improve scoring consistency
-- **Tags:** ai-vision, prompt
-- **Status:** open
-- The scoring prompt needs explicit ranges so messy rooms aren't scored
-  too generously:
-  - 1–3 = messy / unacceptable
-  - 4–6 = partially tidy
-  - 7–8 = good
-  - 9–10 = excellent
-- **Done when:** obviously messy test photos consistently score below 5.
-
-### Require structured output from the model
-- **Tags:** ai-vision, prompt
-- **Status:** open
-- Update the worker's prompt (see the poller contract above) so every
-  response is `{score, comment}` where the comment always contains
-  exactly 3 specific, actionable improvement steps — not just an
-  encouraging sentence.
-- **Done when:** every scored response includes exactly 3 actionable
-  steps, and the edge function/UI can rely on that shape.
-
-### Improve prompt strictness and clarity
-- **Tags:** ai-vision, prompt
-- **Status:** open
-- Tighten the prompt so the model compares more strictly against the
-  reference photos and doesn't overpraise incomplete cleaning.
-- **Done when:** scoring and feedback reflect actual cleanliness on a
-  small manual test set of real vs. staged photos.
-
-### Detect room type before scoring (anti-cheat, layer 1)
-- **Tags:** ai-vision, validation
-- **Status:** open
-- Extend the scoring prompt so the model first identifies whether the
-  photo is actually a bedroom (or the relevant shared room) vs. some
-  other scene. If not a match, short-circuit to score `0` rather than
-  scoring the wrong thing.
-- **Done when:** a non-bedroom photo submitted for a bedroom score is
-  rejected/zeroed instead of scored normally.
-
-### Reject invalid or unclear photos
-- **Tags:** ai-vision, validation
-- **Status:** open
-- Detect and reject blank images, extreme closeups, and otherwise
-  irrelevant/unusable photos before they consume a scoring request.
-- **Done when:** unusable test photos don't get a real score back.
-
-### Generate a room fingerprint from reference photos
-- **Tags:** feature, ai-vision
-- **Status:** open
-- From each kid's/room's existing reference ("what done looks like")
-  photos, extract simple identifying features — bed type, floor type,
-  major objects, key visual landmarks — and store them in structured
-  form (new column or table, e.g. `kids.room_fingerprint` /
-  `family_rooms.room_fingerprint` as jsonb).
-- **Done when:** every kid/room with reference photos has a stored
-  fingerprint.
-
-### Verify submitted photos match the known room (anti-cheat, layer 2)
-- **Tags:** feature, ai-vision
-- **Status:** open
-- Depends on the fingerprint task above. Compare each newly submitted
-  photo against the stored fingerprint for that kid/room; on mismatch,
-  score `0` rather than scoring a photo of the wrong room (or someone
-  else's room).
-- **Done when:** a photo from a different room than the one being
-  scored is rejected instead of scored normally.
-
----
-
-## 🟡 NEXT
-
-### Photo freshness validation
-- **Tags:** feature, validation
-- **Status:** open
-- Extract the EXIF timestamp from submitted photos where available,
-  and reject or flag photos older than a threshold (catches a kid
-  reusing an old "tidy" photo instead of taking a new one).
-- **Done when:** a reused/old photo is reliably flagged or blocked.
-
-### Enforce actionable improvement suggestions
-- **Tags:** ai-vision, ux
-- **Status:** open
-- Builds on "require structured output" above — this is about the
-  *quality* of the 3 actions, not just their presence: specific and
-  useful ("put the books back on the shelf"), not generic ("tidy up
-  more").
-- **Done when:** feedback reads as concrete and usable, not generic,
-  across a small manual test set.
-
-### Adjust tone for children
-- **Tags:** ai-vision, ux
-- **Status:** open
-- Ensure the model's comment is simple, encouraging, and
-  age-appropriate regardless of how low the score is — a low score
-  should still feel motivating, not harsh.
-- **Done when:** responses read as child-friendly on a manual review
-  pass, including low-score cases.
-
-### Consolidate validation + scoring into one prompt
-- **Tags:** ai-vision, refactor
-- **Status:** open
-- Once the individual pieces above (room detection, photo validation,
-  room matching, scoring, structured feedback) all exist, merge them
-  into a single prompt/call rather than several separate model calls —
-  cheaper and simpler than chaining requests.
-- **Done when:** one prompt handles validation, matching, scoring, and
-  feedback in a single response.
 
 ---
 
@@ -200,13 +98,3 @@ same points, on purpose — revisit if that undervalues the human check).
   not requested yet.
 - **Done when:** a parent can set a custom image as a kid's avatar and
   it shows consistently across the dashboard and leaderboard.
-
----
-
-## Overall "done" for the AI scoring quality/anti-cheat cluster
-
-- Invalid photos are rejected before they're scored.
-- Only the correct room/kid is accepted for a given scoring request.
-- Scores are realistic (messy rooms score low, tidy rooms score high).
-- Every response includes exactly 3 specific, actionable steps.
-- Feedback is useful, consistent, and age-appropriate.

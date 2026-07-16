@@ -123,10 +123,10 @@ function roomResetDay() {
 function progressOf(data) {
   return activeRoom.type === "bedroom" ? data.streak : data.progress;
 }
-function submitRoomPhotoForScoring(base64, contentType) {
+function submitRoomPhotoForScoring(base64, contentType, photoTakenAt) {
   return activeRoom.type === "bedroom"
-    ? callApi("submit_photo_for_scoring", { token, image_base64: base64, content_type: contentType })
-    : callApi("submit_photo_for_scoring", { token, room_id: activeRoom.id, image_base64: base64, content_type: contentType });
+    ? callApi("submit_photo_for_scoring", { token, image_base64: base64, content_type: contentType, photo_taken_at: photoTakenAt })
+    : callApi("submit_photo_for_scoring", { token, room_id: activeRoom.id, image_base64: base64, content_type: contentType, photo_taken_at: photoTakenAt });
 }
 
 // --- Room switcher -----------------------------------------------------
@@ -494,6 +494,12 @@ function renderAiScoreCard() {
     return;
   }
 
+  if (aiScore.status === "failed") {
+    aiScoreStatus.className = "aiScoreStatus";
+    aiScoreStatus.textContent = `🤔 ${aiScore.rejection_reason || "That photo couldn't be scored - try a clearer photo of the room."}`;
+    return;
+  }
+
   const passed = (aiScore.score || 0) >= aiScoreThreshold;
   aiScoreStatus.className = "aiScoreStatus scored" + (passed ? " good" : "");
   let text = `🤖 ${aiScore.score}/10 - ${aiScore.comment || ""}`;
@@ -510,11 +516,20 @@ if (aiScoreInput) {
     if (!file) return;
     aiScoreError.classList.add("hidden");
     try {
+      // Captured from the source file before compression re-encodes it (which
+      // strips this along with any other EXIF data) - lets the server check
+      // the photo is actually fresh, not an old one reused from the gallery.
+      const photoTakenAt = new Date(file.lastModified || Date.now()).toISOString();
       const { base64, contentType } = await compressImage(file, { maxDim: 900, quality: 0.6 });
-      const res = await submitRoomPhotoForScoring(base64, contentType);
+      const res = await submitRoomPhotoForScoring(base64, contentType, photoTakenAt);
       if (!res.ok) {
-        aiScoreError.textContent =
-          res.error === "already_pending" ? "You already have a photo waiting to be scored." : "Couldn't submit that photo. Try again.";
+        const messages = {
+          already_pending: "You already have a photo waiting to be scored.",
+          photo_too_old: "That photo looks old - take a fresh one of your room right now.",
+          photo_timestamp_required: "Couldn't tell when that photo was taken. Try taking a new one.",
+          photo_timestamp_invalid: "That photo's timestamp looks wrong. Try taking a new one.",
+        };
+        aiScoreError.textContent = messages[res.error] || "Couldn't submit that photo. Try again.";
         aiScoreError.classList.remove("hidden");
         return;
       }

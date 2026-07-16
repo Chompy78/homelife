@@ -65,22 +65,51 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   permission check reviewed carefully.
 - User confirmed the home AI worker is running end-to-end — the AI
   photo-scoring feature is fully live, not just built.
+- Tackled the AI scoring-quality/anti-cheat task cluster. Simplified
+  the original scope on inspection: dropped the planned "room
+  fingerprint" storage (the model already gets reference photos in
+  every scoring request, so it can compare directly), replaced planned
+  EXIF-based freshness checks with a client-captured timestamp (our own
+  compression strips EXIF, so it would never have worked), and used the
+  schema's existing but unused `'failed'` status for anti-cheat
+  rejections instead of overloading `score` with a fake `0`. Logged as
+  `D-2026-07-16-ai-anti-cheat-simplification`.
+- Shipped the repo side: migration `photo_score_freshness_and_rejection`
+  (`photo_taken_at`, `rejection_reason` columns), edge-function changes
+  (freshness check in `submit_photo_for_scoring`, a `rejected` path in
+  `submit_photo_score`), kid-app timestamp capture and a distinct
+  "not scored" state, parent-dashboard display for rejected scores.
+  Deployed as edge function v9. Verified via a disposable test family
+  (12 checks: stale/missing timestamp rejection, fresh photo accepted,
+  duplicate-while-pending blocked, worker rejection sets `failed` with
+  a reason, resubmission allowed after a rejection, real score still
+  auto-approves, retried score submit stays a no-op, wrong worker token
+  fails closed).
+- Wrote and delivered an updated `poller.py` to the user (not committed
+  - embeds `WORKER_TOKEN`) with one consolidated prompt covering
+  room-type detection, invalid-photo rejection, room matching, explicit
+  1-10 scoring ranges, and structured feedback (one sentence + exactly
+  3 actions). Redeploying it on the Ubuntu box is the one remaining
+  step.
 
 ## Files touched
 
 `AGENTS.md`, `DECISIONS.md`, `CHANGELOG.md`, `docs/TASK_BOARD.md`,
 `docs/PARENT-GUIDE.md`, `README.md`, `supabase/functions/family-api/index.ts`
-(+ migrations `rename_mum_to_parent`, `ai_photo_scoring`), all three
-apps under `apps/` (bedroom-reset, parent-dashboard, leaderboard),
-`assets/images/homelife_favicon.png`.
+(+ migrations `rename_mum_to_parent`, `ai_photo_scoring`,
+`photo_score_freshness_and_rejection`), `apps/bedroom-reset/app.js`,
+`apps/bedroom-reset/service-worker.js`, `apps/parent-dashboard/app.js`,
+`apps/parent-dashboard/styles.css`, `assets/images/homelife_favicon.png`.
 
 ## Related
 
-- All 10 entries in `DECISIONS.md`, dated 2026-07-13 through
+- All 11 entries in `DECISIONS.md`, dated 2026-07-13 through
   2026-07-16.
 - All entries in `CHANGELOG.md`.
 
 ## Carried forward
 
-- The AI scoring-quality/anti-cheat task cluster (`docs/TASK_BOARD.md`,
-  🔴 NOW) is open, not started — now the only thing left on the board.
+- Redeploying the updated `poller.py` on the user's Ubuntu box, and
+  confirming a live test photo comes back through the new
+  validate-and-score prompt (`docs/TASK_BOARD.md`, 🔴 NOW) - the only
+  thing left on the board besides the 🟢 LATER custom-icon idea.

@@ -33,6 +33,12 @@ const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour, regenerated on every fetch
 
+// AI photo scoring: how old a submitted photo's own capture timestamp is
+// allowed to be before it's rejected as a stale/reused photo. Captured
+// client-side before compression, since compression re-encodes the image
+// and strips any EXIF timestamp that would otherwise carry this.
+const MAX_PHOTO_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 // The local AI-scoring worker isn't a parent or a kid, so it doesn't get a
 // session token - it authenticates with this separate static secret instead,
 // set as a Supabase Edge Function secret (never shipped to any browser).
@@ -133,7 +139,7 @@ async function freshStreak(kidId: string) {
 async function getLatestPhotoScore(column: "kid_id" | "room_id", id: string) {
   const { data } = await db
     .from("photo_score_requests")
-    .select("id, status, score, comment, created_at, scored_at")
+    .select("id, status, score, comment, rejection_reason, created_at, scored_at")
     .eq(column, id)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -1099,6 +1105,15 @@ Deno.serve(async (req) => {
         }
         if (bytes.byteLength > MAX_PHOTO_BYTES) return json({ ok: false, error: "image_too_large" }, 400);
 
+        // photo_taken_at is captured by the client from the source file/camera
+        // before compression - required, so a kid can't resubmit an old "tidy"
+        // photo from their gallery instead of taking a fresh one.
+        const takenAtMs = Date.parse(String(body.photo_taken_at || ""));
+        if (!Number.isFinite(takenAtMs)) return json({ ok: false, error: "photo_timestamp_required" }, 400);
+        const ageMs = Date.now() - takenAtMs;
+        if (ageMs > MAX_PHOTO_AGE_MS) return json({ ok: false, error: "photo_too_old" }, 400);
+        if (ageMs < -5 * 60 * 1000) return json({ ok: false, error: "photo_timestamp_invalid" }, 400); // >5 min in the future - clock skew tolerance
+
         const contentType = String(body.content_type || "image/jpeg");
         const ext = contentType.includes("png") ? "png" : "jpg";
         const target = roomId ? `room-${roomId}` : session.kid_id;
@@ -1114,6 +1129,7 @@ Deno.serve(async (req) => {
             kid_id: roomId ? null : session.kid_id,
             room_id: roomId,
             storage_path: path,
+            photo_taken_at: new Date(takenAtMs).toISOString(),
           })
           .select()
           .single();
@@ -1159,12 +1175,29 @@ Deno.serve(async (req) => {
         if (!checkWorkerToken(body)) return json({ ok: false, error: "unauthorized" }, 401);
 
         const requestId = String(body.request_id || "");
+
+        // The worker's anti-cheat checks (wrong room, not a room, unusable
+        // photo) failed - no score, just a reason. Uses the 'failed' status
+        // already allowed by the schema rather than a fake numeric score.
+        // Guarding on status = 'pending' makes a retried/duplicate submit a
+        // harmless no-op either way.
+        if (body.rejected === true) {
+          const reason = String(body.reason || "").slice(0, 280);
+          const { data: rejectedRow } = await db
+            .from("photo_score_requests")
+            .update({ status: "failed", rejection_reason: reason, scored_at: new Date().toISOString() })
+            .eq("id", requestId)
+            .eq("status", "pending")
+            .select()
+            .maybeSingle();
+
+          return json({ ok: true, data: { applied: !!rejectedRow, auto_approved: false } });
+        }
+
         const score = Number(body.score);
         const comment = String(body.comment || "").slice(0, 280);
         if (!Number.isInteger(score) || score < 1 || score > 10) return json({ ok: false, error: "bad_score" }, 400);
 
-        // Guarding on status = 'pending' makes a retried/duplicate submit a
-        // harmless no-op instead of double-awarding points on auto-approve.
         const { data: updated } = await db
           .from("photo_score_requests")
           .update({ status: "scored", score, comment, scored_at: new Date().toISOString() })

@@ -8,10 +8,6 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-16
 
-- Confirmed the home AI photo-scoring worker running end-to-end: the
-  Ubuntu/Ollama box polls Supabase for pending photos, scores them
-  with a local vision model, and posts results back. The AI
-  photo-scoring feature is now fully live, not just built.
 - Restructured task tracking: renamed `ROADMAP.md` to `TASK_BOARD.md`,
   switched to a NOW/NEXT/LATER format with tags, status, and a "done
   when" condition per task, and folded in the AI-scoring quality/
@@ -19,6 +15,28 @@ on `TASK_BOARD.md`.
   validation, room matching, photo freshness).
 - Set up `AGENTS.md`, `DECISIONS.md`, and this changelog as the
   project's governance docs.
+- Confirmed the home AI photo-scoring worker running end-to-end: the
+  Ubuntu/Ollama box polls Supabase for pending photos, scores them
+  with a local vision model, and posts results back. The AI
+  photo-scoring feature is now fully live, not just built.
+- Shipped photo freshness validation for AI scoring: the kid app now
+  captures a photo's own timestamp before compression (which strips
+  EXIF) and the edge function rejects stale/reused photos
+  (`photo_too_old`). Added a real `rejected`/`failed` path to
+  `submit_photo_score` (using the schema's existing but previously
+  unused `'failed'` status) so anti-cheat rejections are distinct from
+  a real low score, surfaced on both the kid app and parent dashboard.
+  Verified via a disposable test family covering stale/missing
+  timestamps, resubmission after a rejection, and an auto-approve
+  regression check. Deployed as edge function v9.
+- Delivered an updated `poller.py` to the user (not committed - it
+  embeds the `WORKER_TOKEN` secret) consolidating the AI scoring-quality
+  and anti-cheat work into one prompt: room-type detection, invalid/
+  unusable-photo rejection, room matching against the existing
+  reference photos (no stored fingerprint needed), explicit 1-10
+  scoring ranges, and structured feedback (one encouraging sentence +
+  exactly 3 specific actions). Redeploying it on the user's Ubuntu box
+  is the one remaining step - see `docs/TASK_BOARD.md`.
 
 ## 2026-07-15
 

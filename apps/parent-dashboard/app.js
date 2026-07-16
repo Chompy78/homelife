@@ -90,6 +90,9 @@ const EVENT_LABELS = {
 function aiScoreLineHtml(aiScore) {
   if (!aiScore) return "";
   if (aiScore.status === "pending") return `<div class="aiScoreLine">🤖 Waiting for AI score...</div>`;
+  if (aiScore.status === "failed") {
+    return `<div class="aiScoreLine aiScoreLineRejected">🤔 Not scored${aiScore.rejection_reason ? ` - ${aiScore.rejection_reason}` : ""}</div>`;
+  }
   return `<div class="aiScoreLine">🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${aiScore.comment}` : ""}</div>`;
 }
 

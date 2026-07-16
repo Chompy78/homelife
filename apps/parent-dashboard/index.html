@@ -39,6 +39,36 @@
     <img id="lightboxImg" src="" alt="Reference photo" />
   </div>
 
+  <div class="aiModal hidden" id="aiModal">
+    <div class="aiModalCard">
+      <button class="aiModalClose" id="aiModalClose" type="button">✕</button>
+      <h2 id="aiModalTitle">AI Scoring</h2>
+
+      <div class="aiModalSection">
+        <div class="aiModalSectionTitle">Room fingerprint</div>
+        <p class="aiModalHint">
+          A short description of what doesn't change about this room (walls, flooring, windows, fixed furniture) - used to check a photo really is this room. The AI writes one automatically the first time it scores a photo. Edit it here to correct it, or clear it to let the AI regenerate one next time.
+        </p>
+        <textarea id="aiFingerprintText" rows="4" placeholder="Not generated yet - the AI will write one automatically the first time it scores a photo."></textarea>
+        <div class="aiModalButtons">
+          <button type="button" class="adminBtn" id="aiFingerprintSaveBtn">Save</button>
+          <button type="button" class="adminBtn" id="aiFingerprintClearBtn">Clear (let AI regenerate)</button>
+        </div>
+        <p class="aiModalSaved hidden" id="aiFingerprintSaved">Saved!</p>
+      </div>
+
+      <div class="aiModalSection">
+        <div class="aiModalSectionTitle">Score history</div>
+        <div class="aiHistoryFilter">
+          <button type="button" class="aiFilterBtn active" data-filter="all">All</button>
+          <button type="button" class="aiFilterBtn" data-filter="scored">✅ Legit</button>
+          <button type="button" class="aiFilterBtn" data-filter="failed">🚫 Rejected</button>
+        </div>
+        <div class="aiHistoryList" id="aiHistoryList"><p class="loading">Loading...</p></div>
+      </div>
+    </div>
+  </div>
+
   <main class="app hidden" id="app">
     <header>
       <h1 id="familyHeading">Parent Dashboard</h1>

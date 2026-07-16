@@ -102,6 +102,26 @@ on `TASK_BOARD.md`.
   based) room-match step. See `D-2026-07-16-room-fingerprint` in
   `DECISIONS.md`.
 
+- Shipped three follow-up AI-scoring features requested after the
+  fingerprint fix went live: a parent-facing score history (up to 50
+  resolved attempts, newest first, with a legit/rejected filter), a
+  processing-time estimate for kids (a "usually takes about Xs" hint
+  before submitting and a live-ticking "Xs so far" line while a score is
+  pending, both meant to stop kids from re-submitting mid-score), and
+  direct parent editing of a kid's/room's AI room fingerprint text. The
+  editable fingerprint needed a `room_fingerprint_locked` flag so a
+  parent's correction survives the existing auto-invalidate-on-photo-change
+  behavior instead of silently reverting to AI auto-generation; clearing
+  the text explicitly opts back into that. Added `update_room_fingerprint`
+  and `get_photo_score_history` edge-function actions and an
+  `ai_score_avg_seconds` figure (averaged over the last 10 *scored*
+  requests) on `get_kid_state`/`get_family_room_state`. Deployed as edge
+  function v12. The parent dashboard surfaces all three in one "AI
+  Scoring" modal per kid/room card. Verified via Node script (backend)
+  and Playwright (live UI against a disposable test family). See
+  `D-2026-07-16-fingerprint-lock-and-parent-visibility` in
+  `DECISIONS.md`.
+
 ## 2026-07-15
 
 - Shipped self-hosted AI photo scoring: a kid can submit a room photo

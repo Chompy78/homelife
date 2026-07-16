@@ -54,6 +54,15 @@ const lightbox = document.getElementById("lightbox");
 const lightboxImg = document.getElementById("lightboxImg");
 const lightboxClose = document.getElementById("lightboxClose");
 
+const aiModal = document.getElementById("aiModal");
+const aiModalTitle = document.getElementById("aiModalTitle");
+const aiModalClose = document.getElementById("aiModalClose");
+const aiFingerprintText = document.getElementById("aiFingerprintText");
+const aiFingerprintSaveBtn = document.getElementById("aiFingerprintSaveBtn");
+const aiFingerprintClearBtn = document.getElementById("aiFingerprintClearBtn");
+const aiFingerprintSaved = document.getElementById("aiFingerprintSaved");
+const aiHistoryList = document.getElementById("aiHistoryList");
+
 const MAX_PHOTOS = 3;
 let photoUploadTarget = null; // { type: 'kid' | 'room', id }
 
@@ -94,6 +103,11 @@ function aiScoreLineHtml(aiScore) {
     return `<div class="aiScoreLine aiScoreLineRejected">🤔 Not scored${aiScore.rejection_reason ? ` - ${aiScore.rejection_reason}` : ""}</div>`;
   }
   return `<div class="aiScoreLine">🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${aiScore.comment}` : ""}</div>`;
+}
+
+function aiScoreButtonHtml(aiScoreMode) {
+  if (!aiScoreMode || aiScoreMode === "off") return "";
+  return `<button type="button" class="adminBtn aiScoreDetailsBtn" style="width:100%">📊 AI scoring: history &amp; room fingerprint</button>`;
 }
 
 function pctClass(pct) {
@@ -269,6 +283,95 @@ lightbox.addEventListener("click", (e) => {
   if (e.target === lightbox) closeLightbox();
 });
 
+// --- AI scoring modal: room fingerprint editor + score history -----------
+
+let aiModalTarget = null; // { kind: 'kid' | 'room', id }
+let aiHistoryRows = [];
+let aiHistoryFilter = "all";
+
+const AI_HISTORY_LABELS = {
+  scored: (row) => `<span class="aiHistoryBadge aiHistoryBadgeGood">✅ ${row.score}/10</span>`,
+  failed: () => `<span class="aiHistoryBadge aiHistoryBadgeBad">🚫 Rejected</span>`,
+};
+
+function formatWhenFull(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("en-AU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function renderAiHistoryList() {
+  const rows = aiHistoryFilter === "all" ? aiHistoryRows : aiHistoryRows.filter((r) => r.status === aiHistoryFilter);
+  if (!rows.length) {
+    aiHistoryList.innerHTML = `<p class="loading">No ${aiHistoryFilter === "all" ? "" : aiHistoryFilter === "scored" ? "legit " : "rejected "}attempts yet.</p>`;
+    return;
+  }
+  aiHistoryList.innerHTML = rows
+    .map((row) => {
+      const badge = (AI_HISTORY_LABELS[row.status] || (() => ""))(row);
+      const detail = row.status === "scored" ? row.comment || "" : row.rejection_reason || "";
+      return `<div class="aiHistoryRow">${badge}<span class="aiHistoryDetail">${detail}</span><span class="aiHistoryWhen">${formatWhenFull(row.created_at)}</span></div>`;
+    })
+    .join("");
+}
+
+document.querySelectorAll(".aiFilterBtn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".aiFilterBtn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    aiHistoryFilter = btn.dataset.filter;
+    renderAiHistoryList();
+  });
+});
+
+async function loadAiHistory() {
+  if (!aiModalTarget) return;
+  aiHistoryList.innerHTML = `<p class="loading">Loading...</p>`;
+  const key = aiModalTarget.kind === "kid" ? "kid_id" : "room_id";
+  const res = await callApi("get_photo_score_history", { token, [key]: aiModalTarget.id });
+  if (!res.ok) {
+    aiHistoryList.innerHTML = `<p class="error">Couldn't load history.</p>`;
+    return;
+  }
+  aiHistoryRows = res.data.history || [];
+  renderAiHistoryList();
+}
+
+function openAiModal(kind, id, label, fingerprint) {
+  aiModalTarget = { kind, id };
+  aiModalTitle.textContent = `📊 AI Scoring - ${label}`;
+  aiFingerprintText.value = fingerprint || "";
+  aiFingerprintSaved.classList.add("hidden");
+  aiHistoryFilter = "all";
+  document.querySelectorAll(".aiFilterBtn").forEach((b) => b.classList.toggle("active", b.dataset.filter === "all"));
+  aiModal.classList.remove("hidden");
+  loadAiHistory();
+}
+function closeAiModal() {
+  aiModal.classList.add("hidden");
+  aiModalTarget = null;
+}
+aiModalClose.addEventListener("click", closeAiModal);
+aiModal.addEventListener("click", (e) => {
+  if (e.target === aiModal) closeAiModal();
+});
+
+async function saveFingerprint(fingerprint) {
+  if (!aiModalTarget) return;
+  const key = aiModalTarget.kind === "kid" ? "kid_id" : "room_id";
+  const res = await callApi("update_room_fingerprint", { token, [key]: aiModalTarget.id, fingerprint });
+  if (!res.ok) return;
+  aiFingerprintText.value = res.data.room_fingerprint || "";
+  aiFingerprintSaved.classList.remove("hidden");
+  setTimeout(() => aiFingerprintSaved.classList.add("hidden"), 2000);
+  render(false);
+}
+aiFingerprintSaveBtn.addEventListener("click", () => saveFingerprint(aiFingerprintText.value.trim()));
+aiFingerprintClearBtn.addEventListener("click", async () => {
+  const ok = await askConfirm("Clear this fingerprint? The AI will write a new one automatically next time it scores a photo.");
+  if (!ok) return;
+  saveFingerprint("");
+});
+
 async function removePhoto(type, photo) {
   const ok = await askConfirm("Remove this photo?");
   if (!ok) return;
@@ -303,6 +406,7 @@ function buildKidView(family, kid, streaks, states, logs, checklistTotal) {
     parentResult: streak.parent_result || "No parent check yet today.",
     history,
     passedDates,
+    aiScoreMode: family.ai_score_mode || "off",
   };
 }
 
@@ -349,6 +453,7 @@ function renderKidCard(data) {
     <div class="statRow"><span>Streak</span><span class="value">🔥 ${data.streak} day${data.streak === 1 ? "" : "s"} (best ${data.bestStreak})</span></div>
     <div class="parentResult">${data.parentResult}</div>
     ${aiScoreLineHtml(data.kid.ai_score)}
+    ${aiScoreButtonHtml(data.aiScoreMode)}
     <div class="weekRow">${week}</div>
     <div class="badgeMiniShelf">${badgeRow}</div>
     <div class="kidPhotos">
@@ -376,6 +481,8 @@ function renderKidCard(data) {
   card.querySelector(".renameBtn").addEventListener("click", () => renameKid(data.kid));
   card.querySelector(".regenBtn").addEventListener("click", () => regenerateCode(data.kid));
   card.querySelector(".removeBtn").addEventListener("click", () => removeKid(data.kid));
+  const aiBtn = card.querySelector(".aiScoreDetailsBtn");
+  if (aiBtn) aiBtn.addEventListener("click", () => openAiModal("kid", data.kid.id, data.kid.name, data.kid.room_fingerprint));
   card.querySelectorAll(".photoTile").forEach((tile) => {
     const photo = photos.find((p) => p.id === tile.dataset.photoId);
     tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
@@ -495,7 +602,7 @@ addRoomBtn.addEventListener("click", async () => {
   render(false);
 });
 
-function buildRoomView(room) {
+function buildRoomView(room, family) {
   const done = room.state.filter((s) => s.checked).length;
   const total = room.items.length;
   const percent = total ? Math.round((done / total) * 100) : 0;
@@ -516,6 +623,7 @@ function buildRoomView(room) {
     parentResult: room.progress.parent_result || "No parent check yet today.",
     history,
     passedDates,
+    aiScoreMode: family.ai_score_mode || "off",
   };
 }
 
@@ -567,6 +675,7 @@ function renderRoomCard(data) {
     <div class="statRow"><span>Streak</span><span class="value">🔥 ${data.streak} day${data.streak === 1 ? "" : "s"} (best ${data.bestStreak})</span></div>
     <div class="parentResult">${data.parentResult}</div>
     ${aiScoreLineHtml(data.room.ai_score)}
+    ${aiScoreButtonHtml(data.aiScoreMode)}
     <div class="weekRow">${week}</div>
     <div class="badgeMiniShelf">${badgeRow}</div>
     <div class="kidPhotos">
@@ -607,6 +716,8 @@ function renderRoomCard(data) {
   });
   card.querySelector(".addItemBtn").addEventListener("click", () => addRoomItem(room));
   card.querySelector(".removeBtn").addEventListener("click", () => removeRoom(room));
+  const aiBtn = card.querySelector(".aiScoreDetailsBtn");
+  if (aiBtn) aiBtn.addEventListener("click", () => openAiModal("room", room.id, room.name, room.room_fingerprint));
   return card;
 }
 
@@ -653,7 +764,7 @@ async function render(showLoading) {
     roomCardsEl.innerHTML = `<p class="loading">No shared rooms yet - add one above.</p>`;
   } else {
     rooms.forEach((room) => {
-      const data = buildRoomView(room);
+      const data = buildRoomView(room, family);
       roomCardsEl.appendChild(renderRoomCard(data));
     });
   }

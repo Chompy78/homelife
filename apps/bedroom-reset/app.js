@@ -72,7 +72,9 @@ let photos = [];
 let aiScore = null;
 let aiScoreMode = "off";
 let aiScoreThreshold = 8;
+let aiScoreAvgSeconds = null;
 let aiScorePollTimeout = null;
+let aiScoreTickInterval = null;
 
 let boxes = [];
 let oneThingMode = false;
@@ -151,6 +153,7 @@ function renderRoomSwitcher() {
 
 function switchRoom(room) {
   clearTimeout(aiScorePollTimeout);
+  clearInterval(aiScoreTickInterval);
   activeRoom = { ...room, items: null };
   oneThingMode = false;
   bootRoom();
@@ -297,7 +300,7 @@ async function fetchAndReconcile() {
     applyStreak(res.data.progress, { celebrate: false });
     photos = res.data.photos || [];
     renderPhotos();
-    applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold);
+    applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold, res.data.ai_score_avg_seconds);
     saveLocalChecklist();
     renderSyncStatus();
     updateEverything();
@@ -323,7 +326,7 @@ async function fetchAndReconcile() {
   applyStreak(res.data.streak, { celebrate: false });
   photos = res.data.photos || [];
   renderPhotos();
-  applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold);
+  applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold, res.data.ai_score_avg_seconds);
   sharedRoomsList = res.data.shared_rooms || [];
   renderRoomSwitcher();
   saveLocalChecklist();
@@ -455,18 +458,31 @@ lightbox.addEventListener("click", (e) => {
 // it for tidiness. Never a substitute for Parent Check unless a parent has
 // explicitly turned on auto-approve for their family.
 
-function applyAiScore(score, mode, threshold) {
+function formatAiScoreSeconds(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+}
+
+function applyAiScore(score, mode, threshold, avgSeconds) {
   aiScore = score;
   aiScoreMode = mode || "off";
   aiScoreThreshold = threshold || 8;
+  aiScoreAvgSeconds = typeof avgSeconds === "number" ? avgSeconds : null;
   renderAiScoreCard();
   scheduleAiScorePollIfNeeded();
 }
 
 function scheduleAiScorePollIfNeeded() {
   clearTimeout(aiScorePollTimeout);
+  clearInterval(aiScoreTickInterval);
+  aiScoreTickInterval = null;
   if (aiScore?.status === "pending") {
     aiScorePollTimeout = setTimeout(() => fetchAndReconcile(), 20000);
+    // Ticks the "N seconds so far" text every second so a kid can see time
+    // is actually passing, instead of tapping the (disabled) button again.
+    aiScoreTickInterval = setInterval(() => renderAiScoreCard(), 1000);
   }
 }
 
@@ -484,12 +500,18 @@ function renderAiScoreCard() {
   aiScoreBtn.textContent = pending ? "⏳ Scoring in progress..." : "📸 Score my room with AI";
 
   if (!aiScore) {
-    aiScoreStatus.textContent = "Take a photo and see what the AI thinks!";
+    aiScoreStatus.textContent = aiScoreAvgSeconds
+      ? `Take a photo and see what the AI thinks! Usually takes about ${formatAiScoreSeconds(aiScoreAvgSeconds)}.`
+      : "Take a photo and see what the AI thinks!";
     aiScoreStatus.className = "aiScoreStatus";
     return;
   }
   if (pending) {
-    aiScoreStatus.textContent = "⏳ Waiting for your AI score...";
+    const elapsedSeconds = Math.max(0, Math.round((Date.now() - new Date(aiScore.created_at).getTime()) / 1000));
+    const elapsedText = `${formatAiScoreSeconds(elapsedSeconds)} so far`;
+    aiScoreStatus.textContent = aiScoreAvgSeconds
+      ? `⏳ Waiting for your AI score... ${elapsedText} (usually about ${formatAiScoreSeconds(aiScoreAvgSeconds)}) - no need to submit again, it's still working!`
+      : `⏳ Waiting for your AI score... ${elapsedText}`;
     aiScoreStatus.className = "aiScoreStatus";
     return;
   }

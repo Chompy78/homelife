@@ -167,6 +167,34 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   entry explaining what changed and why. Delivered the rebuilt
   `poller.py`; live confirmation that it actually fixes the
   bedding-driven false rejection is pending.
+- User asked for three more things on top of the fingerprint fix: a
+  parent-facing history of AI score attempts with a legit/false filter,
+  a processing-time estimate so kids stop re-submitting mid-score, and
+  direct parent editing of the fingerprint text. Shipped all three.
+  Backend: migration `room_fingerprint_locked` (a parent edit locks the
+  fingerprint against the existing auto-invalidate-on-photo-change
+  behavior; clearing the text unlocks it back to AI auto-generation),
+  new `update_room_fingerprint` and `get_photo_score_history` actions,
+  and an `ai_score_avg_seconds` figure (mean of the last 10 *scored*
+  requests) added to `get_kid_state`/`get_family_room_state`. Deployed
+  as edge function v12, verified via Node script (lock persistence
+  through a photo upload, clear-resets-both-fields, history
+  ordering/filtering, average-seconds math) against a disposable test
+  family. See `D-2026-07-16-fingerprint-lock-and-parent-visibility`.
+- Frontend: the kid app now shows "usually takes about Xs" before a
+  submission and a live-ticking "Xs so far (usually about Xs)" line
+  while one is pending. The parent dashboard gained a single "AI
+  Scoring" modal per kid/room card combining the fingerprint editor and
+  a filterable (all/legit/rejected) score history, opened from a new
+  button next to the existing inline AI-score line. Bumped the
+  bedroom-reset service worker cache to v17. Verified live with
+  Playwright against a disposable test family (had to route the app's
+  Supabase calls through Node's own `fetch` inside `page.route()`,
+  since the sandboxed browser can't reach the outside network directly
+  the way the host Node process can) - confirmed the fingerprint
+  textarea prefills, all three history filters return the right counts,
+  saving shows a confirmation, and the kid app's pending-state text
+  contains both the live elapsed time and the average estimate.
 
 ## Files touched
 
@@ -174,14 +202,15 @@ guide, then set up this project's governance docs (`AGENTS.md`,
 `docs/PARENT-GUIDE.md`, `README.md`, `supabase/functions/family-api/index.ts`
 (+ migrations `rename_mum_to_parent`, `ai_photo_scoring`,
 `photo_score_freshness_and_rejection`, `photo_score_hash`,
-`room_fingerprint`), `apps/bedroom-reset/app.js`,
-`apps/bedroom-reset/index.html`, `apps/bedroom-reset/service-worker.js`,
-`apps/parent-dashboard/app.js`, `apps/parent-dashboard/styles.css`,
+`room_fingerprint`, `room_fingerprint_locked`),
+`apps/bedroom-reset/app.js`, `apps/bedroom-reset/index.html`,
+`apps/bedroom-reset/service-worker.js`, `apps/parent-dashboard/app.js`,
+`apps/parent-dashboard/index.html`, `apps/parent-dashboard/styles.css`,
 `assets/images/homelife_favicon.png`.
 
 ## Related
 
-- All 14 entries in `DECISIONS.md`, dated 2026-07-13 through
+- All 15 entries in `DECISIONS.md`, dated 2026-07-13 through
   2026-07-16.
 - All entries in `CHANGELOG.md`.
 

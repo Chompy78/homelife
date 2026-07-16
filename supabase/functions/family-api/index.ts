@@ -163,6 +163,25 @@ async function getLatestPhotoHash(column: "kid_id" | "room_id", id: string) {
   return data?.photo_hash || null;
 }
 
+// Average turnaround for the last 10 fully-scored requests (not rejections -
+// those can bail out early on a cheap no-AI check, which would make the
+// average misleadingly fast for what a normal submission actually takes).
+// Lets the kid app show a "usually takes about..." estimate so a kid doesn't
+// keep re-tapping the button while one is still processing.
+async function getAvgProcessingSeconds(column: "kid_id" | "room_id", id: string) {
+  const { data } = await db
+    .from("photo_score_requests")
+    .select("created_at, scored_at")
+    .eq(column, id)
+    .eq("status", "scored")
+    .order("created_at", { ascending: false })
+    .limit(10);
+  const rows = data || [];
+  if (!rows.length) return null;
+  const seconds = rows.map((r) => (new Date(r.scored_at).getTime() - new Date(r.created_at).getTime()) / 1000);
+  return Math.round(seconds.reduce((a, b) => a + b, 0) / seconds.length);
+}
+
 // Shared by a PIN-confirmed Parent Check and an AI auto-approval (when a
 // family's ai_score_mode is "auto_approve") - same points/streak/history
 // logic either way, just a different event_type so parents can always tell
@@ -421,7 +440,7 @@ Deno.serve(async (req) => {
       case "get_kid_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: items }, streak, { data: kid }, photos, { data: sharedRooms }, bedroomItems, aiScore, { data: family }] = await Promise.all([
+        const [{ data: items }, streak, { data: kid }, photos, { data: sharedRooms }, bedroomItems, aiScore, avgSeconds, { data: family }] = await Promise.all([
           db.from("kid_checklist_state").select("item_id, checked").eq("kid_id", session.kid_id),
           freshStreak(session.kid_id),
           db.from("kids").select("id, name, avatar_emoji").eq("id", session.kid_id).single(),
@@ -429,6 +448,7 @@ Deno.serve(async (req) => {
           db.from("family_rooms").select("id, name, icon").eq("family_id", session.family_id).order("sort_order"),
           getBedroomItems(session.family_id),
           getLatestPhotoScore("kid_id", session.kid_id),
+          getAvgProcessingSeconds("kid_id", session.kid_id),
           db.from("families").select("ai_score_mode, ai_score_auto_threshold").eq("id", session.family_id).maybeSingle(),
         ]);
         return json({
@@ -443,6 +463,7 @@ Deno.serve(async (req) => {
             ai_score: aiScore,
             ai_score_mode: family?.ai_score_mode || "off",
             ai_score_auto_threshold: family?.ai_score_auto_threshold || 8,
+            ai_score_avg_seconds: avgSeconds,
           },
         });
       }
@@ -484,7 +505,7 @@ Deno.serve(async (req) => {
         });
         // The stored fingerprint (if any) was generated from the old photo
         // set - invalidate it so the worker regenerates on next use.
-        await db.from("kids").update({ room_fingerprint: null }).eq("id", kidId);
+        await db.from("kids").update({ room_fingerprint: null }).eq("id", kidId).eq("room_fingerprint_locked", false);
 
         const photos = await getPhotosWithUrls(kidId);
         return json({ ok: true, data: { photos } });
@@ -502,7 +523,7 @@ Deno.serve(async (req) => {
 
         await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
         await db.from("kid_reference_photos").delete().eq("id", photo.id);
-        await db.from("kids").update({ room_fingerprint: null }).eq("id", photo.kid_id);
+        await db.from("kids").update({ room_fingerprint: null }).eq("id", photo.kid_id).eq("room_fingerprint_locked", false);
         const photos = await getPhotosWithUrls(photo.kid_id);
         return json({ ok: true, data: { photos } });
       }
@@ -879,13 +900,19 @@ Deno.serve(async (req) => {
         if (!session) return json({ ok: false, error: "session_expired" }, 401);
         const room = await assertFamilyRoomAccess(session, String(body.room_id || ""));
         if (!room) return json({ ok: false, error: "not_found" }, 404);
-        const [data, { data: family }] = await Promise.all([
+        const [data, avgSeconds, { data: family }] = await Promise.all([
           buildRoomPayload(room),
+          getAvgProcessingSeconds("room_id", room.id),
           db.from("families").select("ai_score_mode, ai_score_auto_threshold").eq("id", session.family_id).maybeSingle(),
         ]);
         return json({
           ok: true,
-          data: { ...data, ai_score_mode: family?.ai_score_mode || "off", ai_score_auto_threshold: family?.ai_score_auto_threshold || 8 },
+          data: {
+            ...data,
+            ai_score_mode: family?.ai_score_mode || "off",
+            ai_score_auto_threshold: family?.ai_score_auto_threshold || 8,
+            ai_score_avg_seconds: avgSeconds,
+          },
         });
       }
 
@@ -1082,7 +1109,7 @@ Deno.serve(async (req) => {
         });
         // The stored fingerprint (if any) was generated from the old photo
         // set - invalidate it so the worker regenerates on next use.
-        await db.from("family_rooms").update({ room_fingerprint: null }).eq("id", room.id);
+        await db.from("family_rooms").update({ room_fingerprint: null }).eq("id", room.id).eq("room_fingerprint_locked", false);
 
         const photos = await getRoomPhotosWithUrls(room.id);
         return json({ ok: true, data: { photos } });
@@ -1099,9 +1126,61 @@ Deno.serve(async (req) => {
 
         await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
         await db.from("family_room_photos").delete().eq("id", photo.id);
-        await db.from("family_rooms").update({ room_fingerprint: null }).eq("id", photo.room_id);
+        await db.from("family_rooms").update({ room_fingerprint: null }).eq("id", photo.room_id).eq("room_fingerprint_locked", false);
         const photos = await getRoomPhotosWithUrls(photo.room_id);
         return json({ ok: true, data: { photos } });
+      }
+
+      case "update_room_fingerprint": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+
+        const kidId = body.kid_id ? String(body.kid_id) : null;
+        const roomId = body.room_id ? String(body.room_id) : null;
+        if ((!kidId && !roomId) || (kidId && roomId)) return json({ ok: false, error: "exactly_one_target_required" }, 400);
+
+        // An empty string clears back to null and unlocks it, so the worker
+        // resumes auto-generating one from reference photos next use.
+        const fingerprint = String(body.fingerprint || "").trim().slice(0, 2000);
+        const patch = { room_fingerprint: fingerprint || null, room_fingerprint_locked: !!fingerprint };
+
+        if (kidId) {
+          const { data: kid } = await db.from("kids").select("id").eq("id", kidId).eq("family_id", session.family_id).maybeSingle();
+          if (!kid) return json({ ok: false, error: "not_found" }, 404);
+          await db.from("kids").update(patch).eq("id", kidId);
+        } else {
+          const room = await assertFamilyRoomAccess(session, roomId as string);
+          if (!room) return json({ ok: false, error: "not_found" }, 404);
+          await db.from("family_rooms").update(patch).eq("id", roomId as string);
+        }
+        return json({ ok: true, data: patch });
+      }
+
+      case "get_photo_score_history": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+
+        const kidId = body.kid_id ? String(body.kid_id) : null;
+        const roomId = body.room_id ? String(body.room_id) : null;
+        if ((!kidId && !roomId) || (kidId && roomId)) return json({ ok: false, error: "exactly_one_target_required" }, 400);
+
+        if (kidId) {
+          const { data: kid } = await db.from("kids").select("id").eq("id", kidId).eq("family_id", session.family_id).maybeSingle();
+          if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        } else {
+          const room = await assertFamilyRoomAccess(session, roomId as string);
+          if (!room) return json({ ok: false, error: "not_found" }, 404);
+        }
+
+        const { data: history } = await db
+          .from("photo_score_requests")
+          .select("id, status, score, comment, rejection_reason, created_at, scored_at")
+          .eq(kidId ? "kid_id" : "room_id", kidId || roomId)
+          .neq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        return json({ ok: true, data: { history: history || [] } });
       }
 
       // --- AI photo scoring (self-hosted vision model, polled by a local worker) ---

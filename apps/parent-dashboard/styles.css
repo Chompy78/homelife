@@ -204,3 +204,29 @@ h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
 .confirmButtons button { flex: 1; border: 0; border-radius: 14px; padding: 12px; font-weight: 800; cursor: pointer; }
 .confirmYes { background: var(--red); color: #fff; }
 .confirmNo { background: #efeadf; color: var(--ink); }
+
+/* AI scoring modal: room fingerprint editor + score history */
+.aiScoreDetailsBtn { margin-top: 8px; }
+.aiModal { position: fixed; inset: 0; background: rgba(43,43,43,0.55); display: grid; place-items: center; z-index: 290; padding: 20px; }
+.aiModal.hidden { display: none; }
+.aiModalCard { background: #fff; border-radius: 22px; padding: 24px; max-width: 480px; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow); position: relative; }
+.aiModalCard h2 { margin: 0 0 14px; font-size: 1.1rem; }
+.aiModalClose { position: absolute; top: 16px; right: 16px; background: #f7f3ea; border: 0; border-radius: 50%; width: 36px; height: 36px; font-size: 1rem; cursor: pointer; color: var(--ink); }
+.aiModalSection { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.aiModalSection:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
+.aiModalSectionTitle { font-weight: 800; font-size: 0.95rem; margin-bottom: 6px; }
+.aiModalHint { font-size: 0.8rem; color: var(--muted); margin: 0 0 10px; line-height: 1.4; }
+#aiFingerprintText { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 10px; font-size: 0.85rem; font-family: inherit; resize: vertical; box-sizing: border-box; }
+.aiModalButtons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.aiModalSaved { color: var(--green); font-weight: 700; font-size: 0.85rem; margin: 8px 0 0; }
+.aiHistoryFilter { display: flex; gap: 8px; margin-bottom: 10px; }
+.aiFilterBtn { flex: 1; background: #f7f3ea; border: 1px solid var(--line); border-radius: 10px; padding: 7px 8px; font-size: 0.8rem; font-weight: 700; cursor: pointer; color: var(--ink); }
+.aiFilterBtn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+.aiHistoryList { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+.aiHistoryRow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: 0.8rem; padding: 6px 0; border-top: 1px solid var(--line); }
+.aiHistoryRow:first-child { border-top: 0; }
+.aiHistoryBadge { font-weight: 800; white-space: nowrap; }
+.aiHistoryBadgeGood { color: var(--green); }
+.aiHistoryBadgeBad { color: var(--orange); }
+.aiHistoryDetail { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.aiHistoryWhen { color: var(--muted); white-space: nowrap; font-size: 0.75rem; }

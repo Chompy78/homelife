@@ -363,21 +363,22 @@ aiModal.addEventListener("click", (e) => {
   if (e.target === aiModal) closeAiModal();
 });
 
-async function saveFingerprint(fingerprint) {
+async function saveFingerprint(fingerprint, savedMessage = "Saved!") {
   if (!aiModalTarget) return;
   const key = aiModalTarget.kind === "kid" ? "kid_id" : "room_id";
   const res = await callApi("update_room_fingerprint", { token, [key]: aiModalTarget.id, fingerprint });
   if (!res.ok) return;
   aiFingerprintText.value = res.data.room_fingerprint || "";
+  aiFingerprintSaved.textContent = savedMessage;
   aiFingerprintSaved.classList.remove("hidden");
-  setTimeout(() => aiFingerprintSaved.classList.add("hidden"), 2000);
+  setTimeout(() => aiFingerprintSaved.classList.add("hidden"), 4000);
   render(false);
 }
 aiFingerprintSaveBtn.addEventListener("click", () => saveFingerprint(aiFingerprintText.value.trim()));
 aiFingerprintClearBtn.addEventListener("click", async () => {
-  const ok = await askConfirm("Clear this fingerprint? The AI will write a new one automatically next time it scores a photo.");
+  const ok = await askConfirm("Clear this fingerprint? The AI won't write a new one until a photo is next submitted for scoring - it doesn't happen right away.");
   if (!ok) return;
-  saveFingerprint("");
+  saveFingerprint("", "Cleared! A new fingerprint will be generated automatically the next time a photo is submitted for AI scoring - not immediately.");
 });
 
 async function removePhoto(type, photo) {

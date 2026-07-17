@@ -1,0 +1,25 @@
+{
+  "name": "Homelife Reward Tracker",
+  "short_name": "Rewards",
+  "description": "A parent-run reward tracker for tallying earned and spent rewards per kid.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fbe6c8",
+  "theme_color": "#ff8a1f",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

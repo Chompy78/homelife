@@ -22,6 +22,38 @@ on `TASK_BOARD.md`.
   disposable test family for every trigger (level-up, first badge,
   plain Pass, Great Job, and the coincidence-dedup case). Bumped the
   bedroom-reset service worker cache to v19.
+- Fixed two bugs reported in the parent dashboard's "Clear (let AI
+  regenerate)" fingerprint flow. First, the confirm dialog appeared
+  behind the already-open AI Scoring modal, since `.confirmModal` and
+  `.aiModal` shared the same z-index (290) and CSS stacking ties resolve
+  by DOM order, so the modal declared later in the HTML always won -
+  same issue affected `.lightbox` (opened from the history modal's
+  thumbnails) at a lower z-index still. Raised both `.confirmModal` and
+  `.lightbox` above `.aiModal`. Second, clearing a fingerprint appeared
+  to silently do nothing - by design, the AI never regenerates it
+  immediately, only lazily the next time the local worker scores a
+  photo, but nothing in the UI said so, which read as broken. The
+  confirm prompt and the post-clear message now both say plainly that
+  regeneration happens on the next scoring job, not right away.
+  Verified live via Playwright (confirmed the actual DOM element under
+  the Yes button is the Yes button, not the AI modal, before vs. after).
+  Bumped the parent-dashboard service worker cache to v3.
+- Added the Reward Tracker app (`apps/reward-tracker`): a parent-run
+  earn/spend tally per kid per reward category, with Quick Tap, Table and
+  History+Undo views, dark mode, and note presets. Wired into the shared
+  Supabase backend (new `family_reward_categories` and `kid_reward_log`
+  tables, four new `family-api` actions) instead of the standalone
+  localStorage version it started as - see `D-2026-07-17-reward-tracker-app`.
+  Linked from the root page and main README.
+- Added a batch of Reward Tracker features: PIN protection on Spend/delete
+  category/Reset/Kid-View-exit (5-minute unlock, toggleable in Settings),
+  an Insights tab (weekly/monthly earned bars, all-time balance, top
+  category per kid), a read-only Kid View (`?kid=<name>` for a single-kid
+  tablet), per-kid emoji avatars in Settings, a full "Reset all reward
+  history" action, and a 5-second Undo toast after every tap. Three new
+  `family-api` actions (`verify_pin`, `get_reward_insights`,
+  `reset_reward_history`) - see
+  `D-2026-07-17-reward-tracker-pin-and-insights`.
 
 ## 2026-07-16
 

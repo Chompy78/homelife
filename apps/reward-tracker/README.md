@@ -46,10 +46,56 @@ reject shop") isn't the same kind of thing as a chore-completion streak.
 
 ## What's different from the original standalone version
 
-- Kid names, avatars and colours come from the family's real `kids` table
-  instead of being hardcoded to three names.
+- Kid names and colours come from the family's real `kids` table instead of
+  being hardcoded to three names (avatars now live there too, editable from
+  Settings - see below).
 - Categories are parent-editable per family instead of a fixed default list
   (though the same 9 defaults are seeded to start).
 - No local JSON export/import and no per-category "Clear" button - data
   now lives centrally in Supabase, so a browser-local backup isn't the
-  safety net anymore; Undo covers fixing a mis-tap instead.
+  safety net anymore; Undo covers fixing a mis-tap instead. There's now a
+  full "Reset all reward history" instead, in Settings.
+
+## PIN protection
+
+Spend, deleting a category, and Reset all ask for the family's PIN before
+going ahead (the same PIN bedroom-reset's Parent Check uses); Earn never
+does. Entering it correctly unlocks all three for 5 minutes on that device
+(in-memory only - a reload re-locks it). Off by default is not an option
+kept from the original app on purpose: it's on by default here too, but a
+parent can flip it off entirely from Settings if it's more friction than
+it's worth for their family. The PIN is verified server-side
+(`verify_pin`), but note this is a UX friction layer, not the app's real
+security boundary - anyone with the parent code already has full access to
+every action here, same as every other reward-tracker action.
+
+## Insights tab
+
+A fairness view: this-week and this-month bars per kid (colour-coded to
+match their chip/table colour everywhere else in the app), plus an
+all-time balance and top category per kid. All computed server-side
+(`get_reward_insights`) over the full ledger, not just the 100-row history
+window `get_reward_state` caps at.
+
+## Kid View
+
+A read-only, giant-card view meant for a kid-facing tablet or photo frame -
+no tap-to-adjust controls, just avatar, name, total balance and a
+per-category breakdown. Opened from the 👶 toolbar button (shows every
+kid) or via `?kid=<name>` in the URL (shows just that one kid - handy for
+a dedicated device by a kid's door). Exiting goes through the same PIN gate
+as Spend/Delete/Reset.
+
+## Kid avatars
+
+Settings has a picker (🌸 🌟 🦄 ⭐ 🦁 🐬 🚀 🎨 🐱 🐶) for each kid's avatar
+emoji, shown in Quick Tap, Table headers, History and Kid View. This edits
+the same `kids.avatar_emoji` column bedroom-reset and the parent dashboard
+already use, so a change here shows up there too.
+
+## 5-second Undo toast
+
+Every earn/spend tap shows a toast with an Undo button, live for 5 seconds -
+the fast path for catching a mis-tap immediately, no confirmation needed.
+History's own Undo (with a confirm dialog) still covers correcting an
+older entry.

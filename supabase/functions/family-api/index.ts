@@ -958,6 +958,83 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "unknown_item_action" }, 400);
       }
 
+      // Wipes the family's whole reward ledger (categories are kept) - the
+      // client gates this behind its PIN-lock UI first, same as every other
+      // reward-tracker action here that only checks for a parent session:
+      // the security boundary is the parent token itself, the PIN is a
+      // friction layer against a kid using an already-unlocked device.
+      case "reset_reward_history": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        await db.from("kid_reward_log").delete().eq("family_id", session.family_id);
+        return json({ ok: true });
+      }
+
+      case "verify_pin": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
+        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        return json({ ok: true });
+      }
+
+      // Weekly/monthly earned-per-kid, all-time balance and top category -
+      // aggregated server-side over the full ledger rather than shipping
+      // every row to the client, since a family's history can grow well
+      // past the 100-row window get_reward_state caps history at.
+      case "get_reward_insights": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+
+        const [{ data: kids }, categories, { data: rows }] = await Promise.all([
+          db.from("kids").select("id, name, avatar_emoji").eq("family_id", session.family_id).order("sort_order"),
+          getRewardCategories(session.family_id),
+          db.from("kid_reward_log").select("kid_id, category_id, delta, created_at").eq("family_id", session.family_id),
+        ]);
+        const catLabel: Record<string, string> = Object.fromEntries(categories.map((c) => [c.id, c.label]));
+
+        const now = Date.now();
+        const weekAgo = now - 7 * 86400000;
+        const monthAgo = now - 30 * 86400000;
+
+        const perKid: Record<string, { weekly_earned: number; monthly_earned: number; all_time_balance: number; by_category_earned: Record<string, number> }> = {};
+        for (const kid of kids || []) perKid[kid.id] = { weekly_earned: 0, monthly_earned: 0, all_time_balance: 0, by_category_earned: {} };
+        for (const row of rows || []) {
+          const bucket = perKid[row.kid_id];
+          if (!bucket) continue;
+          bucket.all_time_balance += row.delta;
+          if (row.delta > 0) {
+            const createdMs = new Date(row.created_at).getTime();
+            if (createdMs >= weekAgo) bucket.weekly_earned += row.delta;
+            if (createdMs >= monthAgo) bucket.monthly_earned += row.delta;
+            bucket.by_category_earned[row.category_id] = (bucket.by_category_earned[row.category_id] || 0) + row.delta;
+          }
+        }
+
+        const insights = (kids || []).map((kid) => {
+          const b = perKid[kid.id];
+          let topCategoryId: string | null = null;
+          let topAmount = 0;
+          for (const [catId, amt] of Object.entries(b.by_category_earned)) {
+            if (amt > topAmount) {
+              topAmount = amt;
+              topCategoryId = catId;
+            }
+          }
+          return {
+            kid_id: kid.id,
+            name: kid.name,
+            avatar_emoji: kid.avatar_emoji,
+            weekly_earned: b.weekly_earned,
+            monthly_earned: b.monthly_earned,
+            all_time_balance: b.all_time_balance,
+            top_category: topCategoryId ? { id: topCategoryId, label: catLabel[topCategoryId] || "Unknown", amount: topAmount } : null,
+          };
+        });
+
+        return json({ ok: true, data: { insights } });
+      }
+
       case "get_leaderboard": {
         const { data: families } = await db.from("families").select("id, display_name, icon").eq("is_public", true);
         if (!families || families.length === 0) return json({ ok: true, data: [] });

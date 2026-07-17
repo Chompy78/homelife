@@ -15,6 +15,15 @@ on `TASK_BOARD.md`.
   tables, four new `family-api` actions) instead of the standalone
   localStorage version it started as - see `D-2026-07-17-reward-tracker-app`.
   Linked from the root page and main README.
+- Added a batch of Reward Tracker features: PIN protection on Spend/delete
+  category/Reset/Kid-View-exit (5-minute unlock, toggleable in Settings),
+  an Insights tab (weekly/monthly earned bars, all-time balance, top
+  category per kid), a read-only Kid View (`?kid=<name>` for a single-kid
+  tablet), per-kid emoji avatars in Settings, a full "Reset all reward
+  history" action, and a 5-second Undo toast after every tap. Three new
+  `family-api` actions (`verify_pin`, `get_reward_insights`,
+  `reset_reward_history`) - see
+  `D-2026-07-17-reward-tracker-pin-and-insights`.
 
 ## 2026-07-16
 

@@ -5,10 +5,15 @@ import { callApi } from "../shared/api.js";
 // origin (just a different path) and localStorage is scoped per-origin.
 const TOKEN_KEY = "homelife_parent_token";
 const DARK_MODE_KEY = "homelife_reward_dark_mode";
+const PIN_PROTECTION_KEY = "homelife_reward_pin_protection";
+const PIN_UNLOCK_MS = 5 * 60 * 1000;
+const UNDO_TOAST_MS = 5000;
 
 // kids has no colour column - assigned client-side by position instead, so
 // it's stable across loads without needing a schema change just for this.
 const KID_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
+
+const AVATAR_SUGGESTIONS = ["🌸", "🌟", "🦄", "⭐", "🦁", "🐬", "🚀", "🎨", "🐱", "🐶"];
 
 const PRESET_EARN_NOTES = [
   "Tidied room",
@@ -28,15 +33,19 @@ const codeError = document.getElementById("codeError");
 const appEl = document.getElementById("app");
 const switchFamilyLink = document.getElementById("switchFamilyLink");
 const darkModeBtn = document.getElementById("darkModeBtn");
+const settingsBtn = document.getElementById("settingsBtn");
+const kidViewBtn = document.getElementById("kidViewBtn");
 
 const kidPickerRow = document.getElementById("kidPickerRow");
 const modeSwitch = document.getElementById("modeSwitch");
 const quickView = document.getElementById("quickView");
 const tableView = document.getElementById("tableView");
+const insightsView = document.getElementById("insightsView");
 const historyView = document.getElementById("historyView");
 const earnSpendSwitch = document.querySelector(".earnSpendSwitch");
 const tileGrid = document.getElementById("tileGrid");
 const rewardTable = document.getElementById("rewardTable");
+const insightsContent = document.getElementById("insightsContent");
 const historyList = document.getElementById("historyList");
 const manageCatBtn = document.getElementById("manageCatBtn");
 
@@ -60,12 +69,33 @@ const newCatColor = document.getElementById("newCatColor");
 const addCatBtn = document.getElementById("addCatBtn");
 const catError = document.getElementById("catError");
 
+const pinModal = document.getElementById("pinModal");
+const pinModalTitle = document.getElementById("pinModalTitle");
+const pinForm = document.getElementById("pinForm");
+const pinInput = document.getElementById("pinInput");
+const pinError = document.getElementById("pinError");
+const pinCancelBtn = document.getElementById("pinCancelBtn");
+
+const settingsModal = document.getElementById("settingsModal");
+const settingsModalClose = document.getElementById("settingsModalClose");
+const pinProtectionToggle = document.getElementById("pinProtectionToggle");
+const avatarList = document.getElementById("avatarList");
+const resetHistoryBtn = document.getElementById("resetHistoryBtn");
+
+const kidView = document.getElementById("kidView");
+const kidViewCards = document.getElementById("kidViewCards");
+const kidViewExitBtn = document.getElementById("kidViewExitBtn");
+
+const toastContainer = document.getElementById("toastContainer");
+
 let token = null;
 let state = { kids: [], categories: [], balances: {}, history: [] };
+let insights = [];
 let selectedKidId = null;
 let mode = "quick";
 let quickType = "earn";
 let pendingTap = null; // { kidId, categoryId, type } awaiting a note
+let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
 
 // --- Confirm modal -----------------------------------------------------
 
@@ -86,6 +116,58 @@ confirmNoBtn.addEventListener("click", () => {
   confirmModal.classList.add("hidden");
   if (confirmResolve) confirmResolve(false);
   confirmResolve = null;
+});
+
+// --- PIN lock ------------------------------------------------------------
+// Gates Spend, deleting a category, Reset, and leaving Kid View. Earn is
+// always unlocked. The unlock is in-memory only (not persisted), so it
+// naturally resets on reload as well as after 5 minutes.
+
+let pinUnlockedUntil = 0;
+let pinResolve = null;
+
+function pinProtectionOn() {
+  return localStorage.getItem(PIN_PROTECTION_KEY) !== "0"; // on by default
+}
+
+function requirePin(title, run) {
+  if (!pinProtectionOn() || Date.now() < pinUnlockedUntil) {
+    run();
+    return;
+  }
+  pinModalTitle.textContent = title;
+  pinError.classList.add("hidden");
+  pinInput.value = "";
+  pinModal.classList.remove("hidden");
+  setTimeout(() => pinInput.focus(), 50);
+  pinResolve = run;
+}
+
+pinForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const pin = pinInput.value.trim();
+  if (!pin) return;
+  const btn = pinForm.querySelector(".pinSubmit");
+  btn.disabled = true;
+  const res = await callApi("verify_pin", { token, pin });
+  btn.disabled = false;
+  if (!res.ok) {
+    pinError.textContent = "Wrong PIN. Try again.";
+    pinError.classList.remove("hidden");
+    pinInput.value = "";
+    pinInput.focus();
+    return;
+  }
+  pinUnlockedUntil = Date.now() + PIN_UNLOCK_MS;
+  pinModal.classList.add("hidden");
+  const run = pinResolve;
+  pinResolve = null;
+  if (run) run();
+});
+
+pinCancelBtn.addEventListener("click", () => {
+  pinModal.classList.add("hidden");
+  pinResolve = null;
 });
 
 // --- Dark mode -----------------------------------------------------------
@@ -134,25 +216,31 @@ async function enterApp() {
   gate.classList.add("hidden");
   appEl.classList.remove("hidden");
   await loadState();
+  maybeOpenKidViewFromUrl();
 }
 
 // --- Data loading -----------------------------------------------------
 
 async function loadState() {
-  const res = await callApi("get_reward_state", { token });
-  if (!res.ok) {
-    if (res.error === "session_expired") {
+  const [stateRes, insightsRes] = await Promise.all([
+    callApi("get_reward_state", { token }),
+    callApi("get_reward_insights", { token }),
+  ]);
+  if (!stateRes.ok) {
+    if (stateRes.error === "session_expired") {
       localStorage.removeItem(TOKEN_KEY);
       location.reload();
       return;
     }
     return;
   }
-  state = res.data;
+  state = stateRes.data;
+  insights = insightsRes.ok ? insightsRes.data.insights : [];
   if (!selectedKidId || !state.kids.some((k) => k.id === selectedKidId)) {
     selectedKidId = state.kids[0]?.id || null;
   }
   renderAll();
+  if (!kidView.classList.contains("hidden")) renderKidView();
 }
 
 function kidColour(kidId) {
@@ -174,6 +262,7 @@ function renderAll() {
   renderKidPicker();
   renderQuickTiles();
   renderTable();
+  renderInsights();
   renderHistory();
 }
 
@@ -198,6 +287,7 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
     modeSwitch.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b === btn));
     quickView.classList.toggle("hidden", mode !== "quick");
     tableView.classList.toggle("hidden", mode !== "table");
+    insightsView.classList.toggle("hidden", mode !== "insights");
     historyView.classList.toggle("hidden", mode !== "history");
   });
 });
@@ -217,7 +307,12 @@ function renderQuickTiles() {
     btn.className = "tile";
     btn.style.setProperty("--tile-colour", cat.color);
     btn.innerHTML = `<span class="tileLabel">${escapeHtml(cat.label)}</span><span class="tileBalance">${balanceFor(selectedKidId, cat.id)}</span>`;
-    btn.addEventListener("click", () => openNoteModal(selectedKidId, cat.id, quickType));
+    btn.addEventListener("click", () => {
+      const kidId = selectedKidId;
+      const type = quickType;
+      if (type === "spend") requirePin("PIN needed to spend", () => openNoteModal(kidId, cat.id, type));
+      else openNoteModal(kidId, cat.id, type);
+    });
     tileGrid.appendChild(btn);
   });
 }
@@ -250,8 +345,67 @@ function renderTable() {
   html += "</tbody>";
   rewardTable.innerHTML = html;
   rewardTable.querySelectorAll("button[data-kid]").forEach((btn) => {
-    btn.addEventListener("click", () => openNoteModal(btn.dataset.kid, btn.dataset.cat, btn.dataset.type));
+    btn.addEventListener("click", () => {
+      const { kid, cat, type } = btn.dataset;
+      if (type === "spend") requirePin("PIN needed to spend", () => openNoteModal(kid, cat, type));
+      else openNoteModal(kid, cat, type);
+    });
   });
+}
+
+// --- Insights (fairness view): weekly/monthly earned per kid, all-time
+// balance and top category. Bars are coloured by kid identity (the same
+// per-kid colour used everywhere else in the app), with the amount and the
+// kid's name+avatar as direct labels - no separate legend needed.
+
+function renderBarChart(title, key) {
+  const bars = insights
+    .map((i) => {
+      const kidId = i.kid_id;
+      const kid = state.kids.find((k) => k.id === kidId);
+      const value = i[key] || 0;
+      return { kidId, avatar: kid?.avatar_emoji || "⭐", name: kid?.name || "?", value };
+    })
+    .filter((b) => state.kids.some((k) => k.id === b.kidId));
+  const max = Math.max(1, ...bars.map((b) => b.value));
+  const barsHtml = bars
+    .map(
+      (b) => `
+      <div class="barGroup">
+        <div class="barValue">${b.value}</div>
+        <div class="bar" style="--kid-colour:${kidColour(b.kidId)};height:${Math.max(4, Math.round((b.value / max) * 100))}%"></div>
+        <div class="barLabel">${b.avatar} ${escapeHtml(b.name)}</div>
+      </div>`
+    )
+    .join("");
+  return `<div class="insightsCard"><p class="insightsTitle">${title}</p><div class="barChart">${barsHtml || '<p class="empty">No data yet.</p>'}</div></div>`;
+}
+
+function renderInsights() {
+  if (!insightsContent) return;
+  if (!insights.length) {
+    insightsContent.innerHTML = `<p class="empty">No activity yet.</p>`;
+    return;
+  }
+  const statsRows = insights
+    .map((i) => {
+      const kid = state.kids.find((k) => k.id === i.kid_id);
+      if (!kid) return "";
+      return `
+      <div class="insightsStatRow">
+        <div class="insightsStatKid" style="color:${kidColour(kid.id)}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</div>
+        <div>
+          <div class="insightsStatValue">${i.all_time_balance}</div>
+          ${i.top_category ? `<div class="insightsTopCat">Top: ${escapeHtml(i.top_category.label)} (${i.top_category.amount})</div>` : ""}
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  insightsContent.innerHTML =
+    renderBarChart("This week - earned", "weekly_earned") +
+    renderBarChart("This month - earned", "monthly_earned") +
+    `<div class="insightsCard"><p class="insightsTitle">All-time balance &amp; top category</p>${statsRows}</div>`;
 }
 
 function categoryLabel(id) {
@@ -262,6 +416,9 @@ function categoryColour(id) {
 }
 function kidName(id) {
   return state.kids.find((k) => k.id === id)?.name || "Unknown";
+}
+function kidAvatar(id) {
+  return state.kids.find((k) => k.id === id)?.avatar_emoji || "⭐";
 }
 
 function formatWhen(iso) {
@@ -281,7 +438,7 @@ function renderHistory() {
     const sign = entry.delta > 0 ? "+" : "−";
     row.innerHTML = `
       <div class="historyMain">
-        <div class="historyLine1" style="color:${kidColour(entry.kid_id)}">${escapeHtml(kidName(entry.kid_id))}</div>
+        <div class="historyLine1" style="color:${kidColour(entry.kid_id)}">${kidAvatar(entry.kid_id)} ${escapeHtml(kidName(entry.kid_id))}</div>
         <div class="historyLine2"><span style="color:${categoryColour(entry.category_id)};font-weight:700">${escapeHtml(categoryLabel(entry.category_id))}</span> ${sign}1 · ${formatWhen(entry.created_at)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</div>
       </div>
       <button type="button" class="undoBtn" data-log="${entry.id}">Undo</button>
@@ -326,8 +483,35 @@ async function commitTap(note) {
   if (!pendingTap) return;
   const { kidId, categoryId, type } = pendingTap;
   pendingTap = null;
-  await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note });
+  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note });
   await loadState();
+  if (res.ok && res.data?.entry) showUndoToast(res.data.entry, kidId, categoryId, type);
+}
+
+// --- 5-second Undo toast - the fast path for correcting a mis-tap right
+// after it happens, without opening History. History+Undo (with its own
+// confirm dialog) still covers correcting an older entry.
+
+function showUndoToast(entry, kidId, categoryId, type) {
+  const sign = type === "spend" ? "−1" : "+1";
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.innerHTML = `
+    <div>
+      <div>${kidAvatar(kidId)} ${escapeHtml(kidName(kidId))} ${sign} ${escapeHtml(categoryLabel(categoryId))}</div>
+      <div class="toastBar"></div>
+    </div>
+    <button type="button" class="toastUndoBtn">Undo</button>
+  `;
+  const remove = () => toast.remove();
+  const timer = setTimeout(remove, UNDO_TOAST_MS);
+  toast.querySelector(".toastUndoBtn").addEventListener("click", async () => {
+    clearTimeout(timer);
+    remove();
+    await callApi("undo_reward_log", { token, log_id: entry.id });
+    await loadState();
+  });
+  toastContainer.appendChild(toast);
 }
 
 // --- Category management -----------------------------------------------
@@ -362,12 +546,14 @@ function renderCatList() {
     });
   });
   catList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const ok = await askConfirm("Delete this category? Its history will also be removed.");
-      if (!ok) return;
-      await callApi("manage_reward_categories", { token, itemAction: "delete", item_id: btn.dataset.id });
-      await loadState();
-      renderCatList();
+    btn.addEventListener("click", () => {
+      requirePin("PIN needed to delete a category", async () => {
+        const ok = await askConfirm("Delete this category? Its history will also be removed.");
+        if (!ok) return;
+        await callApi("manage_reward_categories", { token, itemAction: "delete", item_id: btn.dataset.id });
+        await loadState();
+        renderCatList();
+      });
     });
   });
 }
@@ -391,6 +577,106 @@ addCatBtn.addEventListener("click", async () => {
   await loadState();
   renderCatList();
 });
+
+// --- Settings (PIN protection toggle, kid avatars, reset history) ---------
+
+settingsBtn.addEventListener("click", () => {
+  pinProtectionToggle.checked = pinProtectionOn();
+  renderAvatarList();
+  settingsModal.classList.remove("hidden");
+});
+settingsModalClose.addEventListener("click", () => settingsModal.classList.add("hidden"));
+
+pinProtectionToggle.addEventListener("change", () => {
+  localStorage.setItem(PIN_PROTECTION_KEY, pinProtectionToggle.checked ? "1" : "0");
+});
+
+function renderAvatarList() {
+  avatarList.innerHTML = "";
+  state.kids.forEach((kid) => {
+    const row = document.createElement("div");
+    row.className = "avatarRow";
+    row.innerHTML = `
+      <div class="avatarCurrentBtn">${kid.avatar_emoji || "⭐"}</div>
+      <div class="avatarRowName">${escapeHtml(kid.name)}</div>
+      <div class="avatarPicker" data-kid="${kid.id}"></div>
+    `;
+    const picker = row.querySelector(".avatarPicker");
+    AVATAR_SUGGESTIONS.forEach((emoji) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = emoji;
+      if (emoji === kid.avatar_emoji) b.classList.add("selected");
+      b.addEventListener("click", async () => {
+        await callApi("manage_kid", { token, kidAction: "rename", kid_id: kid.id, avatar: emoji });
+        await loadState();
+        renderAvatarList();
+      });
+      picker.appendChild(b);
+    });
+    avatarList.appendChild(row);
+  });
+}
+
+resetHistoryBtn.addEventListener("click", () => {
+  requirePin("PIN needed to reset", async () => {
+    const ok = await askConfirm("Reset ALL reward history for every kid? Categories are kept. This can't be undone.");
+    if (!ok) return;
+    await callApi("reset_reward_history", { token });
+    await loadState();
+  });
+});
+
+// --- Kid View - read-only, giant cards, exit is PIN-gated -----------------
+
+function renderKidView() {
+  kidViewCards.innerHTML = "";
+  const kids = kidViewOnlyKidId ? state.kids.filter((k) => k.id === kidViewOnlyKidId) : state.kids;
+  kids.forEach((kid) => {
+    const byCategory = state.categories.map((cat) => ({ cat, balance: balanceFor(kid.id, cat.id) })).filter((c) => c.balance !== 0);
+    const card = document.createElement("div");
+    card.className = "kidViewCard";
+    card.innerHTML = `
+      <div class="kidViewAvatar">${kid.avatar_emoji || "⭐"}</div>
+      <div class="kidViewName" style="color:${kidColour(kid.id)}">${escapeHtml(kid.name)}</div>
+      <div class="kidViewBalance">${totalFor(kid.id)}</div>
+      <div class="kidViewCategories">
+        ${byCategory
+          .map(
+            (c) =>
+              `<div class="kidViewCatRow"><span><span class="catSwatch" style="background:${c.cat.color}"></span>${escapeHtml(c.cat.label)}</span><span>${c.balance}</span></div>`
+          )
+          .join("") || '<p class="empty">No activity yet.</p>'}
+      </div>
+    `;
+    kidViewCards.appendChild(card);
+  });
+}
+
+function openKidView() {
+  renderKidView();
+  kidView.classList.remove("hidden");
+}
+
+kidViewBtn.addEventListener("click", () => {
+  kidViewOnlyKidId = null;
+  openKidView();
+});
+
+kidViewExitBtn.addEventListener("click", () => {
+  requirePin("PIN needed to exit Kid View", () => {
+    kidView.classList.add("hidden");
+  });
+});
+
+function maybeOpenKidViewFromUrl() {
+  const name = new URLSearchParams(location.search).get("kid");
+  if (!name) return;
+  const kid = state.kids.find((k) => k.name.toLowerCase() === name.toLowerCase());
+  if (!kid) return;
+  kidViewOnlyKidId = kid.id;
+  openKidView();
+}
 
 // --- Utilities -----------------------------------------------------
 

@@ -79,6 +79,7 @@ h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
 .hidden { display: none !important; }
 .kidTag { margin: 10px 0 0; font-size: 0.9rem; opacity: 0.92; font-weight: 700; }
 .kidTag a { color: white; text-decoration: underline; }
+.installHint { margin: 8px 0 0; font-size: 0.85rem; opacity: 0.85; font-weight: 700; }
 
 /* Gate (parent code entry) */
 .gate { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 50; padding: 20px; }

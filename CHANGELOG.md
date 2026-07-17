@@ -122,6 +122,16 @@ on `TASK_BOARD.md`.
   `D-2026-07-16-fingerprint-lock-and-parent-visibility` in
   `DECISIONS.md`.
 
+- Made the parent dashboard installable as a PWA - it never had a
+  manifest, icons, or service worker, unlike the other two apps, so
+  Chrome had nothing to offer an "Install app" prompt from. Added
+  `manifest.json`, `icons/` (reusing the existing house/checkmark
+  icon), a service worker (`parent-dashboard-pwa-v1`) for offline
+  caching, and an install-tip hint under the header, mirroring the
+  bedroom-reset app's setup. Verified via Chrome DevTools Protocol
+  (`Page.getAppManifest`, service worker registration) that the
+  manifest parses with no errors and the worker registers correctly.
+
 ## 2026-07-15
 
 - Shipped self-hosted AI photo scoring: a kid can submit a room photo

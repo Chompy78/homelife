@@ -790,3 +790,9 @@ if (token) {
   // focus event either - so the keyboard never appears at all. Letting the
   // user's own tap do the focusing keeps it reliable everywhere.
 }
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./service-worker.js").catch(() => {});
+  });
+}

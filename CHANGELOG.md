@@ -8,15 +8,14 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-17
 
-- Refreshed the shared favicon and gave Reward Tracker its own matching
-  PWA icon, from source art the user dropped into `assets/images/`
-  (`homelife_favicon_original.png`, `homelife_rewards_original.png`) -
-  same sage-green style as the existing shared favicon, now with a
-  cream heart/flower decoration, resized down to
-  `apps/shared/icons/favicon-{16,32}.png` and
-  `apps/reward-tracker/icons/icon-{192,512}.png`. Bumped the
-  bedroom-reset, parent-dashboard and reward-tracker service worker
-  caches (v20/v4/v3) so installed devices pick up the new icons.
+- Refreshed the shared favicon (from the user's
+  `homelife_favicon_original.png`) and gave Reward Tracker its own PWA
+  icon, resized down to `apps/shared/icons/favicon-{16,32}.png` and
+  `apps/reward-tracker/icons/icon-{192,512}.png`. Reward Tracker's icon
+  is the blue star (`homelife_parents_rewards.png`) per the user's
+  correction, not the sage-green variant used everywhere else. Bumped
+  the bedroom-reset, parent-dashboard and reward-tracker service worker
+  caches (v20/v4/v4) so installed devices pick up the new icons.
 - Added confetti celebrations to the kid app for real milestones - a new
   badge earned, a Parent "Great Job", and a Parent "Pass" each now get
   their own burst (room-complete and level-up already had one). Also

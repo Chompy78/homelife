@@ -60,6 +60,8 @@ const aiModalClose = document.getElementById("aiModalClose");
 const aiFingerprintText = document.getElementById("aiFingerprintText");
 const aiFingerprintSaveBtn = document.getElementById("aiFingerprintSaveBtn");
 const aiFingerprintClearBtn = document.getElementById("aiFingerprintClearBtn");
+const aiFingerprintRegenBtn = document.getElementById("aiFingerprintRegenBtn");
+const aiFingerprintPending = document.getElementById("aiFingerprintPending");
 const aiFingerprintSaved = document.getElementById("aiFingerprintSaved");
 const aiHistoryList = document.getElementById("aiHistoryList");
 
@@ -344,11 +346,62 @@ async function loadAiHistory() {
   renderAiHistoryList();
 }
 
-function openAiModal(kind, id, label, fingerprint) {
+let aiFingerprintPollTimer = null;
+let aiFingerprintPollAttempts = 0;
+const AI_FINGERPRINT_POLL_MS = 8000;
+const AI_FINGERPRINT_POLL_MAX_ATTEMPTS = 22; // ~3 minutes
+
+function setFingerprintPending(pending) {
+  aiFingerprintPending.classList.toggle("hidden", !pending);
+  aiFingerprintSaveBtn.disabled = pending;
+  aiFingerprintClearBtn.disabled = pending;
+  aiFingerprintRegenBtn.disabled = pending;
+}
+
+function stopFingerprintPoll() {
+  clearTimeout(aiFingerprintPollTimer);
+  aiFingerprintPollTimer = null;
+  aiFingerprintPollAttempts = 0;
+}
+
+async function pollFingerprintRegen() {
+  if (!aiModalTarget) return;
+  aiFingerprintPollAttempts += 1;
+  const res = await callApi("get_family_dashboard", { token });
+  if (res.ok) {
+    const target =
+      aiModalTarget.kind === "kid"
+        ? res.data.kids.find((k) => k.id === aiModalTarget.id)
+        : res.data.rooms.find((r) => r.id === aiModalTarget.id);
+    if (target && !target.room_fingerprint_regen_requested_at) {
+      // Done (or the worker gave up because reference photos disappeared) -
+      // either way there's nothing left pending, so stop and show what landed.
+      aiFingerprintText.value = target.room_fingerprint || "";
+      setFingerprintPending(false);
+      stopFingerprintPoll();
+      aiFingerprintSaved.textContent = target.room_fingerprint
+        ? "✅ New fingerprint ready!"
+        : "Regeneration finished with nothing to show - check reference photos still exist.";
+      aiFingerprintSaved.classList.remove("hidden");
+      setTimeout(() => aiFingerprintSaved.classList.add("hidden"), 5000);
+      return;
+    }
+  }
+  if (aiFingerprintPollAttempts >= AI_FINGERPRINT_POLL_MAX_ATTEMPTS) {
+    stopFingerprintPoll();
+    return;
+  }
+  aiFingerprintPollTimer = setTimeout(pollFingerprintRegen, AI_FINGERPRINT_POLL_MS);
+}
+
+function openAiModal(kind, id, label, fingerprint, regenRequestedAt) {
   aiModalTarget = { kind, id };
   aiModalTitle.textContent = `📊 AI Scoring - ${label}`;
   aiFingerprintText.value = fingerprint || "";
   aiFingerprintSaved.classList.add("hidden");
+  stopFingerprintPoll();
+  setFingerprintPending(!!regenRequestedAt);
+  if (regenRequestedAt) pollFingerprintRegen();
   aiHistoryFilter = "all";
   document.querySelectorAll(".aiFilterBtn").forEach((b) => b.classList.toggle("active", b.dataset.filter === "all"));
   aiModal.classList.remove("hidden");
@@ -357,6 +410,7 @@ function openAiModal(kind, id, label, fingerprint) {
 function closeAiModal() {
   aiModal.classList.add("hidden");
   aiModalTarget = null;
+  stopFingerprintPoll();
 }
 aiModalClose.addEventListener("click", closeAiModal);
 aiModal.addEventListener("click", (e) => {
@@ -379,6 +433,25 @@ aiFingerprintClearBtn.addEventListener("click", async () => {
   const ok = await askConfirm("Clear this fingerprint? The AI won't write a new one until a photo is next submitted for scoring - it doesn't happen right away.");
   if (!ok) return;
   saveFingerprint("", "Cleared! A new fingerprint will be generated automatically the next time a photo is submitted for AI scoring - not immediately.");
+});
+aiFingerprintRegenBtn.addEventListener("click", async () => {
+  if (!aiModalTarget) return;
+  const ok = await askConfirm("Ask the AI to write a fresh fingerprint from the current reference photos right now? This needs your home AI worker to be running, and can take a minute or two.");
+  if (!ok) return;
+  const key = aiModalTarget.kind === "kid" ? "kid_id" : "room_id";
+  const res = await callApi("request_fingerprint_regeneration", { token, [key]: aiModalTarget.id });
+  if (!res.ok) {
+    if (res.error === "no_reference_photos") {
+      aiFingerprintSaved.textContent = "Add at least one reference photo first - there's nothing for the AI to look at yet.";
+      aiFingerprintSaved.classList.remove("hidden");
+      setTimeout(() => aiFingerprintSaved.classList.add("hidden"), 5000);
+    }
+    return;
+  }
+  aiFingerprintText.value = "";
+  setFingerprintPending(true);
+  pollFingerprintRegen();
+  render(false);
 });
 
 async function removePhoto(type, photo) {
@@ -491,7 +564,7 @@ function renderKidCard(data) {
   card.querySelector(".regenBtn").addEventListener("click", () => regenerateCode(data.kid));
   card.querySelector(".removeBtn").addEventListener("click", () => removeKid(data.kid));
   const aiBtn = card.querySelector(".aiScoreDetailsBtn");
-  if (aiBtn) aiBtn.addEventListener("click", () => openAiModal("kid", data.kid.id, data.kid.name, data.kid.room_fingerprint));
+  if (aiBtn) aiBtn.addEventListener("click", () => openAiModal("kid", data.kid.id, data.kid.name, data.kid.room_fingerprint, data.kid.room_fingerprint_regen_requested_at));
   const aiThumb = card.querySelector(".aiScoreLineThumb");
   if (aiThumb) aiThumb.addEventListener("click", () => openLightbox({ url: aiThumb.dataset.photoUrl }));
   card.querySelectorAll(".photoTile").forEach((tile) => {
@@ -728,7 +801,7 @@ function renderRoomCard(data) {
   card.querySelector(".addItemBtn").addEventListener("click", () => addRoomItem(room));
   card.querySelector(".removeBtn").addEventListener("click", () => removeRoom(room));
   const aiBtn = card.querySelector(".aiScoreDetailsBtn");
-  if (aiBtn) aiBtn.addEventListener("click", () => openAiModal("room", room.id, room.name, room.room_fingerprint));
+  if (aiBtn) aiBtn.addEventListener("click", () => openAiModal("room", room.id, room.name, room.room_fingerprint, room.room_fingerprint_regen_requested_at));
   const aiThumb = card.querySelector(".aiScoreLineThumb");
   if (aiThumb) aiThumb.addEventListener("click", () => openLightbox({ url: aiThumb.dataset.photoUrl }));
   return card;

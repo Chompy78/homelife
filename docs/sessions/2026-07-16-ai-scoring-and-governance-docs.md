@@ -248,6 +248,20 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   trigger live via Playwright against a disposable test family,
   including that dedup case. Bumped the bedroom-reset service worker
   cache to v19.
+- User reported the parent dashboard's "Clear (let AI regenerate)"
+  fingerprint flow was broken two ways: the confirm dialog appeared
+  behind the already-open AI Scoring modal, and clearing didn't seem to
+  do anything. Root cause of the first: `.confirmModal` and `.aiModal`
+  shared z-index 290, and same-z-index elements stack by DOM order, so
+  whichever was declared later in the HTML (`.aiModal`) always painted
+  on top - `.lightbox` had the identical problem at an even lower
+  z-index. Raised both above `.aiModal`. The second wasn't actually a
+  bug - regeneration is deliberately lazy (next scoring job, not
+  immediate) - but nothing in the UI said so, which read as broken;
+  reworded the confirm prompt and post-clear message to say so plainly.
+  Verified live via Playwright, checking the actual DOM element under
+  the confirm dialog's Yes button (not just that it was "visible").
+  Bumped the parent-dashboard service worker cache to v3.
 
 ## Files touched
 
@@ -259,6 +273,8 @@ guide, then set up this project's governance docs (`AGENTS.md`,
 `apps/bedroom-reset/app.js`, `apps/bedroom-reset/index.html`,
 `apps/bedroom-reset/service-worker.js`, `apps/parent-dashboard/app.js`,
 `apps/parent-dashboard/index.html`, `apps/parent-dashboard/styles.css`,
+`apps/parent-dashboard/service-worker.js`,
+`apps/parent-dashboard/manifest.json`, `apps/parent-dashboard/icons/`,
 `assets/images/homelife_favicon.png`.
 
 ## Related

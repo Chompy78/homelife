@@ -112,8 +112,13 @@
       <h2>AI Room Score</h2>
       <button class="aiScoreBtn" id="aiScoreBtn" type="button">📸 Score my room with AI</button>
       <input type="file" id="aiScoreInput" accept="image/*" capture="environment" class="hidden" />
-      <p class="aiScoreStatus" id="aiScoreStatus"></p>
-      <p class="aiScoreError hidden" id="aiScoreError"></p>
+      <div class="aiScoreResult">
+        <img class="aiScoreThumb hidden" id="aiScoreThumb" alt="The photo you submitted" />
+        <div class="aiScoreTexts">
+          <p class="aiScoreStatus" id="aiScoreStatus"></p>
+          <p class="aiScoreError hidden" id="aiScoreError"></p>
+        </div>
+      </div>
     </section>
 
     <div class="lightbox hidden" id="lightbox">

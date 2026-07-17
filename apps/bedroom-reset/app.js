@@ -65,6 +65,7 @@ const lightboxClose = document.getElementById("lightboxClose");
 const aiScoreCard = document.getElementById("aiScoreCard");
 const aiScoreBtn = document.getElementById("aiScoreBtn");
 const aiScoreInput = document.getElementById("aiScoreInput");
+const aiScoreThumb = document.getElementById("aiScoreThumb");
 const aiScoreStatus = document.getElementById("aiScoreStatus");
 const aiScoreError = document.getElementById("aiScoreError");
 
@@ -495,6 +496,15 @@ function renderAiScoreCard() {
   aiScoreCard.classList.remove("hidden");
   aiScoreError.classList.add("hidden");
 
+  if (aiScoreThumb) {
+    if (aiScore?.photo_url) {
+      aiScoreThumb.src = aiScore.photo_url;
+      aiScoreThumb.classList.remove("hidden");
+    } else {
+      aiScoreThumb.classList.add("hidden");
+    }
+  }
+
   const pending = aiScore?.status === "pending";
   aiScoreBtn.disabled = pending;
   aiScoreBtn.textContent = pending ? "⏳ Scoring in progress..." : "📸 Score my room with AI";
@@ -530,6 +540,7 @@ function renderAiScoreCard() {
   aiScoreStatus.textContent = text;
 }
 
+if (aiScoreThumb) aiScoreThumb.addEventListener("click", () => openLightbox({ url: aiScore?.photo_url }));
 if (aiScoreBtn) aiScoreBtn.addEventListener("click", () => aiScoreInput.click());
 if (aiScoreInput) {
   aiScoreInput.addEventListener("change", async () => {

@@ -132,6 +132,24 @@ on `TASK_BOARD.md`.
   (`Page.getAppManifest`, service worker registration) that the
   manifest parses with no errors and the worker registers correctly.
 
+- Added a clickable thumbnail of the actual submitted photo next to every AI
+  score display, so a parent or kid can compare the photo against the AI's
+  comment instead of taking it on faith. Shows on the kid app's current-score
+  card (visible even while a score is still pending), the parent dashboard's
+  inline score line on each kid/room card, and every row in the score-history
+  modal (capped to the 15 most recent rows there, to avoid generating a
+  signed URL for every row in a long history on every load). Reuses the
+  photo that's already uploaded and already had a signed URL generated for
+  the AI worker - no new photo processing, just returning that URL and
+  adding a small `<img>` that opens the existing lightbox on tap. Added
+  `photo_url` to `getLatestPhotoScore` and `get_photo_score_history`.
+  Deployed as edge function v14 (a first deploy attempt, v13, accidentally
+  sent placeholder text instead of the real file and was immediately
+  corrected). Verified via Node script (photo_url present and fetchable on
+  both the kid's pending view and the parent's history/dashboard views) and
+  Playwright against a disposable test family (thumbnail visible and
+  clickable in all three locations, correct image loads in the lightbox).
+
 ## 2026-07-15
 
 - Shipped self-hosted AI photo scoring: a kid can submit a room photo

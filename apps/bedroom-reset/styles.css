@@ -133,7 +133,11 @@ footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size
   cursor: pointer;
 }
 .aiScoreBtn:disabled { opacity: 0.6; cursor: not-allowed; }
-.aiScoreStatus { margin: 12px 0 0; font-weight: 700; color: var(--muted); }
+.aiScoreResult { display: flex; align-items: flex-start; gap: 12px; margin-top: 12px; }
+.aiScoreThumb { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; cursor: pointer; flex: 0 0 auto; }
+.aiScoreThumb.hidden { display: none; }
+.aiScoreTexts { flex: 1; min-width: 0; }
+.aiScoreStatus { margin: 0; font-weight: 700; color: var(--muted); }
 .aiScoreStatus.scored { color: var(--ink); }
 .aiScoreStatus.scored.good { color: var(--green); }
 .aiScoreError { color: var(--red); font-weight: 700; margin: 10px 0 0; }

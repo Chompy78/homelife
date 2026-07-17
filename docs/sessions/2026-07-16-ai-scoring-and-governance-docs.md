@@ -196,6 +196,34 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   saving shows a confirmation, and the kid app's pending-state text
   contains both the live elapsed time and the average estimate.
 
+- User reported they couldn't install the parent dashboard as a PWA on
+  their Pixel/Chrome. Root cause: unlike the other two apps, it never
+  had a `manifest.json`, icons, or service worker - nothing for Chrome
+  to base an install prompt on. Added all three, reusing the existing
+  house/checkmark icon and mirroring the bedroom-reset app's setup.
+  Verified via Chrome DevTools Protocol that the manifest parses clean
+  and the worker registers.
+- User asked for a thumbnail of the actual submitted photo next to
+  every AI score, so text feedback can be checked against what was
+  really submitted. Asked two clarifying questions (where it should
+  show, how to handle thumbnails on a long history) via
+  `AskUserQuestion`; both were dismissed, so went with the stated
+  sensible defaults (everywhere useful; capped to the 15 most recent
+  history rows) and confirmed that was right before proceeding. Added
+  `photo_url` to `getLatestPhotoScore` and `get_photo_score_history`,
+  reusing the same signed-URL machinery already used to hand the photo
+  to the AI worker - no new photo processing needed. Shows on the kid
+  app's current-score card (even while pending), the parent dashboard's
+  inline score line, and the history modal; clicking any of them opens
+  the existing lightbox. First deploy attempt (v13) accidentally sent
+  placeholder text instead of the real file - caught immediately via a
+  live sanity check and corrected as v14. Verified via Node script and
+  Playwright against a disposable test family; the Playwright script's
+  own JSON-relay route handler was corrupting binary image bytes with
+  `.text()`, which looked like a rendering bug in the app at first -
+  fixed the test harness (route by content-type, use `.arrayBuffer()`
+  for images) and confirmed the thumbnails render correctly.
+
 ## Files touched
 
 `AGENTS.md`, `DECISIONS.md`, `CHANGELOG.md`, `docs/TASK_BOARD.md`,

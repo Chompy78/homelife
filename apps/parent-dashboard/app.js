@@ -96,13 +96,18 @@ const EVENT_LABELS = {
   ai_auto_pass: "🤖 Auto-approved by AI",
 };
 
+function aiScoreThumbHtml(photoUrl) {
+  if (!photoUrl) return "";
+  return `<img class="aiScoreLineThumb" src="${photoUrl}" data-photo-url="${photoUrl}" alt="Submitted photo" />`;
+}
+
 function aiScoreLineHtml(aiScore) {
   if (!aiScore) return "";
   if (aiScore.status === "pending") return `<div class="aiScoreLine">🤖 Waiting for AI score...</div>`;
   if (aiScore.status === "failed") {
-    return `<div class="aiScoreLine aiScoreLineRejected">🤔 Not scored${aiScore.rejection_reason ? ` - ${aiScore.rejection_reason}` : ""}</div>`;
+    return `<div class="aiScoreLine aiScoreLineRejected">${aiScoreThumbHtml(aiScore.photo_url)}<span>🤔 Not scored${aiScore.rejection_reason ? ` - ${aiScore.rejection_reason}` : ""}</span></div>`;
   }
-  return `<div class="aiScoreLine">🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${aiScore.comment}` : ""}</div>`;
+  return `<div class="aiScoreLine">${aiScoreThumbHtml(aiScore.photo_url)}<span>🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${aiScore.comment}` : ""}</span></div>`;
 }
 
 function aiScoreButtonHtml(aiScoreMode) {
@@ -309,9 +314,12 @@ function renderAiHistoryList() {
     .map((row) => {
       const badge = (AI_HISTORY_LABELS[row.status] || (() => ""))(row);
       const detail = row.status === "scored" ? row.comment || "" : row.rejection_reason || "";
-      return `<div class="aiHistoryRow">${badge}<span class="aiHistoryDetail">${detail}</span><span class="aiHistoryWhen">${formatWhenFull(row.created_at)}</span></div>`;
+      return `<div class="aiHistoryRow"><span class="aiHistoryThumbSlot">${aiScoreThumbHtml(row.photo_url)}</span>${badge}<span class="aiHistoryDetail">${detail}</span><span class="aiHistoryWhen">${formatWhenFull(row.created_at)}</span></div>`;
     })
     .join("");
+  aiHistoryList.querySelectorAll(".aiScoreLineThumb").forEach((thumb) => {
+    thumb.addEventListener("click", () => openLightbox({ url: thumb.dataset.photoUrl }));
+  });
 }
 
 document.querySelectorAll(".aiFilterBtn").forEach((btn) => {
@@ -483,6 +491,8 @@ function renderKidCard(data) {
   card.querySelector(".removeBtn").addEventListener("click", () => removeKid(data.kid));
   const aiBtn = card.querySelector(".aiScoreDetailsBtn");
   if (aiBtn) aiBtn.addEventListener("click", () => openAiModal("kid", data.kid.id, data.kid.name, data.kid.room_fingerprint));
+  const aiThumb = card.querySelector(".aiScoreLineThumb");
+  if (aiThumb) aiThumb.addEventListener("click", () => openLightbox({ url: aiThumb.dataset.photoUrl }));
   card.querySelectorAll(".photoTile").forEach((tile) => {
     const photo = photos.find((p) => p.id === tile.dataset.photoId);
     tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
@@ -718,6 +728,8 @@ function renderRoomCard(data) {
   card.querySelector(".removeBtn").addEventListener("click", () => removeRoom(room));
   const aiBtn = card.querySelector(".aiScoreDetailsBtn");
   if (aiBtn) aiBtn.addEventListener("click", () => openAiModal("room", room.id, room.name, room.room_fingerprint));
+  const aiThumb = card.querySelector(".aiScoreLineThumb");
+  if (aiThumb) aiThumb.addEventListener("click", () => openLightbox({ url: aiThumb.dataset.photoUrl }));
   return card;
 }
 

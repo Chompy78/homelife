@@ -32,6 +32,7 @@ const PHOTO_BUCKET = "reference-photos";
 const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1 hour, regenerated on every fetch
+const HISTORY_THUMBNAIL_LIMIT = 15; // avoid generating a signed URL for every row in a long history
 
 // AI photo scoring: how old a submitted photo's own capture timestamp is
 // allowed to be before it's rejected as a stale/reused photo. Captured
@@ -139,12 +140,15 @@ async function freshStreak(kidId: string) {
 async function getLatestPhotoScore(column: "kid_id" | "room_id", id: string) {
   const { data } = await db
     .from("photo_score_requests")
-    .select("id, status, score, comment, rejection_reason, created_at, scored_at")
+    .select("id, status, score, comment, rejection_reason, created_at, scored_at, storage_path")
     .eq(column, id)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  return data || null;
+  if (!data) return null;
+  const { storage_path, ...rest } = data;
+  const { data: signed } = await db.storage.from(PHOTO_BUCKET).createSignedUrl(storage_path, SIGNED_URL_TTL_SECONDS);
+  return { ...rest, photo_url: signed?.signedUrl || null };
 }
 
 // The worker's own reused-photo check: the hash of the target's most recently
@@ -1174,13 +1178,23 @@ Deno.serve(async (req) => {
 
         const { data: history } = await db
           .from("photo_score_requests")
-          .select("id, status, score, comment, rejection_reason, created_at, scored_at")
+          .select("id, status, score, comment, rejection_reason, created_at, scored_at, storage_path")
           .eq(kidId ? "kid_id" : "room_id", kidId || roomId)
           .neq("status", "pending")
           .order("created_at", { ascending: false })
           .limit(50);
 
-        return json({ ok: true, data: { history: history || [] } });
+        const rows = history || [];
+        // Thumbnails only for the most recent rows - a signed URL per row,
+        // capped so a long history doesn't mean 50 storage calls on every load.
+        const thumbPaths = rows.slice(0, HISTORY_THUMBNAIL_LIMIT).map((r) => r.storage_path);
+        const { data: signedList } = thumbPaths.length
+          ? await db.storage.from(PHOTO_BUCKET).createSignedUrls(thumbPaths, SIGNED_URL_TTL_SECONDS)
+          : { data: [] as { path: string | null; signedUrl: string }[] };
+        const urlByPath = Object.fromEntries((signedList || []).map((s) => [s.path, s.signedUrl]));
+        const withUrls = rows.map(({ storage_path, ...rest }) => ({ ...rest, photo_url: urlByPath[storage_path] || null }));
+
+        return json({ ok: true, data: { history: withUrls } });
       }
 
       // --- AI photo scoring (self-hosted vision model, polled by a local worker) ---

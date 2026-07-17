@@ -138,6 +138,27 @@ on `auto_approve` for a family.
 
 ## 🟢 LATER
 
+### Cap stored AI-scoring photos per kid and per family
+- **Tags:** infra, feature
+- **Status:** open
+- Reference photos are capped at 3 per kid/room and cleaned up when a
+  parent removes one, but AI-scoring submission photos
+  (`photo_score_requests` + their storage objects) have no cap and are
+  never cleaned up - every "Score my room" attempt, scored or rejected,
+  keeps its photo in storage forever. Not urgent at current usage (each
+  photo is roughly 60-150KB, client-compressed), but genuinely
+  unbounded - a family scoring daily accumulates thousands of small
+  files with no ceiling over time. Now that submissions have a visible
+  thumbnail (parent dashboard inline line, history modal, kid app
+  current-score card), any cap needs to decide whether to keep the row
+  but drop the file (older history entries still show score/comment/date,
+  just no thumbnail) or prune the row entirely (loses the history entry).
+- **Done when:** a per-kid (and/or per-family) cap on retained
+  AI-scoring submission photos is enforced - either a rolling "keep the
+  last N" cleanup triggered on each new submission, or a scheduled job
+  pruning anything past a set age/count - and pruned entries degrade
+  gracefully in the UI rather than showing a broken thumbnail.
+
 ### Chooseable/uploadable custom icon per kid
 - **Tags:** feature, ux
 - **Status:** open

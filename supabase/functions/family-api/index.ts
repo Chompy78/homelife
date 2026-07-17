@@ -330,6 +330,33 @@ async function bedroomProgressCounts(familyId: string, kidId: string) {
   return { done, total: itemIds.length };
 }
 
+async function getRewardCategories(familyId: string) {
+  const { data } = await db
+    .from("family_reward_categories")
+    .select("id, label, color")
+    .eq("family_id", familyId)
+    .order("sort_order");
+  return data || [];
+}
+
+// Balances are a live sum over the ledger, not a stored running total - an
+// Undo is then just "delete the log row", with no separate balance to keep
+// in sync or drift out of step with the history. earned/spent are tracked
+// separately (not just the net) so Table mode can show both, same as the
+// original app.
+async function getRewardBalances(familyId: string) {
+  const { data } = await db.from("kid_reward_log").select("kid_id, category_id, delta").eq("family_id", familyId);
+  const balances: Record<string, Record<string, { earned: number; spent: number; balance: number }>> = {};
+  for (const row of data || []) {
+    balances[row.kid_id] ??= {};
+    const cell = (balances[row.kid_id][row.category_id] ??= { earned: 0, spent: 0, balance: 0 });
+    if (row.delta > 0) cell.earned += row.delta;
+    else cell.spent += -row.delta;
+    cell.balance += row.delta;
+  }
+  return balances;
+}
+
 async function getPhotosWithUrls(kidId: string) {
   const { data: rows } = await db
     .from("kid_reference_photos")
@@ -806,6 +833,125 @@ Deno.serve(async (req) => {
           if (!item) return json({ ok: false, error: "not_found" }, 404);
           await db.from("family_bedroom_items").delete().eq("id", item.id);
           await db.from("kid_checklist_state").delete().eq("item_id", item.id);
+          return json({ ok: true });
+        }
+
+        return json({ ok: false, error: "unknown_item_action" }, 400);
+      }
+
+      // --- Reward Tracker (earn/spend tally per kid per reward category) ---
+
+      case "get_reward_state": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const [{ data: kids }, categories, balances, { data: historyRows }] = await Promise.all([
+          db.from("kids").select("id, name, avatar_emoji").eq("family_id", session.family_id).order("sort_order"),
+          getRewardCategories(session.family_id),
+          getRewardBalances(session.family_id),
+          db
+            .from("kid_reward_log")
+            .select("id, kid_id, category_id, delta, note, created_at")
+            .eq("family_id", session.family_id)
+            .order("created_at", { ascending: false })
+            .limit(100),
+        ]);
+        return json({
+          ok: true,
+          data: { kids: kids || [], categories, balances, history: historyRows || [] },
+        });
+      }
+
+      case "adjust_reward": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: kid } = await db.from("kids").select("id").eq("id", body.kid_id).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        const { data: category } = await db
+          .from("family_reward_categories")
+          .select("id")
+          .eq("id", body.category_id)
+          .eq("family_id", session.family_id)
+          .maybeSingle();
+        if (!category) return json({ ok: false, error: "not_found" }, 404);
+
+        const type = String(body.type || "earn");
+        if (!["earn", "spend"].includes(type)) return json({ ok: false, error: "bad_type" }, 400);
+        const note = typeof body.note === "string" ? body.note.trim().slice(0, 140) : null;
+
+        const { data: entry, error } = await db
+          .from("kid_reward_log")
+          .insert({
+            family_id: session.family_id,
+            kid_id: kid.id,
+            category_id: category.id,
+            delta: type === "spend" ? -1 : 1,
+            note: note || null,
+          })
+          .select()
+          .single();
+        if (error || !entry) return json({ ok: false, error: "could_not_add" }, 500);
+        return json({ ok: true, data: { entry } });
+      }
+
+      case "undo_reward_log": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: entry } = await db
+          .from("kid_reward_log")
+          .select("id")
+          .eq("id", body.log_id)
+          .eq("family_id", session.family_id)
+          .maybeSingle();
+        if (!entry) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_reward_log").delete().eq("id", entry.id);
+        return json({ ok: true });
+      }
+
+      case "manage_reward_categories": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const itemAction = String(body.itemAction || "");
+        const validColor = (c: unknown) => typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c);
+
+        if (itemAction === "add") {
+          const label = String(body.label || "").trim().slice(0, 60);
+          if (!label) return json({ ok: false, error: "label_required" }, 400);
+          const color = validColor(body.color) ? (body.color as string) : "#888888";
+          const { data: existing } = await db.from("family_reward_categories").select("id").eq("family_id", session.family_id);
+          const { data: item, error } = await db
+            .from("family_reward_categories")
+            .insert({ family_id: session.family_id, label, color, sort_order: (existing?.length || 0) + 1 })
+            .select()
+            .single();
+          if (error || !item) return json({ ok: false, error: "could_not_add" }, 500);
+          return json({ ok: true, data: { item } });
+        }
+
+        if (itemAction === "update") {
+          const { data: item } = await db
+            .from("family_reward_categories")
+            .select("id")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          const patch: Record<string, unknown> = {};
+          if (typeof body.label === "string" && body.label.trim()) patch.label = body.label.trim().slice(0, 60);
+          if (validColor(body.color)) patch.color = body.color;
+          if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
+          await db.from("family_reward_categories").update(patch).eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        if (itemAction === "delete") {
+          const { data: item } = await db
+            .from("family_reward_categories")
+            .select("id")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          await db.from("family_reward_categories").delete().eq("id", item.id);
           return json({ ok: true });
         }
 

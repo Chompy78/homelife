@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#ff8a1f" />
+  <meta name="description" content="A reward tracker for tallying earned and spent rewards per kid." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../shared/icons/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="../shared/icons/favicon-16.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Homelife - Reward Tracker</title>
+</head>
+<body>
+  <div class="gate" id="gate">
+    <div class="gateCard">
+      <h1>🎡 Reward Tracker</h1>
+      <p>Enter your family's parent code. This device will remember it.</p>
+      <form id="codeForm">
+        <input id="codeInput" class="codeInput" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="XXXX-XXXX" maxlength="12" />
+        <button type="submit" class="codeSubmit">Continue</button>
+      </form>
+      <p class="codeError hidden" id="codeError"></p>
+    </div>
+  </div>
+
+  <div class="confirmModal hidden" id="confirmModal">
+    <div class="confirmCard">
+      <p id="confirmText"></p>
+      <div class="confirmButtons">
+        <button id="confirmYes" type="button" class="confirmYes">Yes</button>
+        <button id="confirmNo" type="button" class="confirmNo">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="noteModal hidden" id="noteModal">
+    <div class="noteCard">
+      <div class="noteSub" id="noteSub"></div>
+      <div class="presetGrid" id="presetGrid"></div>
+      <input id="noteCustomInput" type="text" placeholder="Or write your own reason (optional)" maxlength="140" />
+      <div class="noteButtons">
+        <button id="noteSkipBtn" type="button" class="noteSkip">Skip</button>
+        <button id="noteSaveBtn" type="button" class="noteSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="catModal hidden" id="catModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>Reward Categories</h2>
+        <button id="catModalClose" type="button" class="catModalClose">✕</button>
+      </div>
+      <div class="catList" id="catList"></div>
+      <div class="addCatRow">
+        <input id="newCatLabel" type="text" placeholder="New category name" maxlength="60" />
+        <input id="newCatColor" type="color" value="#4bb3d4" />
+        <button id="addCatBtn" type="button">+ Add</button>
+      </div>
+      <p class="catError hidden" id="catError"></p>
+    </div>
+  </div>
+
+  <div class="app hidden" id="app">
+    <header>
+      <div class="headerTop">
+        <h1>🎡 Reward Tracker</h1>
+        <button id="darkModeBtn" type="button" class="iconBtn" title="Toggle dark mode">🌙</button>
+      </div>
+      <div class="kidPickerRow" id="kidPickerRow"></div>
+    </header>
+
+    <div class="modeSwitch" id="modeSwitch">
+      <button data-mode="quick" class="modeBtn active">Quick Tap</button>
+      <button data-mode="table" class="modeBtn">Table</button>
+      <button data-mode="history" class="modeBtn">History</button>
+    </div>
+
+    <section id="quickView" class="view">
+      <div class="earnSpendSwitch">
+        <button data-type="earn" class="typeBtn active">+ Earn</button>
+        <button data-type="spend" class="typeBtn">− Spend</button>
+      </div>
+      <div class="tileGrid" id="tileGrid"></div>
+    </section>
+
+    <section id="tableView" class="view hidden">
+      <div class="tableWrap">
+        <table id="rewardTable"></table>
+      </div>
+      <button id="manageCatBtn" type="button" class="adminBtn">Manage reward categories</button>
+    </section>
+
+    <section id="historyView" class="view hidden">
+      <div class="historyList" id="historyList"></div>
+    </section>
+
+    <p class="switchFamily"><a href="#" id="switchFamilyLink">Use a different parent code</a></p>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

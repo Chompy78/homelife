@@ -6,6 +6,16 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-17
+
+- Added the Reward Tracker app (`apps/reward-tracker`): a parent-run
+  earn/spend tally per kid per reward category, with Quick Tap, Table and
+  History+Undo views, dark mode, and note presets. Wired into the shared
+  Supabase backend (new `family_reward_categories` and `kid_reward_log`
+  tables, four new `family-api` actions) instead of the standalone
+  localStorage version it started as - see `D-2026-07-17-reward-tracker-app`.
+  Linked from the root page and main README.
+
 ## 2026-07-16
 
 - Restructured task tracking: renamed `ROADMAP.md` to `TASK_BOARD.md`,

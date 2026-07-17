@@ -84,6 +84,14 @@ let lastSyncOk = null;
 let lastKnownLevel = 1;
 let streakState = { current_streak: 0, best_streak: 0, total_points: 0, total_passes: 0, parent_result: "No parent check yet today." };
 
+// null until the first real badge check, so a fresh page load doesn't treat
+// every already-earned badge as "new" and fire a burst of celebrations.
+let knownBadgeIds = null;
+// A small chance of a little unprompted confetti on an ordinary checkbox tick
+// - not a real milestone, just a rare surprise. Kept low and toast-free so it
+// stays a pleasant surprise rather than something that happens "every time".
+const RANDOM_CELEBRATION_CHANCE = 0.08;
+
 // A kid always has their own bedroom (type "bedroom"), plus zero or more
 // shared family rooms (type "shared") fetched at login. Everything below is
 // written against `activeRoom` so the same UI works for either.
@@ -346,11 +354,18 @@ async function syncItem(itemId, checked) {
   lastSyncOk = true;
   renderSyncStatus();
   const pts = (res.data.points_awarded || 0) + (res.data.completion_bonus || 0);
-  if (res.data.completion_bonus > 0) {
+  // A level-up or new badge already gets its own toast + confetti inside
+  // applyStreak - skip the room-complete/random ones below so they don't
+  // stack a second burst on top and overwrite the more exciting message.
+  const alreadyCelebrated = applyStreak(progressOf(res.data), { celebrate: pts > 0 });
+  if (!alreadyCelebrated && res.data.completion_bonus > 0) {
     showToast("🌟", `Room complete! +${res.data.completion_bonus} points`);
     confettiBurst(28);
+  } else if (!alreadyCelebrated && checked && res.data.points_awarded > 0 && Math.random() < RANDOM_CELEBRATION_CHANCE) {
+    // A rare, toast-free flash of confetti on an ordinary tick - just a
+    // little surprise, not tied to any real milestone.
+    confettiBurst(12);
   }
-  applyStreak(progressOf(res.data), { celebrate: pts > 0 });
 }
 
 function renderSyncStatus() {
@@ -370,19 +385,38 @@ window.addEventListener("offline", renderSyncStatus);
 
 // --- Streak / level / badge UI --------------------------------------------
 
+// Returns true if it already showed its own celebration (level-up or a new
+// badge), so a caller that's about to show its own toast/confetti for the
+// same update (e.g. "Passed by a parent!") can skip it instead of stacking
+// a second burst on top and overwriting the more exciting message.
 function applyStreak(streak, { celebrate = true } = {}) {
-  if (!streak) return;
+  if (!streak) return false;
   streakState = streak;
   saveLocalStreakCache();
   const level = levelForPoints(streak.total_points || 0);
-  if (celebrate && level.level > lastKnownLevel) {
+  const leveledUp = celebrate && level.level > lastKnownLevel;
+  if (leveledUp) {
     showToast("🎉", `Level up! You're now a ${level.title}`, 3200);
     confettiBurst(36);
   }
   lastKnownLevel = level.level;
   updateProgress();
   updateLevelUI();
-  updateBadgesUI();
+  const earnedIds = updateBadgesUI();
+  // Only one celebration per update - a level-up already earned its confetti
+  // above, so a badge unlocked in the very same tick doesn't pile a second
+  // burst on top of it.
+  let badgeEarned = false;
+  if (celebrate && !leveledUp && knownBadgeIds) {
+    const newBadge = BADGES.find((b) => earnedIds.has(b.id) && !knownBadgeIds.has(b.id));
+    if (newBadge) {
+      showToast(newBadge.emoji, `Badge earned: ${newBadge.label}!`, 3200);
+      confettiBurst(30);
+      badgeEarned = true;
+    }
+  }
+  knownBadgeIds = earnedIds;
+  return leveledUp || badgeEarned;
 }
 
 function updateLevelUI() {
@@ -405,17 +439,19 @@ function updateLevelUI() {
 }
 
 function updateBadgesUI() {
-  if (!badgeShelfEl) return;
   const stats = {
     bestStreak: streakState.best_streak || 0,
     totalPasses: streakState.total_passes || 0,
     level: levelForPoints(streakState.total_points || 0).level,
   };
   const earnedIds = new Set(earnedBadges(stats).map((b) => b.id));
-  badgeShelfEl.innerHTML = BADGES.map((b) => {
-    const earned = earnedIds.has(b.id);
-    return `<div class="badge ${earned ? "earned" : "locked"}" title="${b.label}"><span class="badgeEmoji">${b.emoji}</span><span class="badgeLabel">${b.label}</span></div>`;
-  }).join("");
+  if (badgeShelfEl) {
+    badgeShelfEl.innerHTML = BADGES.map((b) => {
+      const earned = earnedIds.has(b.id);
+      return `<div class="badge ${earned ? "earned" : "locked"}" title="${b.label}"><span class="badgeEmoji">${b.emoji}</span><span class="badgeLabel">${b.label}</span></div>`;
+    }).join("");
+  }
+  return earnedIds;
 }
 
 function updateCategories() {
@@ -794,8 +830,11 @@ passBtn.addEventListener("click", () => {
   requestParentPin("Parent Check - Pass", async (pin) => {
     const res = await roomParentCheck("parent_pass", pin);
     if (res.ok) {
-      applyStreak(progressOf(res.data));
-      if (res.data.awarded_points > 0) showToast("✅", `Passed by a parent! ++${res.data.awarded_points} points`);
+      const alreadyCelebrated = applyStreak(progressOf(res.data));
+      if (!alreadyCelebrated && res.data.awarded_points > 0) {
+        showToast("✅", `Passed by a parent! ++${res.data.awarded_points} points`);
+        confettiBurst(16);
+      }
       updateEverything();
       return { ok: true };
     }
@@ -808,8 +847,11 @@ starBtn.addEventListener("click", () => {
   requestParentPin("Parent Check - Great Job", async (pin) => {
     const res = await roomParentCheck("parent_star", pin);
     if (res.ok) {
-      applyStreak(progressOf(res.data));
-      if (res.data.awarded_points > 0) showToast("⭐", `Great job from a parent! ++${res.data.awarded_points} points`);
+      const alreadyCelebrated = applyStreak(progressOf(res.data));
+      if (!alreadyCelebrated && res.data.awarded_points > 0) {
+        showToast("⭐", `Great job from a parent! ++${res.data.awarded_points} points`);
+        confettiBurst(24);
+      }
       updateEverything();
       return { ok: true };
     }

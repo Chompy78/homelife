@@ -6,6 +6,23 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-17
+
+- Added confetti celebrations to the kid app for real milestones - a new
+  badge earned, a Parent "Great Job", and a Parent "Pass" each now get
+  their own burst (room-complete and level-up already had one). Also
+  added a small chance (~1 in 12) of a brief, toast-free confetti flash
+  on an ordinary checklist tick, just as an occasional surprise. When two
+  milestones land in the same update (e.g. a badge unlocked by the same
+  points that triggered a level-up, or a badge earned on the same Parent
+  Pass that awards it), only the bigger one's toast and confetti fire
+  instead of stacking two bursts and losing the more exciting message -
+  `applyStreak` now reports whether it already celebrated something so
+  callers can skip their own. Verified live via Playwright against a
+  disposable test family for every trigger (level-up, first badge,
+  plain Pass, Great Job, and the coincidence-dedup case). Bumped the
+  bedroom-reset service worker cache to v19.
+
 ## 2026-07-16
 
 - Restructured task tracking: renamed `ROADMAP.md` to `TASK_BOARD.md`,

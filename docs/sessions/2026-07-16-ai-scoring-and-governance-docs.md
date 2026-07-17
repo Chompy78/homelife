@@ -223,6 +223,31 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   `.text()`, which looked like a rendering bug in the app at first -
   fixed the test harness (route by content-type, use `.arrayBuffer()`
   for images) and confirmed the thumbnails render correctly.
+- User asked how photo count/size affects the app, Supabase, and the
+  user experience. Answered in depth (compression settings per photo
+  type, the 3-photo reference cap vs. the uncapped/never-cleaned-up
+  AI-scoring submissions, storage/egress implications, AI worker
+  payload cost, why the history-thumbnail cap exists) and flagged the
+  one open risk: unbounded storage growth from scoring submissions.
+  User asked for it to be tracked - added "Cap stored AI-scoring
+  photos per kid and per family" to `docs/TASK_BOARD.md` under 🟢
+  LATER, including the real design tradeoff it'll need to resolve
+  (drop-the-file-but-keep-the-row vs. prune the row) now that
+  submissions have visible thumbnails.
+- User asked for confetti celebrations - milestones plus an occasional
+  random one, explicitly "not too much". `confettiBurst()` already
+  existed (room-complete, level-up) but badges earned and parent
+  Pass/Great Job had none. Added confetti to all three, plus a rare
+  (~1-in-12) toast-free flash on an ordinary checklist tick for a bit
+  of unprompted delight. While verifying live, found that two
+  milestones landing in the same update (e.g. a badge unlocked by the
+  same points that triggered a level-up) stacked two confetti bursts
+  and silently overwrote the more exciting toast text with the plainer
+  one - fixed by having `applyStreak` report whether it already
+  celebrated something, so the caller skips its own. Verified every
+  trigger live via Playwright against a disposable test family,
+  including that dedup case. Bumped the bedroom-reset service worker
+  cache to v19.
 
 ## Files touched
 

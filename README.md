@@ -10,6 +10,7 @@ codes, and can optionally share their stats on a public leaderboard.
 - [`apps/parent-dashboard`](apps/parent-dashboard) - a parent enters their family's parent code once, then can see every kid's progress, manage kids (add/rename/remove, get their codes), add/remove shared rooms and edit their checklist items, change the family's confirmation PIN, and opt in to the public leaderboard.
 - [`apps/leaderboard`](apps/leaderboard) - public, no code needed. Shows aggregate stats (total points, best streak, rooms passed) for families that have opted in. Never shows individual kids' names or checklist details, even for opted-in families.
 - [`apps/reward-tracker`](apps/reward-tracker) - a parent enters their family's parent code (same one as the parent dashboard) and taps a reward category to earn or spend for any of their kids. Quick Tap, Table and History+Undo views. A separate currency from the bedroom-reset points/streaks system - not merged into it or the leaderboard.
+- [`apps/my-rewards`](apps/my-rewards) - read-only, kid-facing: a kid enters their own kid code (same one as bedroom-reset) and sees their own reward balance, on their own device. No write path at all, so no PIN is needed.
 
 ## Shared
 

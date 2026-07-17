@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#99b580" />
+  <meta name="description" content="See how many rewards you've earned." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../shared/icons/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="../shared/icons/favicon-16.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>My Rewards</title>
+</head>
+<body>
+  <div class="gate" id="gate">
+    <div class="gateCard">
+      <h1>⭐ My Rewards</h1>
+      <p>Ask a parent for your code. Enter it once - this device will remember you.</p>
+      <form id="codeForm">
+        <input id="codeInput" class="codeInput" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="XXX-XXX" maxlength="10" />
+        <button type="submit" class="codeSubmit">Continue</button>
+      </form>
+      <p class="codeError hidden" id="codeError"></p>
+    </div>
+  </div>
+
+  <div class="app hidden" id="app">
+    <div class="card" id="rewardCard">
+      <button id="refreshBtn" type="button" class="refreshBtn" title="Refresh">🔄</button>
+      <div class="avatar" id="avatar">⭐</div>
+      <div class="name" id="name"></div>
+      <div class="totalLabel">rewards</div>
+      <div class="total" id="total">0</div>
+      <div class="categoryList" id="categoryList"></div>
+    </div>
+    <p class="switchKid"><a href="#" id="switchKidLink">Not you?</a></p>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

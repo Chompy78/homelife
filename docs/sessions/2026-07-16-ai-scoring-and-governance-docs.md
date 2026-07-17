@@ -262,6 +262,27 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   Verified live via Playwright, checking the actual DOM element under
   the confirm dialog's Yes button (not just that it was "visible").
   Bumped the parent-dashboard service worker cache to v3.
+- User asked for that same "Clear" flow to get an actual "regenerate
+  now" option, instead of only ever waiting on the next kid submission.
+  Added a `room_fingerprint_regen_requested_at` timestamp column and two
+  new edge-function actions - `request_fingerprint_regeneration`
+  (parent-gated) and `get_pending_fingerprint_regenerations`
+  (worker-gated, self-clears a request whose reference photos vanished
+  before the worker got to it) - plus taught the existing
+  `submit_room_fingerprint` to clear the timestamp on any successful
+  write, so the lazy and explicit paths share one completion signal.
+  Parent dashboard shows a pending state and polls every 8s (~3 minutes
+  max) while the modal's open. Deployed as edge function v19. Verified
+  via Node script and Playwright, including simulating the worker's own
+  completion mid-poll by writing the DB row directly - the real
+  `WORKER_TOKEN` isn't available in this session, and regenerating it
+  would break the user's already-running worker. See
+  `D-2026-07-17-fingerprint-regenerate-now`. The Supabase side is fully
+  done; `poller.py` itself still needs the actual new polling loop and
+  fingerprint-only generation call added - waiting on the user to share
+  their current copy, since it's never committed (embeds the worker
+  token) and reconstructing it from memory risks diverging from what's
+  actually deployed on their server.
 
 ## Files touched
 
@@ -269,7 +290,7 @@ guide, then set up this project's governance docs (`AGENTS.md`,
 `docs/PARENT-GUIDE.md`, `README.md`, `supabase/functions/family-api/index.ts`
 (+ migrations `rename_mum_to_parent`, `ai_photo_scoring`,
 `photo_score_freshness_and_rejection`, `photo_score_hash`,
-`room_fingerprint`, `room_fingerprint_locked`),
+`room_fingerprint`, `room_fingerprint_locked`, `room_fingerprint_regen`),
 `apps/bedroom-reset/app.js`, `apps/bedroom-reset/index.html`,
 `apps/bedroom-reset/service-worker.js`, `apps/parent-dashboard/app.js`,
 `apps/parent-dashboard/index.html`, `apps/parent-dashboard/styles.css`,

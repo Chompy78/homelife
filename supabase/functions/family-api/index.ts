@@ -1160,6 +1160,40 @@ Deno.serve(async (req) => {
         return json({ ok: true, data: patch });
       }
 
+      case "request_fingerprint_regeneration": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+
+        const kidId = body.kid_id ? String(body.kid_id) : null;
+        const roomId = body.room_id ? String(body.room_id) : null;
+        if ((!kidId && !roomId) || (kidId && roomId)) return json({ ok: false, error: "exactly_one_target_required" }, 400);
+
+        // Same reset as an empty-string update_room_fingerprint (clears and
+        // unlocks), plus a timestamp the worker's separate poll watches for -
+        // this is what makes it happen without waiting for a kid to submit a
+        // photo, unlike the passive "next scoring job" path.
+        const patch = {
+          room_fingerprint: null,
+          room_fingerprint_locked: false,
+          room_fingerprint_regen_requested_at: new Date().toISOString(),
+        };
+
+        if (kidId) {
+          const { data: kid } = await db.from("kids").select("id").eq("id", kidId).eq("family_id", session.family_id).maybeSingle();
+          if (!kid) return json({ ok: false, error: "not_found" }, 404);
+          const photos = await getPhotosWithUrls(kidId);
+          if (!photos.length) return json({ ok: false, error: "no_reference_photos" }, 400);
+          await db.from("kids").update(patch).eq("id", kidId);
+        } else {
+          const room = await assertFamilyRoomAccess(session, roomId as string);
+          if (!room) return json({ ok: false, error: "not_found" }, 404);
+          const photos = await getRoomPhotosWithUrls(roomId as string);
+          if (!photos.length) return json({ ok: false, error: "no_reference_photos" }, 400);
+          await db.from("family_rooms").update(patch).eq("id", roomId as string);
+        }
+        return json({ ok: true, data: patch });
+      }
+
       case "get_photo_score_history": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
@@ -1296,6 +1330,42 @@ Deno.serve(async (req) => {
         return json({ ok: true, data: jobs });
       }
 
+      case "get_pending_fingerprint_regenerations": {
+        if (!checkWorkerToken(body)) return json({ ok: false, error: "unauthorized" }, 401);
+
+        const [{ data: kidsPending }, { data: roomsPending }] = await Promise.all([
+          db.from("kids").select("id").not("room_fingerprint_regen_requested_at", "is", null),
+          db.from("family_rooms").select("id").not("room_fingerprint_regen_requested_at", "is", null),
+        ]);
+
+        // A request can outlive its reference photos (parent deletes them
+        // after asking for a regeneration but before the worker gets to it) -
+        // clear those immediately rather than handing the worker a job with
+        // nothing to look at, which would otherwise re-appear on every poll.
+        const kidJobs = await Promise.all(
+          (kidsPending || []).map(async (k) => {
+            const photos = await getPhotosWithUrls(k.id);
+            if (!photos.length) {
+              await db.from("kids").update({ room_fingerprint_regen_requested_at: null }).eq("id", k.id);
+              return null;
+            }
+            return { kid_id: k.id, room_id: null, reference_photos: photos };
+          })
+        );
+        const roomJobs = await Promise.all(
+          (roomsPending || []).map(async (r) => {
+            const photos = await getRoomPhotosWithUrls(r.id);
+            if (!photos.length) {
+              await db.from("family_rooms").update({ room_fingerprint_regen_requested_at: null }).eq("id", r.id);
+              return null;
+            }
+            return { kid_id: null, room_id: r.id, reference_photos: photos };
+          })
+        );
+
+        return json({ ok: true, data: [...kidJobs, ...roomJobs].filter(Boolean) });
+      }
+
       case "submit_room_fingerprint": {
         if (!checkWorkerToken(body)) return json({ ok: false, error: "unauthorized" }, 401);
 
@@ -1306,10 +1376,14 @@ Deno.serve(async (req) => {
         const roomId = body.room_id ? String(body.room_id) : null;
         if ((!kidId && !roomId) || (kidId && roomId)) return json({ ok: false, error: "exactly_one_target_required" }, 400);
 
+        // Clears any pending regeneration request too - a fresh fingerprint
+        // just landed either way, whether this came from the lazy per-job
+        // path or an explicit "regenerate now" request.
+        const patch = { room_fingerprint: fingerprint, room_fingerprint_regen_requested_at: null };
         if (kidId) {
-          await db.from("kids").update({ room_fingerprint: fingerprint }).eq("id", kidId);
+          await db.from("kids").update(patch).eq("id", kidId);
         } else {
-          await db.from("family_rooms").update({ room_fingerprint: fingerprint }).eq("id", roomId as string);
+          await db.from("family_rooms").update(patch).eq("id", roomId as string);
         }
         return json({ ok: true });
       }

@@ -38,6 +38,29 @@ on `TASK_BOARD.md`.
   Verified live via Playwright (confirmed the actual DOM element under
   the Yes button is the Yes button, not the AI modal, before vs. after).
   Bumped the parent-dashboard service worker cache to v3.
+- Added a "🔄 Regenerate now" button next to "Clear" for a kid's/room's
+  room fingerprint, so a parent doesn't have to wait for a kid to submit
+  a photo before the AI writes a new one. New
+  `request_fingerprint_regeneration` action (parent-gated, requires at
+  least one reference photo, resets and unlocks the fingerprint same as
+  Clear) sets a `room_fingerprint_regen_requested_at` timestamp; a new
+  `get_pending_fingerprint_regenerations` action lets the worker poll for
+  these independently of its existing photo-scoring poll, self-clearing
+  a request if its reference photos got deleted before the worker got to
+  it. `submit_room_fingerprint` now clears the timestamp on any
+  successful write, so both the lazy (next-photo) and explicit
+  (regenerate-now) paths converge on the same completion signal. The
+  parent dashboard shows a pending state (buttons disabled, "⏳
+  Regeneration requested...") and polls every 8s for up to ~3 minutes
+  while the modal is open. Migration `room_fingerprint_regen`, deployed
+  as edge function v19. Verified via Node script and Playwright,
+  including simulating the worker's completion mid-poll by writing the
+  row directly (the real `WORKER_TOKEN` isn't available in this
+  session, and regenerating it would break the user's live worker).
+  See `D-2026-07-17-fingerprint-regenerate-now` in `DECISIONS.md`.
+  `poller.py`'s side of this - the actual new polling loop and
+  fingerprint-only generation call - is still pending; needs the user's
+  current file to edit precisely rather than reconstruct from memory.
 
 ## 2026-07-16
 

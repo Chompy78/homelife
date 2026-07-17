@@ -61,6 +61,133 @@ precisely rather than reconstructed from memory.
 
 ---
 
+## D-2026-07-17-reward-tracker-pin-and-insights
+
+**Context:** The user asked to add a batch of features from a list they'd
+been keeping for the original standalone app: a PIN lock on Spend/Delete/
+Reset, a fairness/Insights view, a read-only Kid View, per-kid emoji
+avatars, and a 5-second Undo toast. One item on their list (G2, cloud sync
+via a private GitHub Gist) was explicitly skipped after checking with the
+user - it would have meant storing family reward data in a GitHub Gist,
+which conflicts directly with this project's security model (zero-policy
+RLS, server-side-only access) and is redundant now that the app is fully
+Supabase-backed (that was the point of the earlier session's work).
+
+**Options for where the PIN check lives:**
+1. Client-side only - compare against a PIN typed into a settings field.
+2. Server-side, via a new `verify_pin` action that checks the family's
+   `parent_pin` column (same one bedroom-reset's Parent Check already uses),
+   same pattern as every other reward-tracker action that only requires a
+   parent session.
+
+**Decision:** Option 2.
+
+**Why:** The PIN was never meant to be this app's actual security boundary
+- whoever has the parent code already has full authority over every
+reward-tracker action, PIN or not. What it's actually for is stopping a
+kid from tapping Spend on a device a parent left logged in. Given that,
+checking server-side costs nothing extra (one more `family-api` action)
+and keeps the "PIN never touches the client" rule consistent with the
+rest of this codebase, rather than special-casing this one feature to
+compare a hardcoded value in the browser.
+
+**Options for Insights data:**
+1. Reuse `get_reward_state`'s existing 100-row history cap and compute
+   weekly/monthly totals client-side from whatever's in that window.
+2. A new `get_reward_insights` action that aggregates weekly/monthly
+   earned, all-time balance, and top category server-side over the *full*
+   ledger, independent of the history-view row cap.
+
+**Decision:** Option 2.
+
+**Why:** A family that's been using this for months will have more than
+100 log rows; computing "this month's total" from a capped, most-recent
+window would silently under-count and get worse over time. A dedicated
+query with no cap avoids that, and keeps the aggregation logic in one
+place (the ledger-summing pattern already used by `getRewardBalances`)
+rather than duplicating it in the browser.
+
+**Status:** Done. New actions: `verify_pin`, `get_reward_insights`,
+`reset_reward_history` (wipes the ledger, keeps categories - the ledger
+design from the original build made this a one-line delete). PIN
+protection defaults on, toggleable per-device in Settings; the unlock
+(5 minutes) is in-memory only, so it always resets on reload. Kid View
+supports `?kid=<name>` to scope it to one kid for a dedicated tablet.
+Avatars reuse the existing `kids.avatar_emoji` column via `manage_kid`
+rename - no schema change. Verified via a disposable test family (PIN
+accept/reject, insights aggregation, reset) and two Playwright runs
+against a mocked backend covering the full UI surface (PIN gate on
+spend/delete/reset/Kid-View-exit with wrong-then-right PIN, the 5-minute
+unlock persisting across actions, Insights bars and stats, avatar
+picker, PIN-protection toggle, Kid View both full and `?kid=`-scoped, and
+the 5-second undo toast) - no console errors, no regressions in the
+quick-tap/table/history/category-management flows from the previous round.
+
+## D-2026-07-17-reward-tracker-app
+
+**Context:** The user brought in a standalone "Reward Tracker" PWA they'd
+built separately (single `index.html`, localStorage only, hardcoded to
+three kid names with hardcoded colours) and wanted it added to this
+monorepo, wired into the shared Supabase backend, and made consistent
+with the rest of the suite. This meant deciding how it authenticates, how
+its data is modeled, and whether it shares any of the existing
+points/streaks/leaderboard system.
+
+**Options for auth:**
+1. Give it its own per-kid login like bedroom-reset (kid_code session).
+2. Make it a parent-operated tool like the parent dashboard (parent_code
+   session only) - a kid doesn't get their own reward-tracker session.
+
+**Decision:** Option 2.
+
+**Why:** The original app's own design intent was that kids can't quietly
+adjust their own counts ("kids can't mess with counts if you leave it on
+History view"). A parent-code gate matches that intent directly, and lets
+one parent tap rewards for any of their kids from a single shared device
+(a wall tablet), which is how the original was actually used. It also
+reuses the *same* `homelife_parent_token` local storage key Parent
+Dashboard uses, so a parent already logged into one is automatically
+logged into the other on the same device (same origin, different path).
+
+**Options for the data model:**
+1. A `kid_reward_balances` table with running earned/spent totals,
+   updated on every tap (mirrors `kid_streaks`'s running-total approach).
+2. An append-only `kid_reward_log` ledger (kid, category, +1/-1, note,
+   timestamp), with balances computed as a live sum at read time.
+
+**Decision:** Option 2.
+
+**Why:** A running-total table means Undo has to carefully reverse a
+specific prior tap's effect on a shared counter, which is exactly the
+kind of thing that drifts out of sync under a bug or a race. With a pure
+ledger, Undo is just "delete that log row" and the balance is always
+correct by construction - no separate state to keep in sync. The history
+view the app already needed (for Undo) and the balances come from the
+same table for free.
+
+**Decision (currency):** Reward tallies are a separate currency from
+`kid_streaks.total_points`, not merged into it or the public leaderboard.
+
+**Why:** A reward category like "Macdonalds" or "$5 at the reject shop"
+isn't the same kind of thing as a chore-completion streak - conflating
+them would make the leaderboard compare families on an axis (what
+rewards they've configured) that has nothing to do with chores done.
+
+**Status:** Done. New tables `family_reward_categories` (parent-editable,
+seeded with the original app's 9 default categories via a trigger on
+family insert, same pattern as `family_bedroom_items`) and
+`kid_reward_log`. Four new `family-api` actions: `get_reward_state`,
+`adjust_reward`, `undo_reward_log`, `manage_reward_categories`. New app at
+`apps/reward-tracker`, using the wheel icon from the original app as its
+PWA home-screen icon while keeping the shared `apps/shared/icons`
+favicon for the browser tab, matching every other app's convention.
+Local JSON export/import and the per-category "Clear" button from the
+original weren't carried over - data lives centrally in Supabase now, so
+a browser-local backup isn't the safety net anymore, and Undo covers a
+mis-tap instead. Verified against a disposable test family (categories
+seed correctly, earn/spend/undo all adjust the ledger correctly, invalid
+colors fall back to a default) before cleanup.
+
 ## D-2026-07-16-fingerprint-lock-and-parent-visibility
 
 **Context:** The room fingerprint (see `D-2026-07-16-room-fingerprint`

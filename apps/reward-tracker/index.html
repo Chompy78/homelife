@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#ff8a1f" />
+  <meta name="description" content="A reward tracker for tallying earned and spent rewards per kid." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../shared/icons/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="../shared/icons/favicon-16.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Homelife - Reward Tracker</title>
+</head>
+<body>
+  <div class="gate" id="gate">
+    <div class="gateCard">
+      <h1>🎡 Reward Tracker</h1>
+      <p>Enter your family's parent code. This device will remember it.</p>
+      <form id="codeForm">
+        <input id="codeInput" class="codeInput" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="XXXX-XXXX" maxlength="12" />
+        <button type="submit" class="codeSubmit">Continue</button>
+      </form>
+      <p class="codeError hidden" id="codeError"></p>
+    </div>
+  </div>
+
+  <div class="confirmModal hidden" id="confirmModal">
+    <div class="confirmCard">
+      <p id="confirmText"></p>
+      <div class="confirmButtons">
+        <button id="confirmYes" type="button" class="confirmYes">Yes</button>
+        <button id="confirmNo" type="button" class="confirmNo">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="noteModal hidden" id="noteModal">
+    <div class="noteCard">
+      <div class="noteSub" id="noteSub"></div>
+      <div class="presetGrid" id="presetGrid"></div>
+      <input id="noteCustomInput" type="text" placeholder="Or write your own reason (optional)" maxlength="140" />
+      <div class="noteButtons">
+        <button id="noteSkipBtn" type="button" class="noteSkip">Skip</button>
+        <button id="noteSaveBtn" type="button" class="noteSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="catModal hidden" id="catModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>Reward Categories</h2>
+        <button id="catModalClose" type="button" class="catModalClose">✕</button>
+      </div>
+      <div class="catList" id="catList"></div>
+      <div class="addCatRow">
+        <input id="newCatLabel" type="text" placeholder="New category name" maxlength="60" />
+        <input id="newCatColor" type="color" value="#4bb3d4" />
+        <button id="addCatBtn" type="button">+ Add</button>
+      </div>
+      <p class="catError hidden" id="catError"></p>
+    </div>
+  </div>
+
+  <!-- PIN gate: shown before Spend, category delete, Reset, or leaving Kid View -->
+  <div class="pinModal hidden" id="pinModal">
+    <div class="pinCard">
+      <h2 id="pinModalTitle">Enter PIN</h2>
+      <p class="pinSub">A parent's 4-digit PIN is needed for this.</p>
+      <form id="pinForm">
+        <input id="pinInput" class="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" />
+        <button type="submit" class="pinSubmit">Unlock</button>
+      </form>
+      <p class="pinError hidden" id="pinError"></p>
+      <button type="button" class="pinCancel" id="pinCancelBtn">Cancel</button>
+    </div>
+  </div>
+
+  <div class="settingsModal hidden" id="settingsModal">
+    <div class="settingsCard">
+      <div class="catCardHead">
+        <h2>Settings</h2>
+        <button id="settingsModalClose" type="button" class="catModalClose">✕</button>
+      </div>
+
+      <div class="settingsSection">
+        <div class="settingsRow">
+          <div>
+            <div class="settingsRowTitle">🔒 PIN protection</div>
+            <div class="settingsRowSub">Require the family PIN for Spend, deleting a category, and Reset. An unlock lasts 5 minutes.</div>
+          </div>
+          <label class="toggleSwitch">
+            <input type="checkbox" id="pinProtectionToggle" />
+            <span class="toggleSlider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settingsSection">
+        <div class="settingsRowTitle">👤 Kid avatars</div>
+        <div class="settingsRowSub">Shown in Quick Tap, Table, History and Kid View.</div>
+        <div id="avatarList" class="avatarList"></div>
+      </div>
+
+      <div class="settingsSection">
+        <div class="settingsRowTitle">↩️ Reset</div>
+        <div class="settingsRowSub">Clears all reward history and balances for every kid. Categories are kept.</div>
+        <button id="resetHistoryBtn" type="button" class="dangerBtn">Reset all reward history</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kid View: read-only, giant cards, for a kid-facing tablet or ?kid=name link -->
+  <div class="kidView hidden" id="kidView">
+    <button id="kidViewExitBtn" type="button" class="kidViewExit">✕ Exit</button>
+    <div class="kidViewCards" id="kidViewCards"></div>
+  </div>
+
+  <div class="toastContainer" id="toastContainer"></div>
+
+  <div class="app hidden" id="app">
+    <header>
+      <div class="headerTop">
+        <h1>🎡 Reward Tracker</h1>
+        <div class="headerBtns">
+          <button id="kidViewBtn" type="button" class="iconBtn" title="Kid View">👶</button>
+          <button id="settingsBtn" type="button" class="iconBtn" title="Settings">⚙️</button>
+          <button id="darkModeBtn" type="button" class="iconBtn" title="Toggle dark mode">🌙</button>
+        </div>
+      </div>
+      <div class="kidPickerRow" id="kidPickerRow"></div>
+    </header>
+
+    <div class="modeSwitch" id="modeSwitch">
+      <button data-mode="quick" class="modeBtn active">Quick Tap</button>
+      <button data-mode="table" class="modeBtn">Table</button>
+      <button data-mode="insights" class="modeBtn">Insights</button>
+      <button data-mode="history" class="modeBtn">History</button>
+    </div>
+
+    <section id="quickView" class="view">
+      <div class="earnSpendSwitch">
+        <button data-type="earn" class="typeBtn active">+ Earn</button>
+        <button data-type="spend" class="typeBtn">− Spend</button>
+      </div>
+      <div class="tileGrid" id="tileGrid"></div>
+    </section>
+
+    <section id="tableView" class="view hidden">
+      <div class="tableWrap">
+        <table id="rewardTable"></table>
+      </div>
+      <button id="manageCatBtn" type="button" class="adminBtn">Manage reward categories</button>
+    </section>
+
+    <section id="insightsView" class="view hidden">
+      <div id="insightsContent"></div>
+    </section>
+
+    <section id="historyView" class="view hidden">
+      <div class="historyList" id="historyList"></div>
+    </section>
+
+    <p class="switchFamily"><a href="#" id="switchFamilyLink">Use a different parent code</a></p>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

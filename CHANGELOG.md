@@ -8,6 +8,14 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-17
 
+- Refreshed the shared favicon (from the user's
+  `homelife_favicon_original.png`) and gave Reward Tracker its own PWA
+  icon, resized down to `apps/shared/icons/favicon-{16,32}.png` and
+  `apps/reward-tracker/icons/icon-{192,512}.png`. Reward Tracker's icon
+  is the blue star (`homelife_parents_rewards.png`) per the user's
+  correction, not the sage-green variant used everywhere else. Bumped
+  the bedroom-reset, parent-dashboard and reward-tracker service worker
+  caches (v20/v4/v4) so installed devices pick up the new icons.
 - Added confetti celebrations to the kid app for real milestones - a new
   badge earned, a Parent "Great Job", and a Parent "Pass" each now get
   their own burst (room-complete and level-up already had one). Also
@@ -61,6 +69,22 @@ on `TASK_BOARD.md`.
   `poller.py`'s side of this - the actual new polling loop and
   fingerprint-only generation call - is still pending; needs the user's
   current file to edit precisely rather than reconstruct from memory.
+- Added the Reward Tracker app (`apps/reward-tracker`): a parent-run
+  earn/spend tally per kid per reward category, with Quick Tap, Table and
+  History+Undo views, dark mode, and note presets. Wired into the shared
+  Supabase backend (new `family_reward_categories` and `kid_reward_log`
+  tables, four new `family-api` actions) instead of the standalone
+  localStorage version it started as - see `D-2026-07-17-reward-tracker-app`.
+  Linked from the root page and main README.
+- Added a batch of Reward Tracker features: PIN protection on Spend/delete
+  category/Reset/Kid-View-exit (5-minute unlock, toggleable in Settings),
+  an Insights tab (weekly/monthly earned bars, all-time balance, top
+  category per kid), a read-only Kid View (`?kid=<name>` for a single-kid
+  tablet), per-kid emoji avatars in Settings, a full "Reset all reward
+  history" action, and a 5-second Undo toast after every tap. Three new
+  `family-api` actions (`verify_pin`, `get_reward_insights`,
+  `reset_reward_history`) - see
+  `D-2026-07-17-reward-tracker-pin-and-insights`.
 
 ## 2026-07-16
 

@@ -118,3 +118,12 @@ session's entry as you go, same as the other three.
   Note: `storage.objects` rows can't be deleted via raw SQL (Supabase
   blocks it) — use the Storage API or dashboard for that part of
   cleanup.
+
+## AI agent workflow shortcuts
+
+`.claude/commands/` has slash-command skills for working `docs/TASK_BOARD.md`:
+`/add-task`, `/pick-task`, `/run-task`, `/sweep-tasks`, `/cleanup-branches`,
+`/close-session`, `/log-ai-lessons`, `/plan-for-review`. These commit and push
+straight to `main` like everything else in this repo (see
+`D-2026-07-17-agent-workflow-scaffold`) — no branches or PRs. See each
+command's own file for details.

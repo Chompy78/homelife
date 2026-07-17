@@ -62,6 +62,14 @@ on `TASK_BOARD.md`.
   `family-api` actions (`verify_pin`, `get_reward_insights`,
   `reset_reward_history`) - see
   `D-2026-07-17-reward-tracker-pin-and-insights`.
+- Added an AI-agent workflow scaffold: `CLAUDE.md` and
+  `.github/copilot-instructions.md` stubs pointing at the existing
+  `AGENTS.md`, plus 8 `.claude/commands/` skills (`add-task`,
+  `pick-task`, `run-task`, `sweep-tasks`, `cleanup-branches`,
+  `close-session`, `log-ai-lessons`, `plan-for-review`) adapted to this
+  repo's existing governance docs and straight-to-`main` convention (no
+  branches/PRs introduced) - see
+  `D-2026-07-17-agent-workflow-scaffold`.
 
 ## 2026-07-16
 

@@ -89,6 +89,21 @@ on `TASK_BOARD.md`.
   `poller.py`'s side of this - the actual new polling loop and
   fingerprint-only generation call - is still pending; needs the user's
   current file to edit precisely rather than reconstruct from memory.
+- Deployed the merged edge function (v20, combining the fingerprint
+  regenerate-now work above with the Reward Tracker actions below,
+  after two rounds of merging a diverged `origin/main`) and verified
+  both feature sets live against a disposable test family. Discovered
+  the user's actual current `poller.py` no longer generates or uses
+  room fingerprints at all - it compares submitted photos directly
+  against raw reference photos, so the fingerprint field is currently
+  a parent-facing description only, disconnected from scoring. Added
+  `generate_room_fingerprint()` (a new llava:13b prompt, JSON-schema
+  constrained like the rest of the file) and a second poll in `main()`
+  for `get_pending_fingerprint_regenerations`, submitting results via
+  the existing `submit_room_fingerprint` action - purely additive,
+  scoring logic (`process_job`) untouched. Delivered the updated
+  `poller.py` to the user (never committed - embeds `WORKER_TOKEN`).
+  See `D-2026-07-17-poller-fingerprint-generation` in `DECISIONS.md`.
 - Added the Reward Tracker app (`apps/reward-tracker`): a parent-run
   earn/spend tally per kid per reward category, with Quick Tap, Table and
   History+Undo views, dark mode, and note presets. Wired into the shared

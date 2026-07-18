@@ -861,6 +861,24 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Read-only, for the kid-facing "My Rewards" PWA - a kid session
+      // (their own kid_code, the same one bedroom-reset uses) can see their
+      // own balance, but this action has no write path at all, so there's
+      // nothing here for a kid to game even without a PIN.
+      case "get_kid_reward_state": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        const [{ data: kid }, categories, balances] = await Promise.all([
+          db.from("kids").select("id, name, avatar_emoji").eq("id", session.kid_id).single(),
+          getRewardCategories(session.family_id),
+          getRewardBalances(session.family_id),
+        ]);
+        return json({
+          ok: true,
+          data: { kid, categories, balances: balances[session.kid_id] || {} },
+        });
+      }
+
       case "adjust_reward": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);

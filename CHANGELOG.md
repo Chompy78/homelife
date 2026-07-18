@@ -8,6 +8,14 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-17
 
+- Added `apps/my-rewards`: a read-only, kid-facing PWA showing a kid's own
+  reward balance and per-category breakdown, installable on their own
+  device. Gated by their existing kid_code (same as bedroom-reset,
+  same local-storage token key so one login covers both). New
+  `get_kid_reward_state` action (kid session, no write path - nothing
+  to PIN-gate). Sage-green themed per the "green for kids, blue for
+  parents" convention - see `D-2026-07-17-my-rewards-kid-app`.
+
 - Refreshed the shared favicon (from the user's
   `homelife_favicon_original.png`) and gave Reward Tracker its own PWA
   icon, resized down to `apps/shared/icons/favicon-{16,32}.png` and

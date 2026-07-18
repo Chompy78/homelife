@@ -1,0 +1,70 @@
+:root {
+  --bg: #eef3e6;
+  --card: #ffffff;
+  --ink: #2a3320;
+  --muted: #6b7a5e;
+  --line: #dbe6cd;
+  --accent: #99b580;
+  --star: #577ee1;
+  --cream: #fbeed8;
+  --gold: #f1b932;
+  --shadow: 0 6px 20px rgba(0,0,0,0.08);
+}
+html.dark {
+  --bg: #14180f;
+  --card: #1f2617;
+  --ink: #eaf0e2;
+  --muted: #a3b193;
+  --line: #33402a;
+  --shadow: 0 6px 20px rgba(0,0,0,0.5);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  padding: 20px;
+}
+.hidden { display: none !important; }
+
+/* Gate */
+.gate { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 50; padding: 20px; }
+.gate.hidden { display: none; }
+.gateCard { max-width: 380px; text-align: center; }
+.gateCard h1 { color: var(--ink); }
+.gateCard p { color: var(--muted); font-weight: 700; }
+#codeForm { display: flex; flex-direction: column; gap: 14px; margin-top: 20px; align-items: center; }
+.codeInput {
+  width: 100%; max-width: 240px; text-align: center;
+  font-size: 1.5rem; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 14px; border-radius: 16px; border: 2px solid var(--line);
+  background: var(--card); color: var(--ink);
+}
+.codeSubmit { background: var(--accent); color: #fff; border: 0; border-radius: 14px; padding: 14px 28px; font-weight: 800; cursor: pointer; }
+.codeError { color: #d9534f; font-weight: 700; margin-top: 14px; }
+
+/* Main card */
+.app { max-width: 420px; margin: 40px auto 0; }
+.card {
+  position: relative;
+  background: var(--card);
+  border-radius: 32px;
+  padding: 36px 28px;
+  text-align: center;
+  box-shadow: var(--shadow);
+}
+.refreshBtn { position: absolute; top: 16px; right: 16px; background: var(--bg); border: 0; border-radius: 12px; padding: 8px 10px; font-size: 1rem; cursor: pointer; }
+.avatar { font-size: 4.5rem; }
+.name { font-weight: 900; font-size: 1.8rem; margin-top: 6px; color: var(--star); }
+.totalLabel { color: var(--muted); font-weight: 700; margin-top: 12px; text-transform: uppercase; font-size: 0.8rem; letter-spacing: 0.06em; }
+.total { font-weight: 900; font-size: 4rem; color: var(--ink); line-height: 1; }
+
+.categoryList { margin-top: 26px; display: flex; flex-direction: column; gap: 8px; text-align: left; }
+.categoryRow { display: flex; justify-content: space-between; font-weight: 700; background: var(--bg); border-radius: 12px; padding: 10px 14px; }
+.catSwatch { display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 8px; }
+.empty { color: var(--muted); font-weight: 700; }
+
+.switchKid { text-align: center; margin-top: 20px; }
+.switchKid a { color: var(--muted); font-weight: 700; }

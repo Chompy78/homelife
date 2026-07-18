@@ -44,6 +44,7 @@
         <button id="noteSkipBtn" type="button" class="noteSkip">Skip</button>
         <button id="noteSaveBtn" type="button" class="noteSave">Save</button>
       </div>
+      <button id="manageReasonsBtn" type="button" class="adminBtn">Manage reasons</button>
     </div>
   </div>
 
@@ -60,6 +61,25 @@
         <button id="addCatBtn" type="button">+ Add</button>
       </div>
       <p class="catError hidden" id="catError"></p>
+    </div>
+  </div>
+
+  <div class="catModal hidden" id="reasonsModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>Reward Reasons</h2>
+        <button id="reasonsModalClose" type="button" class="catModalClose">✕</button>
+      </div>
+      <div class="earnSpendSwitch" id="reasonsTypeSwitch">
+        <button data-type="earn" type="button" class="typeBtn active">+ Earn</button>
+        <button data-type="spend" type="button" class="typeBtn">− Spend</button>
+      </div>
+      <div class="catList" id="reasonsList"></div>
+      <div class="addCatRow">
+        <input id="newReasonLabel" type="text" placeholder="New reason" maxlength="60" />
+        <button id="addReasonBtn" type="button">+ Add</button>
+      </div>
+      <p class="catError hidden" id="reasonsError"></p>
     </div>
   </div>
 
@@ -152,6 +172,7 @@
         <table id="rewardTable"></table>
       </div>
       <button id="manageCatBtn" type="button" class="adminBtn">Manage reward categories</button>
+      <button id="manageReasonsBtn2" type="button" class="adminBtn">Manage reward reasons</button>
     </section>
 
     <section id="insightsView" class="view hidden">

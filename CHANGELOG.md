@@ -6,6 +6,18 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-18
+
+- Made Reward Tracker's note-modal "reasons" (e.g. "Tidied room",
+  "Redeemed today") fully customizable per family - add or delete any,
+  starting from the same defaults every family already had. New
+  `family_reward_notes` table (seeded per family, same pattern as
+  `family_reward_categories`; existing families backfilled) and
+  `manage_reward_notes` edge-function action. `get_reward_state` now
+  returns `notes`; the note modal and a new "Manage reasons" screen
+  (reachable from the note modal and from Table view) both read from it
+  instead of a hardcoded list. See `D-2026-07-18-reward-tracker-custom-reasons`.
+
 ## 2026-07-17
 
 - Added `apps/my-rewards`: a read-only, kid-facing PWA showing a kid's own

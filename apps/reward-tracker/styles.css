@@ -176,6 +176,7 @@ header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
 .catColorInput { width: 36px; height: 36px; border: 0; border-radius: 8px; padding: 0; background: none; flex: 0 0 auto; }
 .catLabelInput { flex: 1; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); font-family: inherit; background: var(--bg); color: var(--ink); }
 .catDeleteBtn { background: transparent; border: 0; color: var(--red); font-size: 1.1rem; cursor: pointer; flex: 0 0 auto; }
+.reasonLabel { flex: 1; padding: 8px 10px; }
 .addCatRow { display: flex; gap: 8px; margin-top: 12px; }
 .addCatRow input[type="text"] { flex: 1; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); font-family: inherit; background: var(--bg); color: var(--ink); }
 .addCatRow input[type="color"] { width: 36px; height: 36px; border: 0; border-radius: 8px; padding: 0; background: none; }

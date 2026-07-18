@@ -15,17 +15,6 @@ const KID_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8b
 
 const AVATAR_SUGGESTIONS = ["🌸", "🌟", "🦄", "⭐", "🦁", "🐬", "🚀", "🎨", "🐱", "🐶"];
 
-const PRESET_EARN_NOTES = [
-  "Tidied room",
-  "Did homework",
-  "Kind to sibling",
-  "Helped with chores",
-  "Good manners",
-  "Listened first time",
-  "Great day at school",
-];
-const PRESET_SPEND_NOTES = ["Redeemed today", "Traded up", "Weekly treat", "Weekend outing"];
-
 const gate = document.getElementById("gate");
 const codeForm = document.getElementById("codeForm");
 const codeInput = document.getElementById("codeInput");
@@ -60,6 +49,16 @@ const presetGrid = document.getElementById("presetGrid");
 const noteCustomInput = document.getElementById("noteCustomInput");
 const noteSkipBtn = document.getElementById("noteSkipBtn");
 const noteSaveBtn = document.getElementById("noteSaveBtn");
+const manageReasonsBtn = document.getElementById("manageReasonsBtn");
+const manageReasonsBtn2 = document.getElementById("manageReasonsBtn2");
+
+const reasonsModal = document.getElementById("reasonsModal");
+const reasonsModalClose = document.getElementById("reasonsModalClose");
+const reasonsTypeSwitch = document.getElementById("reasonsTypeSwitch");
+const reasonsList = document.getElementById("reasonsList");
+const newReasonLabel = document.getElementById("newReasonLabel");
+const addReasonBtn = document.getElementById("addReasonBtn");
+const reasonsError = document.getElementById("reasonsError");
 
 const catModal = document.getElementById("catModal");
 const catModalClose = document.getElementById("catModalClose");
@@ -89,7 +88,8 @@ const kidViewExitBtn = document.getElementById("kidViewExitBtn");
 const toastContainer = document.getElementById("toastContainer");
 
 let token = null;
-let state = { kids: [], categories: [], balances: {}, history: [] };
+let state = { kids: [], categories: [], balances: {}, history: [], notes: [] };
+let reasonsType = "earn";
 let insights = [];
 let selectedKidId = null;
 let mode = "quick";
@@ -458,18 +458,23 @@ function renderHistory() {
 
 // --- Note modal (earn/spend confirmation with a preset or custom reason) --
 
+function renderPresetGrid(type) {
+  presetGrid.innerHTML = "";
+  state.notes
+    .filter((n) => n.type === type)
+    .forEach((n) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = n.label;
+      b.addEventListener("click", () => commitTap(n.label));
+      presetGrid.appendChild(b);
+    });
+}
+
 function openNoteModal(kidId, categoryId, type) {
   pendingTap = { kidId, categoryId, type };
   noteSub.textContent = `${kidName(kidId)} — ${type === "earn" ? "+1" : "−1"} ${categoryLabel(categoryId)}. Pick a reason or write your own (optional).`;
-  presetGrid.innerHTML = "";
-  const presets = type === "earn" ? PRESET_EARN_NOTES : PRESET_SPEND_NOTES;
-  presets.forEach((p) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = p;
-    b.addEventListener("click", () => commitTap(p));
-    presetGrid.appendChild(b);
-  });
+  renderPresetGrid(type);
   noteCustomInput.value = "";
   noteModal.classList.remove("hidden");
   setTimeout(() => noteCustomInput.focus(), 50);
@@ -487,6 +492,74 @@ async function commitTap(note) {
   await loadState();
   if (res.ok && res.data?.entry) showUndoToast(res.data.entry, kidId, categoryId, type);
 }
+
+// --- Reward reasons (the note modal's preset list) - a family's own list,
+// add or delete freely. Deleting one only removes it from the preset grid;
+// it's just a suggested string copied into a log row's free-text note at
+// tap time, not a foreign key, so existing history is untouched either way.
+
+manageReasonsBtn.addEventListener("click", () => {
+  reasonsType = pendingTap?.type || "earn";
+  openReasonsModal();
+});
+manageReasonsBtn2.addEventListener("click", () => openReasonsModal());
+
+function openReasonsModal() {
+  reasonsError.classList.add("hidden");
+  reasonsTypeSwitch.querySelectorAll(".typeBtn").forEach((b) => b.classList.toggle("active", b.dataset.type === reasonsType));
+  renderReasonsList();
+  reasonsModal.classList.remove("hidden");
+}
+
+reasonsTypeSwitch.querySelectorAll(".typeBtn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    reasonsType = btn.dataset.type;
+    reasonsTypeSwitch.querySelectorAll(".typeBtn").forEach((b) => b.classList.toggle("active", b === btn));
+    renderReasonsList();
+  });
+});
+
+function renderReasonsList() {
+  reasonsList.innerHTML = "";
+  state.notes
+    .filter((n) => n.type === reasonsType)
+    .forEach((note) => {
+      const row = document.createElement("div");
+      row.className = "catRow";
+      row.innerHTML = `
+        <span class="reasonLabel">${escapeHtml(note.label)}</span>
+        <button type="button" class="catDeleteBtn" data-id="${note.id}">🗑</button>
+      `;
+      reasonsList.appendChild(row);
+    });
+
+  reasonsList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await callApi("manage_reward_notes", { token, itemAction: "delete", item_id: btn.dataset.id });
+      await loadState();
+      renderReasonsList();
+    });
+  });
+}
+
+addReasonBtn.addEventListener("click", async () => {
+  const label = newReasonLabel.value.trim();
+  reasonsError.classList.add("hidden");
+  if (!label) {
+    reasonsError.textContent = "Enter a reason first.";
+    reasonsError.classList.remove("hidden");
+    return;
+  }
+  await callApi("manage_reward_notes", { token, itemAction: "add", type: reasonsType, label });
+  newReasonLabel.value = "";
+  await loadState();
+  renderReasonsList();
+});
+
+reasonsModalClose.addEventListener("click", () => {
+  reasonsModal.classList.add("hidden");
+  if (!noteModal.classList.contains("hidden") && pendingTap) renderPresetGrid(pendingTap.type);
+});
 
 // --- 5-second Undo toast - the fast path for correcting a mis-tap right
 // after it happens, without opening History. History+Undo (with its own

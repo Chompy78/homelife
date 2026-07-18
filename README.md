@@ -22,7 +22,7 @@ codes, and can optionally share their stats on a public leaderboard.
 Data lives in a dedicated Supabase project ("homelife", `ap-southeast-2`).
 Every family-data table (`families`, `kids`, `kid_checklist_state`,
 `kid_streaks`, `kid_progress_log`, `sessions`, `kid_reference_photos`,
-`family_reward_categories`, `kid_reward_log`) has
+`family_reward_categories`, `family_reward_notes`, `kid_reward_log`) has
 Row Level Security enabled with **zero policies** - meaning nothing is
 reachable through the public API key at all, from any family. Reference
 photos live in a private Storage bucket (`reference-photos`) with the same
@@ -54,6 +54,7 @@ Tables:
 - `family_rooms` / `family_room_items` - shared rooms (kitchen, etc.) belonging to a family, not one kid, and their checklist items - both fully editable by a parent from the dashboard
 - `family_room_state` / `family_room_progress` / `family_room_log` / `family_room_photos` - the shared-room equivalents of the kid_* tables above. Progress here is a single row per room (the whole family's, not any one kid's) - deliberately parallel to, not merged with, the kid_* tables, so bedrooms keep working exactly as before
 - `family_reward_categories` - the family's own customizable list of reward types (label + color), used by the reward tracker. Seeded with 9 defaults automatically when a family is created (same trigger pattern as `family_bedroom_items`)
+- `family_reward_notes` - the family's own customizable list of preset "reasons" (per earn/spend type) shown in the reward tracker's note modal. Seeded with the original hardcoded defaults automatically when a family is created (same trigger pattern); a reason is copied as free text onto a `kid_reward_log` row at tap time, not referenced by id, so deleting one never touches existing history
 - `kid_reward_log` - append-only ledger for the reward tracker: one row per +1/-1 tap (kid, category, note, timestamp). Balances (and the earned/spent split) are a live sum over this table, computed by the edge function - not a stored running total, so Undo is just deleting the row
 - `photo_score_requests` - a kid's "score my room" submission for the self-hosted AI photo-scoring feature: family_id, kid_id or room_id, storage_path, status (`pending`/`scored`/`failed`), score (1-10), comment, timestamps. A partial unique index caps it at one pending request per kid/room at a time. See [`docs/TASK_BOARD.md`](docs/TASK_BOARD.md) for the full design
 

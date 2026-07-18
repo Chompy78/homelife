@@ -339,6 +339,18 @@ async function getRewardCategories(familyId: string) {
   return data || [];
 }
 
+// Preset reasons shown in the note modal - a family's own customizable list
+// (defaults seeded per family, same trigger pattern as family_reward_categories),
+// not a fixed set baked into the client.
+async function getRewardNotes(familyId: string) {
+  const { data } = await db
+    .from("family_reward_notes")
+    .select("id, type, label")
+    .eq("family_id", familyId)
+    .order("sort_order");
+  return data || [];
+}
+
 // Balances are a live sum over the ledger, not a stored running total - an
 // Undo is then just "delete the log row", with no separate balance to keep
 // in sync or drift out of step with the history. earned/spent are tracked
@@ -844,7 +856,7 @@ Deno.serve(async (req) => {
       case "get_reward_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: kids }, categories, balances, { data: historyRows }] = await Promise.all([
+        const [{ data: kids }, categories, balances, { data: historyRows }, notes] = await Promise.all([
           db.from("kids").select("id, name, avatar_emoji").eq("family_id", session.family_id).order("sort_order"),
           getRewardCategories(session.family_id),
           getRewardBalances(session.family_id),
@@ -854,10 +866,11 @@ Deno.serve(async (req) => {
             .eq("family_id", session.family_id)
             .order("created_at", { ascending: false })
             .limit(100),
+          getRewardNotes(session.family_id),
         ]);
         return json({
           ok: true,
-          data: { kids: kids || [], categories, balances, history: historyRows || [] },
+          data: { kids: kids || [], categories, balances, history: historyRows || [], notes },
         });
       }
 
@@ -970,6 +983,48 @@ Deno.serve(async (req) => {
             .maybeSingle();
           if (!item) return json({ ok: false, error: "not_found" }, 404);
           await db.from("family_reward_categories").delete().eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        return json({ ok: false, error: "unknown_item_action" }, 400);
+      }
+
+      // A family's own customizable list of preset reasons shown in the note
+      // modal (per earn/spend type) - add or delete freely; defaults are
+      // just the starting rows, not protected from deletion.
+      case "manage_reward_notes": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const itemAction = String(body.itemAction || "");
+
+        if (itemAction === "add") {
+          const type = String(body.type || "");
+          if (!["earn", "spend"].includes(type)) return json({ ok: false, error: "bad_type" }, 400);
+          const label = String(body.label || "").trim().slice(0, 60);
+          if (!label) return json({ ok: false, error: "label_required" }, 400);
+          const { data: existing } = await db
+            .from("family_reward_notes")
+            .select("id")
+            .eq("family_id", session.family_id)
+            .eq("type", type);
+          const { data: item, error } = await db
+            .from("family_reward_notes")
+            .insert({ family_id: session.family_id, type, label, sort_order: (existing?.length || 0) + 1 })
+            .select()
+            .single();
+          if (error || !item) return json({ ok: false, error: "could_not_add" }, 500);
+          return json({ ok: true, data: { item } });
+        }
+
+        if (itemAction === "delete") {
+          const { data: item } = await db
+            .from("family_reward_notes")
+            .select("id")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          await db.from("family_reward_notes").delete().eq("id", item.id);
           return json({ ok: true });
         }
 

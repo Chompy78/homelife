@@ -8,6 +8,13 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-18
 
+- Replaced Quick Tap's "+ Earn / − Spend" mode switch with `+`/`-`
+  buttons directly on each reward row - no more toggling a mode before
+  tapping. Rows are thin (swatch, label, balance, two small buttons) and
+  auto-fit into 2+ columns on wide screens, 1 on mobile. Spend still
+  requires the PIN, same as before. See
+  `D-2026-07-18-reward-tracker-inline-plus-minus`. Bumped the
+  reward-tracker service worker cache to v7.
 - Gave each kid a persistent, customizable colour (`kids.theme_color`,
   randomly assigned when added, overridable in Settings) and made Quick
   Tap visibly tint to the selected kid's colour with a "Now earning/

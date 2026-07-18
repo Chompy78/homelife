@@ -102,34 +102,33 @@ header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
 .activeKidAvatar { font-size: 1.3rem; }
 .activeKidBanner strong { color: var(--kid-colour); }
 
-.tileGrid {
+/* Thin rows (category + balance + minus/plus) instead of big square tiles -
+   two columns on wide screens via auto-fit, one on mobile. */
+.rewardRows {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 8px;
   border: 2px solid color-mix(in srgb, var(--kid-colour) 45%, transparent);
   border-radius: 18px;
   padding: 8px;
   background: color-mix(in srgb, var(--kid-colour) 6%, transparent);
 }
-.tile {
+.rewardRow {
   --tile-colour: #ccc;
-  background: var(--tile-colour);
-  color: white;
-  border: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card);
   border-radius: 12px;
   padding: 8px 10px;
-  display: flex;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  font-weight: 800;
   box-shadow: var(--shadow);
-  cursor: pointer;
-  text-align: left;
 }
-.tileLabel { font-size: 0.8rem; line-height: 1.15; }
-.tileBalance { font-size: 1.1rem; font-weight: 900; flex: 0 0 auto; }
+.rewardSwatch { width: 12px; height: 12px; border-radius: 4px; flex: 0 0 auto; background: var(--tile-colour); }
+.rewardLabel { flex: 1; font-weight: 700; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rewardBalance { font-weight: 900; min-width: 20px; text-align: center; flex: 0 0 auto; }
+.rewardBtn { width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-weight: 900; cursor: pointer; flex: 0 0 auto; }
+.rewardMinus { color: var(--red); }
+.rewardPlus { color: var(--green); }
 
 .tableWrap { overflow-x: auto; background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 10px; }
 #rewardTable { width: 100%; border-collapse: collapse; }

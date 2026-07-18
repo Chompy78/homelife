@@ -31,7 +31,6 @@ const quickView = document.getElementById("quickView");
 const tableView = document.getElementById("tableView");
 const insightsView = document.getElementById("insightsView");
 const historyView = document.getElementById("historyView");
-const earnSpendSwitch = document.getElementById("quickEarnSpendSwitch");
 const activeKidBanner = document.getElementById("activeKidBanner");
 const tileGrid = document.getElementById("tileGrid");
 const rewardTable = document.getElementById("rewardTable");
@@ -95,7 +94,6 @@ let reasonsType = "earn";
 let insights = [];
 let selectedKidId = null;
 let mode = "quick";
-let quickType = "earn";
 let pendingTap = null; // { kidId, categoryId, type } awaiting a note
 let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
 
@@ -264,7 +262,7 @@ function totalFor(kidId) {
 
 function renderAll() {
   renderKidPicker();
-  renderQuickTiles();
+  renderRewardRows();
   renderTable();
   renderInsights();
   renderHistory();
@@ -296,14 +294,6 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
   });
 });
 
-earnSpendSwitch.querySelectorAll(".typeBtn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    quickType = btn.dataset.type;
-    earnSpendSwitch.querySelectorAll(".typeBtn").forEach((b) => b.classList.toggle("active", b === btn));
-    renderActiveKidBanner();
-  });
-});
-
 function renderActiveKidBanner() {
   const kid = state.kids.find((k) => k.id === selectedKidId);
   quickView.style.setProperty("--kid-colour", kid ? kidColour(kid.id) : "#888");
@@ -312,25 +302,32 @@ function renderActiveKidBanner() {
     return;
   }
   activeKidBanner.classList.remove("hidden");
-  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> Now ${quickType === "spend" ? "spending for" : "earning for"} <strong>${escapeHtml(kid.name)}</strong>`;
+  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> Now tapping rewards for <strong>${escapeHtml(kid.name)}</strong>`;
 }
 
-function renderQuickTiles() {
+// Each row has its own +/- so a tap is one click instead of toggling an
+// Earn/Spend mode first, then tapping the category.
+function renderRewardRows() {
   renderActiveKidBanner();
   tileGrid.innerHTML = "";
   if (!selectedKidId) return;
+  const kidId = selectedKidId;
   state.categories.forEach((cat) => {
-    const btn = document.createElement("button");
-    btn.className = "tile";
-    btn.style.setProperty("--tile-colour", cat.color);
-    btn.innerHTML = `<span class="tileLabel">${escapeHtml(cat.label)}</span><span class="tileBalance">${balanceFor(selectedKidId, cat.id)}</span>`;
-    btn.addEventListener("click", () => {
-      const kidId = selectedKidId;
-      const type = quickType;
-      if (type === "spend") requirePin("PIN needed to spend", () => openNoteModal(kidId, cat.id, type));
-      else openNoteModal(kidId, cat.id, type);
+    const row = document.createElement("div");
+    row.className = "rewardRow";
+    row.style.setProperty("--tile-colour", cat.color);
+    row.innerHTML = `
+      <span class="rewardSwatch"></span>
+      <span class="rewardLabel">${escapeHtml(cat.label)}</span>
+      <span class="rewardBalance">${balanceFor(kidId, cat.id)}</span>
+      <button type="button" class="rewardBtn rewardMinus" data-cat="${cat.id}">−</button>
+      <button type="button" class="rewardBtn rewardPlus" data-cat="${cat.id}">+</button>
+    `;
+    row.querySelector(".rewardMinus").addEventListener("click", () => {
+      requirePin("PIN needed to spend", () => openNoteModal(kidId, cat.id, "spend"));
     });
-    tileGrid.appendChild(btn);
+    row.querySelector(".rewardPlus").addEventListener("click", () => openNoteModal(kidId, cat.id, "earn"));
+    tileGrid.appendChild(row);
   });
 }
 

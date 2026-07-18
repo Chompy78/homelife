@@ -28,6 +28,13 @@ const POINTS = {
   PARENT_GREAT_JOB: 35,
 };
 
+// A kid's identity colour (kid picker, Quick Tap theming, history, insights
+// bars, etc. across the reward tracker) - randomly assigned from this curated
+// set when a kid is added, picking one not already used by a sibling where
+// possible, then stored so it's stable regardless of sort order changes.
+// A parent can override it afterwards (rename with a `color`).
+const KID_THEME_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
+
 const PHOTO_BUCKET = "reference-photos";
 const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
@@ -755,8 +762,12 @@ Deno.serve(async (req) => {
         if (kidAction === "add") {
           const name = String(body.name || "").trim().slice(0, 40);
           if (!name) return json({ ok: false, error: "name_required" }, 400);
-          const { data: existingKids } = await db.from("kids").select("id").eq("family_id", session.family_id);
+          const { data: existingKids } = await db.from("kids").select("id, theme_color").eq("family_id", session.family_id);
           const kid_code = randomCode(3) + "-" + randomCode(3);
+          const usedColours = new Set((existingKids || []).map((k) => k.theme_color));
+          const freeColours = KID_THEME_PALETTE.filter((c) => !usedColours.has(c));
+          const pool = freeColours.length ? freeColours : KID_THEME_PALETTE;
+          const theme_color = pool[Math.floor(Math.random() * pool.length)];
           const { data: newKid, error } = await db
             .from("kids")
             .insert({
@@ -765,6 +776,7 @@ Deno.serve(async (req) => {
               avatar_emoji: String(body.avatar || "⭐"),
               kid_code,
               sort_order: (existingKids?.length || 0) + 1,
+              theme_color,
             })
             .select()
             .single();
@@ -779,6 +791,7 @@ Deno.serve(async (req) => {
           const patch: Record<string, unknown> = {};
           if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim().slice(0, 40);
           if (typeof body.avatar === "string" && body.avatar) patch.avatar_emoji = body.avatar;
+          if (typeof body.color === "string" && /^#[0-9a-fA-F]{6}$/.test(body.color)) patch.theme_color = body.color;
           if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
           await db.from("kids").update(patch).eq("id", kid.id);
           return json({ ok: true });
@@ -857,7 +870,7 @@ Deno.serve(async (req) => {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
         const [{ data: kids }, categories, balances, { data: historyRows }, notes] = await Promise.all([
-          db.from("kids").select("id, name, avatar_emoji").eq("family_id", session.family_id).order("sort_order"),
+          db.from("kids").select("id, name, avatar_emoji, theme_color").eq("family_id", session.family_id).order("sort_order"),
           getRewardCategories(session.family_id),
           getRewardBalances(session.family_id),
           db
@@ -882,7 +895,7 @@ Deno.serve(async (req) => {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
         const [{ data: kid }, categories, balances] = await Promise.all([
-          db.from("kids").select("id, name, avatar_emoji").eq("id", session.kid_id).single(),
+          db.from("kids").select("id, name, avatar_emoji, theme_color").eq("id", session.kid_id).single(),
           getRewardCategories(session.family_id),
           getRewardBalances(session.family_id),
         ]);

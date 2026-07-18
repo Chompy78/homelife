@@ -54,6 +54,7 @@
         <h2>Reward Categories</h2>
         <button id="catModalClose" type="button" class="catModalClose">✕</button>
       </div>
+      <p class="catUnusedSummary hidden" id="catUnusedSummary"></p>
       <div class="catList" id="catList"></div>
       <div class="addCatRow">
         <input id="newCatLabel" type="text" placeholder="New category name" maxlength="60" />
@@ -118,8 +119,8 @@
       </div>
 
       <div class="settingsSection">
-        <div class="settingsRowTitle">👤 Kid avatars</div>
-        <div class="settingsRowSub">Shown in Quick Tap, Table, History and Kid View.</div>
+        <div class="settingsRowTitle">👤 Kid avatars &amp; colours</div>
+        <div class="settingsRowSub">Shown in Quick Tap, Table, History and Kid View. Each kid gets a random colour when added - change it here any time.</div>
         <div id="avatarList" class="avatarList"></div>
       </div>
 
@@ -160,7 +161,8 @@
     </div>
 
     <section id="quickView" class="view">
-      <div class="earnSpendSwitch">
+      <div class="activeKidBanner hidden" id="activeKidBanner"></div>
+      <div class="earnSpendSwitch" id="quickEarnSpendSwitch">
         <button data-type="earn" class="typeBtn active">+ Earn</button>
         <button data-type="spend" class="typeBtn">− Spend</button>
       </div>

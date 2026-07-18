@@ -44,7 +44,7 @@ is comparing families against each other.
 Tables:
 
 - `families` - name, public display name, parent_code, parent_pin, icon, is_public (leaderboard opt-in), ai_score_mode (`off`/`informational`/`nudge`/`auto_approve`), ai_score_auto_threshold (1-10)
-- `kids` - name, avatar, kid_code, belongs to a family
+- `kids` - name, avatar, kid_code, theme_color (identity colour used by the reward tracker; randomly assigned when added, customizable), belongs to a family
 - `family_bedroom_items` - the family's own bedroom checklist (category + label per item), fully editable by a parent from the dashboard. Seeded with a 17-item default checklist automatically when a family is created (a database trigger, so it works even though families themselves are created by raw SQL - see "Onboarding a new family" below); a kid's checklist total is however many items their family currently has, not a fixed number
 - `kid_checklist_state` - today's checkbox state per kid (bedroom only - personal), keyed against the family's current `family_bedroom_items`
 - `kid_streaks` - current streak, best streak, total points, total passes, last parent-check result (bedroom only)

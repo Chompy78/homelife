@@ -31,7 +31,8 @@ const quickView = document.getElementById("quickView");
 const tableView = document.getElementById("tableView");
 const insightsView = document.getElementById("insightsView");
 const historyView = document.getElementById("historyView");
-const earnSpendSwitch = document.querySelector(".earnSpendSwitch");
+const earnSpendSwitch = document.getElementById("quickEarnSpendSwitch");
+const activeKidBanner = document.getElementById("activeKidBanner");
 const tileGrid = document.getElementById("tileGrid");
 const rewardTable = document.getElementById("rewardTable");
 const insightsContent = document.getElementById("insightsContent");
@@ -67,6 +68,7 @@ const newCatLabel = document.getElementById("newCatLabel");
 const newCatColor = document.getElementById("newCatColor");
 const addCatBtn = document.getElementById("addCatBtn");
 const catError = document.getElementById("catError");
+const catUnusedSummary = document.getElementById("catUnusedSummary");
 
 const pinModal = document.getElementById("pinModal");
 const pinModalTitle = document.getElementById("pinModalTitle");
@@ -244,6 +246,8 @@ async function loadState() {
 }
 
 function kidColour(kidId) {
+  const kid = state.kids.find((k) => k.id === kidId);
+  if (kid?.theme_color) return kid.theme_color;
   const idx = state.kids.findIndex((k) => k.id === kidId);
   return KID_PALETTE[idx % KID_PALETTE.length] || "#888";
 }
@@ -296,10 +300,23 @@ earnSpendSwitch.querySelectorAll(".typeBtn").forEach((btn) => {
   btn.addEventListener("click", () => {
     quickType = btn.dataset.type;
     earnSpendSwitch.querySelectorAll(".typeBtn").forEach((b) => b.classList.toggle("active", b === btn));
+    renderActiveKidBanner();
   });
 });
 
+function renderActiveKidBanner() {
+  const kid = state.kids.find((k) => k.id === selectedKidId);
+  quickView.style.setProperty("--kid-colour", kid ? kidColour(kid.id) : "#888");
+  if (!kid) {
+    activeKidBanner.classList.add("hidden");
+    return;
+  }
+  activeKidBanner.classList.remove("hidden");
+  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> Now ${quickType === "spend" ? "spending for" : "earning for"} <strong>${escapeHtml(kid.name)}</strong>`;
+}
+
 function renderQuickTiles() {
+  renderActiveKidBanner();
   tileGrid.innerHTML = "";
   if (!selectedKidId) return;
   state.categories.forEach((cat) => {
@@ -596,14 +613,32 @@ manageCatBtn.addEventListener("click", () => {
 });
 catModalClose.addEventListener("click", () => catModal.classList.add("hidden"));
 
+// A category with zero taps across every kid - earned and spent both 0 - is
+// flagged as unused so a parent can spot dead categories worth removing,
+// without that being a reason to block or confirm the add/delete itself.
+function categoryUsageTotal(catId) {
+  return state.kids.reduce((sum, kid) => {
+    const cell = state.balances[kid.id]?.[catId];
+    return sum + (cell ? cell.earned + cell.spent : 0);
+  }, 0);
+}
+
 function renderCatList() {
   catList.innerHTML = "";
+  const unusedCount = state.categories.filter((cat) => categoryUsageTotal(cat.id) === 0).length;
+  catUnusedSummary.classList.toggle("hidden", unusedCount === 0);
+  if (unusedCount > 0) {
+    catUnusedSummary.textContent = `⚠️ ${unusedCount} ${unusedCount === 1 ? "reward hasn't" : "rewards haven't"} been used yet - marked "Unused" below.`;
+  }
+
   state.categories.forEach((cat) => {
+    const unused = categoryUsageTotal(cat.id) === 0;
     const row = document.createElement("div");
     row.className = "catRow";
     row.innerHTML = `
       <input type="color" value="${cat.color}" data-id="${cat.id}" class="catColorInput" />
       <input type="text" value="${escapeAttr(cat.label)}" data-id="${cat.id}" class="catLabelInput" maxlength="60" />
+      ${unused ? '<span class="catUnusedBadge" title="No kid has earned or spent this reward yet">Unused</span>' : ""}
       <button type="button" class="catDeleteBtn" data-id="${cat.id}">🗑</button>
     `;
     catList.appendChild(row);
@@ -672,8 +707,14 @@ function renderAvatarList() {
     row.innerHTML = `
       <div class="avatarCurrentBtn">${kid.avatar_emoji || "⭐"}</div>
       <div class="avatarRowName">${escapeHtml(kid.name)}</div>
+      <input type="color" class="kidColourInput" value="${kidColour(kid.id)}" data-kid="${kid.id}" title="${escapeAttr(kid.name)}'s colour" />
       <div class="avatarPicker" data-kid="${kid.id}"></div>
     `;
+    row.querySelector(".kidColourInput").addEventListener("change", async (e) => {
+      await callApi("manage_kid", { token, kidAction: "rename", kid_id: kid.id, color: e.target.value });
+      await loadState();
+      renderAvatarList();
+    });
     const picker = row.querySelector(".avatarPicker");
     AVATAR_SUGGESTIONS.forEach((emoji) => {
       const b = document.createElement("button");

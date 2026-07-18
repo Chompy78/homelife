@@ -8,6 +8,21 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-18
 
+- Gave each kid a persistent, customizable colour (`kids.theme_color`,
+  randomly assigned when added, overridable in Settings) and made Quick
+  Tap visibly tint to the selected kid's colour with a "Now earning/
+  spending for <name>" banner, so it's obvious who a tap affects.
+  Existing kids were backfilled with the exact colour they already
+  rendered as. Also: shrank the Quick Tap tiles substantially (they no
+  longer need to be huge to stay identifiable now that colour theming
+  carries that job), and Manage Categories now flags any reward category
+  nobody has ever earned or spent with an "Unused" badge and a summary
+  warning. Fixed a real bug along the way - the Reasons modal's
+  Earn/Spend switch shared a class with Quick Tap's own switch and sat
+  earlier in the DOM, which had been silently misdirecting Quick Tap's
+  Earn/Spend click handler since the Reasons feature shipped. See
+  `D-2026-07-18-reward-tracker-kid-theme-colours`. Bumped the
+  reward-tracker service worker cache to v6.
 - Made Reward Tracker's note-modal "reasons" (e.g. "Tidied room",
   "Redeemed today") fully customizable per family - add or delete any,
   starting from the same defaults every family already had. New

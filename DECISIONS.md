@@ -53,6 +53,178 @@ fingerprint-regeneration request processed successfully after the
 crontab update took effect. `poller.py` is now safe to push to that
 private repo whenever the user gets to it.
 
+---
+
+## D-2026-07-18-reward-tracker-instant-tap
+
+**Context:** Even after `D-2026-07-18-reward-tracker-inline-plus-minus`
+put `+`/`-` directly on each row, the user reported adding/spending as
+"very slow, very lagging" and asked to drop the PIN on Spend and the
+reason prompt entirely. Tracing the actual flow: every tap opened a note
+modal (pick a preset or skip), Spend additionally required the PIN first,
+and the balance on screen only updated after `adjust_reward` **and** a
+full `loadState()` round trip had both completed - so a tap did nothing
+visible until two sequential network calls finished.
+
+**Options:**
+1. Just remove the PIN gate and the note modal's blocking step, but keep
+   awaiting the network before updating the UI.
+2. Also make the balance update optimistically - update `state.balances`
+   and re-render immediately on tap, fire `adjust_reward` in the
+   background, then reconcile via `loadState()` without blocking on it.
+
+**Decision:** Option 2.
+
+**Why:** Removing the PIN and the modal fixes the "no reason" and
+"no PIN" asks directly, but the "laggy" complaint was really about
+latency between tap and visible feedback - which a modal and a PIN
+prompt make worse, but don't fully explain on a slow connection even
+without them, since the balance still wouldn't move until the network
+finished. Optimistic updates fix that at the root: the number changes
+the instant you tap, independent of connection speed, and the Undo toast
+(already the existing safety net for a mis-tap) still catches anything
+that needs correcting once the real write completes. This makes the note
+modal fully unreachable, so it and its dedicated `#noteModal` DOM/CSS
+were removed rather than left as dead code; the underlying
+`family_reward_notes` table and "Manage reward reasons" screen
+(`D-2026-07-18-reward-tracker-custom-reasons`) are untouched and still
+reachable from Table view, just not wired into a tap for now.
+
+**Status:** Done. `tapReward()` replaces `openNoteModal`/`commitTap`;
+`requirePin` no longer wraps Spend in either Quick Tap or Table view
+(still used for category delete, Reset, and Kid View exit). Verified via
+Playwright with an artificially slow (800ms) mocked `adjust_reward` -
+confirmed the balance updates in under 100ms regardless, and that no PIN
+or note modal ever appears for either action. Bumped the reward-tracker
+service worker cache to v8.
+
+---
+
+## D-2026-07-18-reward-tracker-inline-plus-minus
+
+**Context:** Quick Tap required toggling a global "+ Earn / − Spend"
+switch before tapping a category tile. The user reported the "− Spend"
+button "does not work" - tracing it confirmed the switch's click handler
+was in fact wired (the DOM-collision bug fixed in
+`D-2026-07-18-reward-tracker-kid-theme-colours` was the root cause, not a
+second bug), but the two-step flow itself was the real complaint: it's
+easy to forget which mode is active and tap the wrong one. The user asked
+for `+`/`-` to live directly on each reward row instead.
+
+**Options:**
+1. Keep the Earn/Spend mode switch, just fix its wiring.
+2. Remove the switch entirely - each reward becomes a thin row (swatch +
+   label + balance + its own `−`/`+` buttons), matching the Table view's
+   existing per-cell button pattern. Grid auto-fits to 2+ columns on wide
+   screens, 1 on mobile.
+
+**Decision:** Option 2.
+
+**Why:** A mode switch is a piece of state a parent has to remember is
+set correctly before every tap - a chronic source of "I meant to spend
+but it earned" mistakes, and exactly the kind of state that's easy to
+break by accident (as the DOM-collision bug proved). Putting both
+actions on the row removes the mode entirely: there's nothing to get
+out of sync. It also reuses the same row shape the "make it more compact"
+ask from earlier today was already pushing toward, so both requests
+converged on one layout. Spend still requires the PIN via the same
+`requirePin` gate as before - only which button starts that flow changed.
+
+**Status:** Done. Removed `quickType` state and the Quick Tap
+Earn/Spend switch; `.tileGrid`/`.tile` replaced with `.rewardRows`/
+`.rewardRow` (CSS grid, `auto-fit, minmax(260px, 1fr)`). Verified via
+Playwright, including the exact reported flow (tap `−` -> PIN prompt ->
+note modal opens with "−1"). Bumped the reward-tracker service worker
+cache to v7.
+
+---
+
+## D-2026-07-18-reward-tracker-kid-theme-colours
+
+**Context:** In Quick Tap, nothing distinguished "which kid am I currently
+tapping for" beyond the small selected-state on the kid picker chip -
+easy to miss, especially with several kids. The user asked for it to be
+obvious who a tap affects, suggested a per-kid colour "theme" that's
+randomly assigned but customizable, plus separately asked for the Quick
+Tap tiles to take up less space and for a warning on reward categories
+nobody has ever used.
+
+**Options (kid colour):**
+1. Keep the existing client-side scheme (`KID_PALETTE[index % length]`,
+   recomputed from a kid's position in `state.kids` on every render).
+2. A new `theme_color` column on `kids` (shared table), randomly assigned
+   from a curated palette when a kid is added (avoiding a sibling's
+   colour where possible), overridable via `manage_kid`'s existing
+   `rename` sub-action.
+
+**Decision:** Option 2.
+
+**Why:** The index-based scheme meant a kid's colour silently changed
+whenever a sibling was added or removed before them in sort order -
+identity that shifts based on unrelated changes is confusing, and it
+can't be customized at all. Storing it on `kids` makes it stable and
+lets a parent override it from Settings, same pattern as `avatar_emoji`.
+Existing kids were backfilled with the exact colour they already
+rendered as (position-based into the same palette) so nobody's colour
+visibly changed by this migration - only newly-added kids get a genuinely
+random assignment. Scoped the persisted column to the shared `kids`
+table (correct normalization - it's kid identity, not reward-tracker
+data) but only wired the UI into Reward Tracker for now; other apps
+(bedroom-reset, parent-dashboard) could adopt it later without a schema
+change.
+
+**Decision (unused-category warning + compact tiles):** Added a
+zero-usage check (`earned + spent === 0` across every kid) computed
+client-side from data the app already has (`state.balances`), surfaced
+as a summary line plus a per-row "Unused" badge in Manage Categories -
+no new backend query needed. Shrank `.tile` significantly (row layout,
+much smaller padding, no fixed min-height) since with per-kid colour
+theming taking over the "who" signal, tiles no longer needed to be huge
+to stay identifiable.
+
+**Status:** Done. Migration `add_kids_theme_color`. Also fixed a real
+bug found while building the active-kid banner: `#reasonsTypeSwitch`
+(added in `D-2026-07-18-reward-tracker-custom-reasons`) reused the
+`.earnSpendSwitch` class and sat earlier in the DOM than Quick Tap's own
+switch, so `document.querySelector(".earnSpendSwitch")` had been
+silently binding the Quick Tap Earn/Spend toggle's click handler to the
+wrong element since that feature shipped. Fixed by giving Quick Tap's
+switch a unique id.
+
+---
+
+## D-2026-07-18-reward-tracker-custom-reasons
+
+**Context:** The note modal's preset "reasons" (e.g. "Tidied room",
+"Redeemed today") were a fixed list hardcoded in `app.js`. The user asked
+for these to be fully customizable - add or delete any, while keeping the
+existing defaults as a starting point rather than wiping them out.
+
+**Options:**
+1. Keep the presets client-side but make them editable via localStorage
+   (per-device, not shared across the family's parent devices).
+2. A new family-scoped table (`family_reward_notes`), same pattern as
+   `family_reward_categories` - seeded with the old hardcoded list as
+   defaults via a per-family trigger, fully editable through a new
+   `manage_reward_notes` edge-function action.
+
+**Decision:** Option 2.
+
+**Why:** Categories already prove this exact pattern works (server-owned,
+per-family, seeded-then-editable) - reasons are the same shape of data,
+so reusing it instead of inventing a device-local scheme keeps every
+parent device in sync and matches how a parent already expects to manage
+this kind of list. A reason is stored as free text on `kid_reward_log.note`
+at tap time (not a foreign key), so deleting a reason from the list never
+touches existing history - no confirm dialog or PIN gate needed for
+delete, unlike deleting a category. Existing families were backfilled
+with the same defaults the seed trigger gives new families, so nobody's
+list started empty.
+
+**Status:** Done.
+
+---
+
 ## D-2026-07-17-poller-fingerprint-generation
 
 **Context:** While deploying the "regenerate now" fingerprint feature

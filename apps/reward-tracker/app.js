@@ -15,17 +15,6 @@ const KID_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8b
 
 const AVATAR_SUGGESTIONS = ["🌸", "🌟", "🦄", "⭐", "🦁", "🐬", "🚀", "🎨", "🐱", "🐶"];
 
-const PRESET_EARN_NOTES = [
-  "Tidied room",
-  "Did homework",
-  "Kind to sibling",
-  "Helped with chores",
-  "Good manners",
-  "Listened first time",
-  "Great day at school",
-];
-const PRESET_SPEND_NOTES = ["Redeemed today", "Traded up", "Weekly treat", "Weekend outing"];
-
 const gate = document.getElementById("gate");
 const codeForm = document.getElementById("codeForm");
 const codeInput = document.getElementById("codeInput");
@@ -42,7 +31,7 @@ const quickView = document.getElementById("quickView");
 const tableView = document.getElementById("tableView");
 const insightsView = document.getElementById("insightsView");
 const historyView = document.getElementById("historyView");
-const earnSpendSwitch = document.querySelector(".earnSpendSwitch");
+const activeKidBanner = document.getElementById("activeKidBanner");
 const tileGrid = document.getElementById("tileGrid");
 const rewardTable = document.getElementById("rewardTable");
 const insightsContent = document.getElementById("insightsContent");
@@ -54,12 +43,15 @@ const confirmTextEl = document.getElementById("confirmText");
 const confirmYesBtn = document.getElementById("confirmYes");
 const confirmNoBtn = document.getElementById("confirmNo");
 
-const noteModal = document.getElementById("noteModal");
-const noteSub = document.getElementById("noteSub");
-const presetGrid = document.getElementById("presetGrid");
-const noteCustomInput = document.getElementById("noteCustomInput");
-const noteSkipBtn = document.getElementById("noteSkipBtn");
-const noteSaveBtn = document.getElementById("noteSaveBtn");
+const manageReasonsBtn2 = document.getElementById("manageReasonsBtn2");
+
+const reasonsModal = document.getElementById("reasonsModal");
+const reasonsModalClose = document.getElementById("reasonsModalClose");
+const reasonsTypeSwitch = document.getElementById("reasonsTypeSwitch");
+const reasonsList = document.getElementById("reasonsList");
+const newReasonLabel = document.getElementById("newReasonLabel");
+const addReasonBtn = document.getElementById("addReasonBtn");
+const reasonsError = document.getElementById("reasonsError");
 
 const catModal = document.getElementById("catModal");
 const catModalClose = document.getElementById("catModalClose");
@@ -68,6 +60,7 @@ const newCatLabel = document.getElementById("newCatLabel");
 const newCatColor = document.getElementById("newCatColor");
 const addCatBtn = document.getElementById("addCatBtn");
 const catError = document.getElementById("catError");
+const catUnusedSummary = document.getElementById("catUnusedSummary");
 
 const pinModal = document.getElementById("pinModal");
 const pinModalTitle = document.getElementById("pinModalTitle");
@@ -89,12 +82,11 @@ const kidViewExitBtn = document.getElementById("kidViewExitBtn");
 const toastContainer = document.getElementById("toastContainer");
 
 let token = null;
-let state = { kids: [], categories: [], balances: {}, history: [] };
+let state = { kids: [], categories: [], balances: {}, history: [], notes: [] };
+let reasonsType = "earn";
 let insights = [];
 let selectedKidId = null;
 let mode = "quick";
-let quickType = "earn";
-let pendingTap = null; // { kidId, categoryId, type } awaiting a note
 let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
 
 // --- Confirm modal -----------------------------------------------------
@@ -244,6 +236,8 @@ async function loadState() {
 }
 
 function kidColour(kidId) {
+  const kid = state.kids.find((k) => k.id === kidId);
+  if (kid?.theme_color) return kid.theme_color;
   const idx = state.kids.findIndex((k) => k.id === kidId);
   return KID_PALETTE[idx % KID_PALETTE.length] || "#888";
 }
@@ -260,7 +254,7 @@ function totalFor(kidId) {
 
 function renderAll() {
   renderKidPicker();
-  renderQuickTiles();
+  renderRewardRows();
   renderTable();
   renderInsights();
   renderHistory();
@@ -292,28 +286,38 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
   });
 });
 
-earnSpendSwitch.querySelectorAll(".typeBtn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    quickType = btn.dataset.type;
-    earnSpendSwitch.querySelectorAll(".typeBtn").forEach((b) => b.classList.toggle("active", b === btn));
-  });
-});
+function renderActiveKidBanner() {
+  const kid = state.kids.find((k) => k.id === selectedKidId);
+  quickView.style.setProperty("--kid-colour", kid ? kidColour(kid.id) : "#888");
+  if (!kid) {
+    activeKidBanner.classList.add("hidden");
+    return;
+  }
+  activeKidBanner.classList.remove("hidden");
+  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> Now tapping rewards for <strong>${escapeHtml(kid.name)}</strong>`;
+}
 
-function renderQuickTiles() {
+// Each row has its own +/- so a tap is one click instead of toggling an
+// Earn/Spend mode first, then tapping the category.
+function renderRewardRows() {
+  renderActiveKidBanner();
   tileGrid.innerHTML = "";
   if (!selectedKidId) return;
+  const kidId = selectedKidId;
   state.categories.forEach((cat) => {
-    const btn = document.createElement("button");
-    btn.className = "tile";
-    btn.style.setProperty("--tile-colour", cat.color);
-    btn.innerHTML = `<span class="tileLabel">${escapeHtml(cat.label)}</span><span class="tileBalance">${balanceFor(selectedKidId, cat.id)}</span>`;
-    btn.addEventListener("click", () => {
-      const kidId = selectedKidId;
-      const type = quickType;
-      if (type === "spend") requirePin("PIN needed to spend", () => openNoteModal(kidId, cat.id, type));
-      else openNoteModal(kidId, cat.id, type);
-    });
-    tileGrid.appendChild(btn);
+    const row = document.createElement("div");
+    row.className = "rewardRow";
+    row.style.setProperty("--tile-colour", cat.color);
+    row.innerHTML = `
+      <span class="rewardSwatch"></span>
+      <span class="rewardLabel">${escapeHtml(cat.label)}</span>
+      <span class="rewardBalance">${balanceFor(kidId, cat.id)}</span>
+      <button type="button" class="rewardBtn rewardMinus" data-cat="${cat.id}">−</button>
+      <button type="button" class="rewardBtn rewardPlus" data-cat="${cat.id}">+</button>
+    `;
+    row.querySelector(".rewardMinus").addEventListener("click", () => tapReward(kidId, cat.id, "spend"));
+    row.querySelector(".rewardPlus").addEventListener("click", () => tapReward(kidId, cat.id, "earn"));
+    tileGrid.appendChild(row);
   });
 }
 
@@ -347,8 +351,7 @@ function renderTable() {
   rewardTable.querySelectorAll("button[data-kid]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const { kid, cat, type } = btn.dataset;
-      if (type === "spend") requirePin("PIN needed to spend", () => openNoteModal(kid, cat, type));
-      else openNoteModal(kid, cat, type);
+      tapReward(kid, cat, type);
     });
   });
 }
@@ -458,35 +461,88 @@ function renderHistory() {
 
 // --- Note modal (earn/spend confirmation with a preset or custom reason) --
 
-function openNoteModal(kidId, categoryId, type) {
-  pendingTap = { kidId, categoryId, type };
-  noteSub.textContent = `${kidName(kidId)} — ${type === "earn" ? "+1" : "−1"} ${categoryLabel(categoryId)}. Pick a reason or write your own (optional).`;
-  presetGrid.innerHTML = "";
-  const presets = type === "earn" ? PRESET_EARN_NOTES : PRESET_SPEND_NOTES;
-  presets.forEach((p) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.textContent = p;
-    b.addEventListener("click", () => commitTap(p));
-    presetGrid.appendChild(b);
-  });
-  noteCustomInput.value = "";
-  noteModal.classList.remove("hidden");
-  setTimeout(() => noteCustomInput.focus(), 50);
-}
-
-noteSaveBtn.addEventListener("click", () => commitTap(noteCustomInput.value.trim()));
-noteSkipBtn.addEventListener("click", () => commitTap(""));
-
-async function commitTap(note) {
-  noteModal.classList.add("hidden");
-  if (!pendingTap) return;
-  const { kidId, categoryId, type } = pendingTap;
-  pendingTap = null;
-  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note });
-  await loadState();
+// A tap commits immediately - no PIN, no reason prompt, no modal in the
+// way. The balance updates optimistically before the network round trip
+// even starts, so a tap feels instant regardless of connection speed;
+// loadState() below then reconciles with the server's real numbers
+// (also picking up anything another device did) without blocking the
+// visual update. Undo (5s toast, or History any time after) is the
+// safety net that replaces the PIN as protection against a mis-tap.
+async function tapReward(kidId, categoryId, type) {
+  const forKid = (state.balances[kidId] ??= {});
+  const cell = (forKid[categoryId] ??= { earned: 0, spent: 0, balance: 0 });
+  if (type === "earn") {
+    cell.earned += 1;
+    cell.balance += 1;
+  } else {
+    cell.spent += 1;
+    cell.balance -= 1;
+  }
+  renderAll();
+  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note: "" });
   if (res.ok && res.data?.entry) showUndoToast(res.data.entry, kidId, categoryId, type);
+  loadState();
 }
+
+// --- Reward reasons - a family's own customizable preset list. No longer
+// shown on every tap (that's the whole point of the change above), but a
+// parent can still curate the list here for whenever notes get used again.
+
+manageReasonsBtn2.addEventListener("click", () => openReasonsModal());
+
+function openReasonsModal() {
+  reasonsError.classList.add("hidden");
+  reasonsTypeSwitch.querySelectorAll(".typeBtn").forEach((b) => b.classList.toggle("active", b.dataset.type === reasonsType));
+  renderReasonsList();
+  reasonsModal.classList.remove("hidden");
+}
+
+reasonsTypeSwitch.querySelectorAll(".typeBtn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    reasonsType = btn.dataset.type;
+    reasonsTypeSwitch.querySelectorAll(".typeBtn").forEach((b) => b.classList.toggle("active", b === btn));
+    renderReasonsList();
+  });
+});
+
+function renderReasonsList() {
+  reasonsList.innerHTML = "";
+  state.notes
+    .filter((n) => n.type === reasonsType)
+    .forEach((note) => {
+      const row = document.createElement("div");
+      row.className = "catRow";
+      row.innerHTML = `
+        <span class="reasonLabel">${escapeHtml(note.label)}</span>
+        <button type="button" class="catDeleteBtn" data-id="${note.id}">🗑</button>
+      `;
+      reasonsList.appendChild(row);
+    });
+
+  reasonsList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await callApi("manage_reward_notes", { token, itemAction: "delete", item_id: btn.dataset.id });
+      await loadState();
+      renderReasonsList();
+    });
+  });
+}
+
+addReasonBtn.addEventListener("click", async () => {
+  const label = newReasonLabel.value.trim();
+  reasonsError.classList.add("hidden");
+  if (!label) {
+    reasonsError.textContent = "Enter a reason first.";
+    reasonsError.classList.remove("hidden");
+    return;
+  }
+  await callApi("manage_reward_notes", { token, itemAction: "add", type: reasonsType, label });
+  newReasonLabel.value = "";
+  await loadState();
+  renderReasonsList();
+});
+
+reasonsModalClose.addEventListener("click", () => reasonsModal.classList.add("hidden"));
 
 // --- 5-second Undo toast - the fast path for correcting a mis-tap right
 // after it happens, without opening History. History+Undo (with its own
@@ -523,14 +579,32 @@ manageCatBtn.addEventListener("click", () => {
 });
 catModalClose.addEventListener("click", () => catModal.classList.add("hidden"));
 
+// A category with zero taps across every kid - earned and spent both 0 - is
+// flagged as unused so a parent can spot dead categories worth removing,
+// without that being a reason to block or confirm the add/delete itself.
+function categoryUsageTotal(catId) {
+  return state.kids.reduce((sum, kid) => {
+    const cell = state.balances[kid.id]?.[catId];
+    return sum + (cell ? cell.earned + cell.spent : 0);
+  }, 0);
+}
+
 function renderCatList() {
   catList.innerHTML = "";
+  const unusedCount = state.categories.filter((cat) => categoryUsageTotal(cat.id) === 0).length;
+  catUnusedSummary.classList.toggle("hidden", unusedCount === 0);
+  if (unusedCount > 0) {
+    catUnusedSummary.textContent = `⚠️ ${unusedCount} ${unusedCount === 1 ? "reward hasn't" : "rewards haven't"} been used yet - marked "Unused" below.`;
+  }
+
   state.categories.forEach((cat) => {
+    const unused = categoryUsageTotal(cat.id) === 0;
     const row = document.createElement("div");
     row.className = "catRow";
     row.innerHTML = `
       <input type="color" value="${cat.color}" data-id="${cat.id}" class="catColorInput" />
       <input type="text" value="${escapeAttr(cat.label)}" data-id="${cat.id}" class="catLabelInput" maxlength="60" />
+      ${unused ? '<span class="catUnusedBadge" title="No kid has earned or spent this reward yet">Unused</span>' : ""}
       <button type="button" class="catDeleteBtn" data-id="${cat.id}">🗑</button>
     `;
     catList.appendChild(row);
@@ -599,8 +673,14 @@ function renderAvatarList() {
     row.innerHTML = `
       <div class="avatarCurrentBtn">${kid.avatar_emoji || "⭐"}</div>
       <div class="avatarRowName">${escapeHtml(kid.name)}</div>
+      <input type="color" class="kidColourInput" value="${kidColour(kid.id)}" data-kid="${kid.id}" title="${escapeAttr(kid.name)}'s colour" />
       <div class="avatarPicker" data-kid="${kid.id}"></div>
     `;
+    row.querySelector(".kidColourInput").addEventListener("change", async (e) => {
+      await callApi("manage_kid", { token, kidAction: "rename", kid_id: kid.id, color: e.target.value });
+      await loadState();
+      renderAvatarList();
+    });
     const picker = row.querySelector(".avatarPicker");
     AVATAR_SUGGESTIONS.forEach((emoji) => {
       const b = document.createElement("button");

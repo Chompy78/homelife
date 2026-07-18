@@ -29,6 +29,46 @@ on `TASK_BOARD.md`.
   committed). Verified live via the poller's own log output after the
   crontab update took effect - clean job polling plus a real
   fingerprint-regeneration request processed successfully end to end.
+- Made earning/spending instant: removed the PIN requirement on Spend and
+  the "pick a reason" note modal on every tap (both had made adding/
+  spending feel slow), and made the balance update optimistically on tap
+  instead of waiting for a full network round trip. PIN protection still
+  covers deleting a category, Reset, and Kid View exit. The reasons
+  feature (`family_reward_notes`, "Manage reward reasons" in Table mode)
+  is unchanged and still usable, just no longer wired into a tap. See
+  `D-2026-07-18-reward-tracker-instant-tap`. Bumped the reward-tracker
+  service worker cache to v8.
+- Replaced Quick Tap's "+ Earn / − Spend" mode switch with `+`/`-`
+  buttons directly on each reward row - no more toggling a mode before
+  tapping. Rows are thin (swatch, label, balance, two small buttons) and
+  auto-fit into 2+ columns on wide screens, 1 on mobile. Spend still
+  requires the PIN, same as before. See
+  `D-2026-07-18-reward-tracker-inline-plus-minus`. Bumped the
+  reward-tracker service worker cache to v7.
+- Gave each kid a persistent, customizable colour (`kids.theme_color`,
+  randomly assigned when added, overridable in Settings) and made Quick
+  Tap visibly tint to the selected kid's colour with a "Now earning/
+  spending for <name>" banner, so it's obvious who a tap affects.
+  Existing kids were backfilled with the exact colour they already
+  rendered as. Also: shrank the Quick Tap tiles substantially (they no
+  longer need to be huge to stay identifiable now that colour theming
+  carries that job), and Manage Categories now flags any reward category
+  nobody has ever earned or spent with an "Unused" badge and a summary
+  warning. Fixed a real bug along the way - the Reasons modal's
+  Earn/Spend switch shared a class with Quick Tap's own switch and sat
+  earlier in the DOM, which had been silently misdirecting Quick Tap's
+  Earn/Spend click handler since the Reasons feature shipped. See
+  `D-2026-07-18-reward-tracker-kid-theme-colours`. Bumped the
+  reward-tracker service worker cache to v6.
+- Made Reward Tracker's note-modal "reasons" (e.g. "Tidied room",
+  "Redeemed today") fully customizable per family - add or delete any,
+  starting from the same defaults every family already had. New
+  `family_reward_notes` table (seeded per family, same pattern as
+  `family_reward_categories`; existing families backfilled) and
+  `manage_reward_notes` edge-function action. `get_reward_state` now
+  returns `notes`; the note modal and a new "Manage reasons" screen
+  (reachable from the note modal and from Table view) both read from it
+  instead of a hardcoded list. See `D-2026-07-18-reward-tracker-custom-reasons`.
 
 ## 2026-07-17
 

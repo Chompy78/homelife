@@ -56,18 +56,33 @@ reject shop") isn't the same kind of thing as a chore-completion streak.
   safety net anymore; Undo covers fixing a mis-tap instead. There's now a
   full "Reset all reward history" instead, in Settings.
 
+## Tapping is instant
+
+Earn and Spend both commit the moment you tap `+` or `−` - no PIN, no
+"pick a reason" prompt in the way. The balance on screen updates
+immediately (optimistically, before the network round trip even starts),
+so a tap feels instant regardless of connection speed; the app then
+quietly reconciles with the server's real numbers a moment later. The
+5-second Undo toast (see below) is the safety net for a mis-tap, not a
+confirmation step beforehand.
+
+A family's own customizable list of preset "reasons" still exists
+(`family_reward_notes`, managed via "Manage reward reasons" in Table
+mode) but isn't wired into tapping right now - it was originally the
+thing a tap paused on to ask "why", which turned out to be exactly the
+friction that made adding/spending feel slow.
+
 ## PIN protection
 
-Spend, deleting a category, and Reset all ask for the family's PIN before
-going ahead (the same PIN bedroom-reset's Parent Check uses); Earn never
-does. Entering it correctly unlocks all three for 5 minutes on that device
-(in-memory only - a reload re-locks it). Off by default is not an option
-kept from the original app on purpose: it's on by default here too, but a
-parent can flip it off entirely from Settings if it's more friction than
-it's worth for their family. The PIN is verified server-side
-(`verify_pin`), but note this is a UX friction layer, not the app's real
-security boundary - anyone with the parent code already has full access to
-every action here, same as every other reward-tracker action.
+Deleting a category and Reset all still ask for the family's PIN before
+going ahead (the same PIN bedroom-reset's Parent Check uses) - Earn and
+Spend no longer do. Entering it correctly unlocks both for 5 minutes on
+that device (in-memory only - a reload re-locks it). A parent can flip PIN
+protection off entirely from Settings if it's more friction than it's
+worth for their family. The PIN is verified server-side (`verify_pin`),
+but note this is a UX friction layer, not the app's real security
+boundary - anyone with the parent code already has full access to every
+action here, same as every other reward-tracker action.
 
 ## Insights tab
 
@@ -84,7 +99,7 @@ no tap-to-adjust controls, just avatar, name, total balance and a
 per-category breakdown. Opened from the 👶 toolbar button (shows every
 kid) or via `?kid=<name>` in the URL (shows just that one kid - handy for
 a dedicated device by a kid's door). Exiting goes through the same PIN gate
-as Spend/Delete/Reset.
+as deleting a category or Reset.
 
 ## Kid avatars
 

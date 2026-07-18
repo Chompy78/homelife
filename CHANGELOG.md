@@ -8,6 +8,15 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-18
 
+- Made earning/spending instant: removed the PIN requirement on Spend and
+  the "pick a reason" note modal on every tap (both had made adding/
+  spending feel slow), and made the balance update optimistically on tap
+  instead of waiting for a full network round trip. PIN protection still
+  covers deleting a category, Reset, and Kid View exit. The reasons
+  feature (`family_reward_notes`, "Manage reward reasons" in Table mode)
+  is unchanged and still usable, just no longer wired into a tap. See
+  `D-2026-07-18-reward-tracker-instant-tap`. Bumped the reward-tracker
+  service worker cache to v8.
 - Replaced Quick Tap's "+ Earn / − Spend" mode switch with `+`/`-`
   buttons directly on each reward row - no more toggling a mode before
   tapping. Rows are thin (swatch, label, balance, two small buttons) and

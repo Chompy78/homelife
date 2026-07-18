@@ -43,13 +43,6 @@ const confirmTextEl = document.getElementById("confirmText");
 const confirmYesBtn = document.getElementById("confirmYes");
 const confirmNoBtn = document.getElementById("confirmNo");
 
-const noteModal = document.getElementById("noteModal");
-const noteSub = document.getElementById("noteSub");
-const presetGrid = document.getElementById("presetGrid");
-const noteCustomInput = document.getElementById("noteCustomInput");
-const noteSkipBtn = document.getElementById("noteSkipBtn");
-const noteSaveBtn = document.getElementById("noteSaveBtn");
-const manageReasonsBtn = document.getElementById("manageReasonsBtn");
 const manageReasonsBtn2 = document.getElementById("manageReasonsBtn2");
 
 const reasonsModal = document.getElementById("reasonsModal");
@@ -94,7 +87,6 @@ let reasonsType = "earn";
 let insights = [];
 let selectedKidId = null;
 let mode = "quick";
-let pendingTap = null; // { kidId, categoryId, type } awaiting a note
 let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
 
 // --- Confirm modal -----------------------------------------------------
@@ -323,10 +315,8 @@ function renderRewardRows() {
       <button type="button" class="rewardBtn rewardMinus" data-cat="${cat.id}">−</button>
       <button type="button" class="rewardBtn rewardPlus" data-cat="${cat.id}">+</button>
     `;
-    row.querySelector(".rewardMinus").addEventListener("click", () => {
-      requirePin("PIN needed to spend", () => openNoteModal(kidId, cat.id, "spend"));
-    });
-    row.querySelector(".rewardPlus").addEventListener("click", () => openNoteModal(kidId, cat.id, "earn"));
+    row.querySelector(".rewardMinus").addEventListener("click", () => tapReward(kidId, cat.id, "spend"));
+    row.querySelector(".rewardPlus").addEventListener("click", () => tapReward(kidId, cat.id, "earn"));
     tileGrid.appendChild(row);
   });
 }
@@ -361,8 +351,7 @@ function renderTable() {
   rewardTable.querySelectorAll("button[data-kid]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const { kid, cat, type } = btn.dataset;
-      if (type === "spend") requirePin("PIN needed to spend", () => openNoteModal(kid, cat, type));
-      else openNoteModal(kid, cat, type);
+      tapReward(kid, cat, type);
     });
   });
 }
@@ -472,50 +461,33 @@ function renderHistory() {
 
 // --- Note modal (earn/spend confirmation with a preset or custom reason) --
 
-function renderPresetGrid(type) {
-  presetGrid.innerHTML = "";
-  state.notes
-    .filter((n) => n.type === type)
-    .forEach((n) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = n.label;
-      b.addEventListener("click", () => commitTap(n.label));
-      presetGrid.appendChild(b);
-    });
-}
-
-function openNoteModal(kidId, categoryId, type) {
-  pendingTap = { kidId, categoryId, type };
-  noteSub.textContent = `${kidName(kidId)} — ${type === "earn" ? "+1" : "−1"} ${categoryLabel(categoryId)}. Pick a reason or write your own (optional).`;
-  renderPresetGrid(type);
-  noteCustomInput.value = "";
-  noteModal.classList.remove("hidden");
-  setTimeout(() => noteCustomInput.focus(), 50);
-}
-
-noteSaveBtn.addEventListener("click", () => commitTap(noteCustomInput.value.trim()));
-noteSkipBtn.addEventListener("click", () => commitTap(""));
-
-async function commitTap(note) {
-  noteModal.classList.add("hidden");
-  if (!pendingTap) return;
-  const { kidId, categoryId, type } = pendingTap;
-  pendingTap = null;
-  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note });
-  await loadState();
+// A tap commits immediately - no PIN, no reason prompt, no modal in the
+// way. The balance updates optimistically before the network round trip
+// even starts, so a tap feels instant regardless of connection speed;
+// loadState() below then reconciles with the server's real numbers
+// (also picking up anything another device did) without blocking the
+// visual update. Undo (5s toast, or History any time after) is the
+// safety net that replaces the PIN as protection against a mis-tap.
+async function tapReward(kidId, categoryId, type) {
+  const forKid = (state.balances[kidId] ??= {});
+  const cell = (forKid[categoryId] ??= { earned: 0, spent: 0, balance: 0 });
+  if (type === "earn") {
+    cell.earned += 1;
+    cell.balance += 1;
+  } else {
+    cell.spent += 1;
+    cell.balance -= 1;
+  }
+  renderAll();
+  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note: "" });
   if (res.ok && res.data?.entry) showUndoToast(res.data.entry, kidId, categoryId, type);
+  loadState();
 }
 
-// --- Reward reasons (the note modal's preset list) - a family's own list,
-// add or delete freely. Deleting one only removes it from the preset grid;
-// it's just a suggested string copied into a log row's free-text note at
-// tap time, not a foreign key, so existing history is untouched either way.
+// --- Reward reasons - a family's own customizable preset list. No longer
+// shown on every tap (that's the whole point of the change above), but a
+// parent can still curate the list here for whenever notes get used again.
 
-manageReasonsBtn.addEventListener("click", () => {
-  reasonsType = pendingTap?.type || "earn";
-  openReasonsModal();
-});
 manageReasonsBtn2.addEventListener("click", () => openReasonsModal());
 
 function openReasonsModal() {
@@ -570,10 +542,7 @@ addReasonBtn.addEventListener("click", async () => {
   renderReasonsList();
 });
 
-reasonsModalClose.addEventListener("click", () => {
-  reasonsModal.classList.add("hidden");
-  if (!noteModal.classList.contains("hidden") && pendingTap) renderPresetGrid(pendingTap.type);
-});
+reasonsModalClose.addEventListener("click", () => reasonsModal.classList.add("hidden"));
 
 // --- 5-second Undo toast - the fast path for correcting a mis-tap right
 // after it happens, without opening History. History+Undo (with its own

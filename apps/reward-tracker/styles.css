@@ -179,19 +179,6 @@ header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
 .confirmYes { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 10px 20px; font-weight: 800; cursor: pointer; }
 .confirmNo { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 12px; padding: 10px 20px; font-weight: 800; cursor: pointer; }
 
-/* Note modal */
-.noteModal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: grid; place-items: center; z-index: 60; padding: 20px; }
-.noteModal.hidden { display: none; }
-.noteCard { background: var(--card); border-radius: 18px; padding: 20px; max-width: 420px; width: 100%; box-shadow: var(--shadow); }
-.noteSub { font-weight: 700; color: var(--ink); margin-bottom: 12px; }
-.presetGrid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.presetGrid button { background: var(--bg); border: 1px solid var(--line); color: var(--ink); border-radius: 999px; padding: 8px 14px; font-weight: 700; cursor: pointer; font-size: 0.85rem; }
-.presetGrid button:active { background: var(--accent); color: #fff; }
-#noteCustomInput { width: 100%; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); font-family: inherit; font-size: 0.95rem; margin-bottom: 14px; background: var(--bg); color: var(--ink); }
-.noteButtons { display: flex; gap: 10px; justify-content: flex-end; }
-.noteSkip { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 12px; padding: 10px 20px; font-weight: 800; cursor: pointer; }
-.noteSave { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 10px 20px; font-weight: 800; cursor: pointer; }
-
 /* Category modal */
 .catModal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: grid; place-items: center; z-index: 60; padding: 20px; }
 .catModal.hidden { display: none; }

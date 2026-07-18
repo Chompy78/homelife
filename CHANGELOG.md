@@ -6,6 +6,30 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-18
+
+- Gave the parent dashboard its own distinct favicon/app icon
+  (`Homelife_parents_favicon.png` - blue background, purple checkmark,
+  differentiating it from the other apps' green house icon, per the
+  original ask this session started with). Resized to
+  `apps/parent-dashboard/icons/{favicon-16,favicon-32,icon-192,icon-512}.png`
+  and pointed `index.html`'s favicon `<link>` tags and the service
+  worker's cache list at these local files instead of the app sharing
+  `apps/shared/icons/favicon-{16,32}.png` with every other app.
+  `manifest.json` already referenced local `icons/icon-192.png` /
+  `icon-512.png` paths, so only the file contents needed replacing
+  there. Bumped the parent-dashboard service worker cache to v5.
+- Fixed the `poller.py` `WORKER_TOKEN` hardcoding: it was a plain
+  string literal in a file with a queued task to push it to a (private)
+  GitHub repo, which would have put a real secret into git history
+  permanently. Refactored to read `HOMELIFE_WORKER_TOKEN` from the
+  environment instead (`os.environ.get(...)`, fails closed with
+  `sys.exit` if unset) and walked the user through moving the actual
+  secret value into their crontab (the only place it now lives, never
+  committed). Verified live via the poller's own log output after the
+  crontab update took effect - clean job polling plus a real
+  fingerprint-regeneration request processed successfully end to end.
+
 ## 2026-07-17
 
 - Added `apps/my-rewards`: a read-only, kid-facing PWA showing a kid's own

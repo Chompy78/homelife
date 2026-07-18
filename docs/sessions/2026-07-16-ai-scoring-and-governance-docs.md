@@ -283,6 +283,27 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   their current copy, since it's never committed (embeds the worker
   token) and reconstructing it from memory risks diverging from what's
   actually deployed on their server.
+- Deployed the merged edge function combining the fingerprint
+  regenerate-now work with another session's Reward Tracker feature
+  (v20), after two rounds of resolving a diverged `origin/main` -
+  verified both feature sets live against a disposable test family,
+  then pushed the completed merge to `main`.
+- User shared their actual current `poller.py`, in response to the
+  request above. It turned out to no longer generate or use room
+  fingerprints at all - `llava_score` compares submitted photos
+  directly against raw reference photos every time, so the
+  "regenerate now" button was a no-op on the worker side (nothing
+  polled for or cleared a pending request). Flagged this to the user
+  via `AskUserQuestion` rather than silently building on the wrong
+  premise; they chose to add fingerprint generation to `poller.py` as
+  new, purely additive code. Wrote `generate_room_fingerprint()` (a
+  new llava:13b prompt, JSON-schema constrained like the rest of the
+  file, explicitly told to describe structure only, not judge
+  tidiness) and a second poll in `main()` for
+  `get_pending_fingerprint_regenerations`, submitting results via the
+  existing `submit_room_fingerprint` action - `process_job`/
+  `llava_score` untouched. Delivered the updated `poller.py`. See
+  `D-2026-07-17-poller-fingerprint-generation`.
 
 ## Files touched
 
@@ -306,11 +327,11 @@ guide, then set up this project's governance docs (`AGENTS.md`,
 
 ## Carried forward
 
-- Confirming, on the user's real worker, that the full fingerprint-
-  based pipeline works end to end - including the specific case that
-  motivated it: a real photo of the kid's own room, with different
-  bedding than the reference photos, should now be accepted rather
-  than rejected (`docs/TASK_BOARD.md`, 🔴 NOW).
+- Confirming, on the user's real worker, that the new fingerprint-
+  generation code in `poller.py` actually runs cleanly end to end
+  (`get_pending_fingerprint_regenerations` → `generate_room_fingerprint`
+  → `submit_room_fingerprint`) and that the parent dashboard's pending
+  state clears as expected.
 - Five hardening ideas still sit on 🟢 LATER, deliberately deferred: a
   deterministic scene-classifier gate, reference-photo embedding
   similarity, evaluating newer local VLMs, a daily anti-cheat capture

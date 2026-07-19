@@ -1,4 +1,5 @@
 import { callApi } from "../shared/api.js";
+import { escapeHtml } from "../shared/escape.js";
 
 // Same key bedroom-reset uses - a kid already logged into bedroom-reset on
 // this device is automatically logged in here too, since both apps share
@@ -89,9 +90,26 @@ function enterApp() {
   gate.classList.add("hidden");
   appEl.classList.remove("hidden");
   loadState();
+  startRefreshTimer();
+}
+
+function startRefreshTimer() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(loadState, REFRESH_INTERVAL_MS);
 }
+
+// A background/locked tab has no reason to keep polling the edge function
+// every 30s - pause while hidden, and catch up immediately on return.
+document.addEventListener("visibilitychange", () => {
+  if (!token) return;
+  if (document.hidden) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  } else {
+    loadState();
+    startRefreshTimer();
+  }
+});
 
 async function loadState() {
   const [res, tradeRes] = await Promise.all([callApi("get_kid_reward_state", { token }), refreshTradeState()]);
@@ -362,10 +380,6 @@ verifyCancelBtn.addEventListener("click", () => {
   verifyModal.classList.add("hidden");
   pendingVerify = null;
 });
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
 
 token = localStorage.getItem(TOKEN_KEY);
 if (token) enterApp();

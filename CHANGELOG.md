@@ -8,6 +8,55 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-19
 
+- Ran a `/code-review` + `/simplify` pass over `reward-tracker` and
+  `my-rewards`. Code-review surfaced 10 confirmed/plausible findings,
+  notably more serious than the earlier bedroom-reset pass: a genuine
+  stored-HTML-injection gap (`my-rewards` interpolates a sibling's
+  `avatar_emoji` unescaped, and the edge function enforces no
+  server-side allowlist on that field); Settings' PIN-protection
+  toggle telling parents it gates Spend when that was intentionally
+  removed by the 2026-07-18 instant-tap redesign and the copy was
+  never corrected; a race where a stale trade-accept response can
+  hijack or dismiss a different, currently-open trade in `my-rewards`;
+  the Spin wheel permanently hanging (until reload) if a parent
+  switches tabs mid-animation, since hiding `#spinView` cancels the
+  CSS transition its completion logic awaits; `tapReward()` having no
+  rollback/error-toast on a failed balance update, unlike every other
+  mutating action in the file; five category/reward-note management
+  call sites silently ignoring failed saves; an unawaited `loadState()`
+  inside `tapReward()` that can let a stale response overwrite a newer
+  one after rapid taps/spins; `loadState()` swallowing every non-
+  `session_expired` failure despite being the resync called after
+  nearly every action (~19 call sites); an unguarded double-tap race
+  on `my-rewards`' trade-accept picture grid; and the "Spin twice"
+  double-spin mechanic being keyed off a case-insensitive label string
+  match instead of a stable id, so renaming that category silently
+  breaks or hijacks it. Reported, not fixed, since fixing correctness
+  bugs wasn't part of this pass. Simplify then applied cleanup:
+  migrated `reward-tracker`'s confirm-modal to the shared
+  `apps/shared/confirm.js` module (mirroring bedroom-reset's earlier
+  migration); extracted the `escapeHtml` helper (previously duplicated
+  identically in both apps, with a pointless `escapeAttr` alias in
+  reward-tracker) into `apps/shared/escape.js`; made `renderAll()`
+  skip rebuilding the Spin wheel/Table view while their tab isn't
+  active (re-rendering fresh on switch-in instead, same pattern the
+  wheel already used); optimized `renderHistory()` to build one
+  kid/category lookup map instead of a fresh linear search per row;
+  added a `visibilitychange` pause to `my-rewards`' 30s poll so a
+  backgrounded/locked tab stops hitting the edge function; corrected a
+  stale code comment claiming the PIN gates Spend. Skipped (would
+  change behavior or need a schema change, out of scope for a frontend
+  cleanup pass): the "Spin twice" string-match fragility (needs a
+  stable category flag/id, a migration); deduplicating the 3-of-9
+  parent-icon-picker logic now triplicated across reward-tracker,
+  parent-dashboard, and bedroom-reset (cross-app scope); an apparently
+  orphaned "Reward Reasons" notes feature that's still reachable via
+  its own menu button even though no current tap action passes a note
+  to it (a product decision, not dead code to delete unprompted).
+  Verified both apps live via Playwright (confirm modal, Table/Spin
+  view switching, history rendering, and the visibility-pause polling
+  behavior - zero console errors). Bumped service worker caches:
+  reward-tracker v15, my-rewards v3.
 - Ran a `/code-review` + `/simplify` pass over the whole `bedroom-reset` app.
   Code-review surfaced 10 confirmed/plausible correctness bugs (races when
   switching rooms mid-request, cross-kid localStorage cache leakage on a

@@ -1,4 +1,6 @@
 import { callApi } from "../shared/api.js";
+import { askConfirm } from "../shared/confirm.js";
+import { escapeHtml } from "../shared/escape.js";
 
 // Same key Parent Dashboard uses - a parent already logged in there on this
 // device is automatically logged in here too, since both apps share an
@@ -100,11 +102,6 @@ const insightsContent = document.getElementById("insightsContent");
 const historyList = document.getElementById("historyList");
 const manageCatBtn = document.getElementById("manageCatBtn");
 
-const confirmModal = document.getElementById("confirmModal");
-const confirmTextEl = document.getElementById("confirmText");
-const confirmYesBtn = document.getElementById("confirmYes");
-const confirmNoBtn = document.getElementById("confirmNo");
-
 const manageReasonsBtn2 = document.getElementById("manageReasonsBtn2");
 
 const reasonsModal = document.getElementById("reasonsModal");
@@ -169,31 +166,12 @@ let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then sh
 let parentAuthMethod = "pin"; // "pin" or "icons" - which the family has chosen, refreshed each loadState()
 let pinSelectedIcons = [];
 
-// --- Confirm modal -----------------------------------------------------
-
-let confirmResolve = null;
-function askConfirm(text) {
-  confirmTextEl.textContent = text;
-  confirmModal.classList.remove("hidden");
-  return new Promise((resolve) => {
-    confirmResolve = resolve;
-  });
-}
-confirmYesBtn.addEventListener("click", () => {
-  confirmModal.classList.add("hidden");
-  if (confirmResolve) confirmResolve(true);
-  confirmResolve = null;
-});
-confirmNoBtn.addEventListener("click", () => {
-  confirmModal.classList.add("hidden");
-  if (confirmResolve) confirmResolve(false);
-  confirmResolve = null;
-});
-
 // --- PIN lock ------------------------------------------------------------
-// Gates Spend, deleting a category, Reset, and leaving Kid View. Earn is
-// always unlocked. The unlock is in-memory only (not persisted), so it
-// naturally resets on reload as well as after 5 minutes.
+// Gates deleting a category, deleting a spin reason, Reset, and leaving Kid
+// View. Spend and Earn taps are both unlocked (instant tap + Undo toast
+// replaced PIN-gating Spend - see D-2026-07-18-reward-tracker-instant-tap).
+// The unlock is in-memory only (not persisted), so it naturally resets on
+// reload as well as after 5 minutes.
 
 let pinUnlockedUntil = 0;
 let pinResolve = null;
@@ -453,10 +431,13 @@ function renderAll() {
   renderKidPicker();
   renderActiveKidBanner();
   renderRewardRows();
-  renderWheel();
+  // Wheel/table are each expensive full-rebuilds (wedge geometry, or every
+  // kid x category cell) - only worth doing for whichever one is actually
+  // visible right now. Switching into either re-renders it fresh (below).
+  if (mode === "spin") renderWheel();
   renderBonusSpinRow();
   renderSpinReasonsList();
-  renderTable();
+  if (mode === "table") renderTable();
   renderInsights();
   renderHistory();
 }
@@ -490,11 +471,13 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
     historyView.classList.toggle("hidden", mode !== "history");
     renderActiveKidBanner();
     updateHeaderForMode();
-    // wheel.clientWidth reads 0 while #spinView has display:none, so any
-    // renderWheel() that ran while this tab was hidden positioned the
-    // wedge labels using the 300px fallback - re-render now that the
-    // section is actually visible and its real size can be measured.
+    // renderAll() only rebuilds the wheel/table while their tab is active
+    // (see renderAll()), so switching into either needs its own render -
+    // for the wheel this also matters because wheel.clientWidth reads 0
+    // while #spinView has display:none, so it must be measured only now
+    // that the section is actually visible.
     if (mode === "spin") renderWheel();
+    if (mode === "table") renderTable();
   });
 });
 
@@ -899,14 +882,20 @@ function renderHistory() {
     historyList.innerHTML = `<p class="empty">No activity yet.</p>`;
     return;
   }
+  // One id->object lookup per kid/category instead of a fresh linear .find()
+  // for every history row - history lists can grow into the hundreds.
+  const kidsById = new Map(state.kids.map((k) => [k.id, k]));
+  const categoriesById = new Map(state.categories.map((c) => [c.id, c]));
   state.history.forEach((entry) => {
+    const kid = kidsById.get(entry.kid_id);
+    const cat = categoriesById.get(entry.category_id);
     const row = document.createElement("div");
     row.className = "historyRow";
     const sign = entry.delta > 0 ? "+" : "−";
     row.innerHTML = `
       <div class="historyMain">
-        <div class="historyLine1" style="color:${kidColour(entry.kid_id)}">${kidAvatar(entry.kid_id)} ${escapeHtml(kidName(entry.kid_id))}</div>
-        <div class="historyLine2"><span style="color:${categoryColour(entry.category_id)};font-weight:700">${escapeHtml(categoryLabel(entry.category_id))}</span> ${sign}1 · ${formatWhen(entry.created_at)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</div>
+        <div class="historyLine1" style="color:${kid ? kidColour(kid.id) : "#888"}">${kid?.avatar_emoji || "⭐"} ${escapeHtml(kid?.name || "Unknown")}</div>
+        <div class="historyLine2"><span style="color:${cat?.color || "#888"};font-weight:700">${escapeHtml(cat?.label || "Unknown")}</span> ${sign}1 · ${formatWhen(entry.created_at)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</div>
       </div>
       <button type="button" class="undoBtn" data-log="${entry.id}">Undo</button>
     `;
@@ -1091,7 +1080,7 @@ function renderCatList() {
     const weight = cat.spin_weight || 1;
     row.innerHTML = `
       <input type="color" value="${cat.color}" data-id="${cat.id}" class="catColorInput" />
-      <input type="text" value="${escapeAttr(cat.label)}" data-id="${cat.id}" class="catLabelInput" maxlength="60" />
+      <input type="text" value="${escapeHtml(cat.label)}" data-id="${cat.id}" class="catLabelInput" maxlength="60" />
       <select class="catWeightSelect" data-id="${cat.id}" title="Spin wheel odds - higher means more likely to land on this">
         ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}"${n === weight ? " selected" : ""}>${n}× spin odds</option>`).join("")}
       </select>
@@ -1168,7 +1157,7 @@ function renderSpinReasonsManageList() {
       ? `<span class="catUnusedBadge" title="Linked to another app (e.g. Bedroom Reset) - can't be deleted here">🔒 Linked</span>`
       : `<button type="button" class="catDeleteBtn" data-id="${reason.id}">🗑</button>`;
     row.innerHTML = `
-      <input type="text" value="${escapeAttr(reason.label)}" data-id="${reason.id}" class="catLabelInput" maxlength="60" />
+      <input type="text" value="${escapeHtml(reason.label)}" data-id="${reason.id}" class="catLabelInput" maxlength="60" />
       <select class="catWeightSelect" data-id="${reason.id}" title="How often this reason can grant a bonus spin">
         ${["daily", "weekly", "monthly"]
           .map((p) => `<option value="${p}"${p === reason.period ? " selected" : ""}>${p[0].toUpperCase() + p.slice(1)}</option>`)
@@ -1268,7 +1257,7 @@ function renderAvatarList() {
     row.innerHTML = `
       <div class="avatarCurrentBtn">${kid.avatar_emoji || "⭐"}</div>
       <div class="avatarRowName">${escapeHtml(kid.name)}</div>
-      <input type="color" class="kidColourInput" value="${kidColour(kid.id)}" data-kid="${kid.id}" title="${escapeAttr(kid.name)}'s colour" />
+      <input type="color" class="kidColourInput" value="${kidColour(kid.id)}" data-kid="${kid.id}" title="${escapeHtml(kid.name)}'s colour" />
       <div class="avatarPicker" data-kid="${kid.id}"></div>
     `;
     row.querySelector(".kidColourInput").addEventListener("change", async (e) => {
@@ -1354,13 +1343,6 @@ function maybeOpenKidViewFromUrl() {
 }
 
 // --- Utilities -----------------------------------------------------
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-function escapeAttr(s) {
-  return escapeHtml(s);
-}
 
 // --- Boot -----------------------------------------------------
 

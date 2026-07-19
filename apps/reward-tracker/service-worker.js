@@ -1,4 +1,4 @@
-const CACHE_NAME = "reward-tracker-pwa-v14";
+const CACHE_NAME = "reward-tracker-pwa-v15";
 const ASSETS = [
   "./",
   "./index.html",
@@ -8,6 +8,8 @@ const ASSETS = [
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "../shared/api.js",
+  "../shared/confirm.js",
+  "../shared/escape.js",
   "../shared/icons/favicon-32.png",
   "../shared/icons/favicon-16.png",
 ];

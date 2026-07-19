@@ -1,4 +1,4 @@
-const CACHE_NAME = "bedroom-reset-pwa-v20";
+const CACHE_NAME = "bedroom-reset-pwa-v21";
 const ASSETS = [
   "./",
   "./index.html",
@@ -10,6 +10,8 @@ const ASSETS = [
   "../shared/config.js",
   "../shared/api.js",
   "../shared/image.js",
+  "../shared/confirm.js",
+  "../shared/lightbox.js",
   "../shared/icons/favicon-32.png",
   "../shared/icons/favicon-16.png",
 ];

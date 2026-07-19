@@ -259,9 +259,6 @@ footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size
 .kidPickerCard { max-width: 560px; text-align: center; }
 .kidPickerCard h1 { color: var(--ink); }
 .kidPickerCard p { color: var(--muted); font-weight: 700; }
-.kidGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-top: 20px; }
-.kidBtn { background: var(--card); border: 2px solid var(--line); border-radius: 22px; padding: 26px 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 1.2rem; font-weight: 900; box-shadow: var(--shadow); color: var(--ink); min-height: unset; }
-.kidAvatar { font-size: 3.2rem; }
 
 #codeForm { display: flex; flex-direction: column; gap: 14px; margin-top: 22px; align-items: center; }
 .codeInput {

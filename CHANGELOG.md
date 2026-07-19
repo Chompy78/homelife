@@ -6,6 +6,30 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-19
+
+- Ran a `/code-review` + `/simplify` pass over the whole `bedroom-reset` app.
+  Code-review surfaced 10 confirmed/plausible correctness bugs (races when
+  switching rooms mid-request, cross-kid localStorage cache leakage on a
+  shared tablet, offline edits silently reverted on next sync,
+  `session_expired` never distinguished from a generic network failure,
+  and a few others) - reported, not yet fixed, since fixing them wasn't
+  part of this pass. Simplify then applied the reuse/simplification/
+  efficiency/altitude cleanup: extracted the confirm-modal and lightbox
+  logic (previously duplicated byte-for-byte from `parent-dashboard`) into
+  `apps/shared/confirm.js` and `apps/shared/lightbox.js`; collapsed
+  `fetchAndReconcile()`'s duplicated bedroom/shared-room branches and the
+  six ad-hoc room-dispatch wrappers into one action-table-driven
+  `callRoomApi()`; merged the copy-pasted Pass/Great-Job button handlers;
+  removed dead `.kidGrid`/`.kidBtn`/`.kidAvatar` CSS; made the 20s AI-score
+  poll call a lightweight status-only fetch instead of a full checklist
+  teardown/rebuild; made per-tap category-badge updates read from an
+  in-memory list instead of re-querying the DOM; had `bootRoom()` reset AI
+  state through the existing `applyAiScore()` path instead of a partial
+  hand-rolled reset. Verified live via Playwright (checklist render,
+  checkbox sync, category badges, the new shared confirm modal - zero
+  console errors). Bumped `bedroom-reset`'s service worker to v21.
+
 ## 2026-07-18
 
 - Gave the parent dashboard its own distinct favicon/app icon

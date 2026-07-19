@@ -1,6 +1,8 @@
 import { LEVELS, levelForPoints, nextLevel, BADGES, earnedBadges } from "../shared/config.js";
 import { callApi } from "../shared/api.js";
 import { compressImage } from "../shared/image.js";
+import { askConfirm } from "../shared/confirm.js";
+import { openLightbox } from "../shared/lightbox.js";
 
 const DEVICE_TOKEN_KEY = "homelife_kid_token";
 const DEVICE_NAME_KEY = "homelife_kid_name";
@@ -48,19 +50,11 @@ const pinPadEl = document.getElementById("pinPad");
 const pinErrorEl = document.getElementById("pinError");
 const pinCancelBtn = document.getElementById("pinCancel");
 
-const confirmModal = document.getElementById("confirmModal");
-const confirmTextEl = document.getElementById("confirmText");
-const confirmYesBtn = document.getElementById("confirmYes");
-const confirmNoBtn = document.getElementById("confirmNo");
-
 const toastEl = document.getElementById("toast");
 const toastEmojiEl = document.getElementById("toastEmoji");
 const toastTextEl = document.getElementById("toastText");
 
 const photoGrid = document.getElementById("photoGrid");
-const lightbox = document.getElementById("lightbox");
-const lightboxImg = document.getElementById("lightboxImg");
-const lightboxClose = document.getElementById("lightboxClose");
 
 const aiScoreCard = document.getElementById("aiScoreCard");
 const aiScoreBtn = document.getElementById("aiScoreBtn");
@@ -105,39 +99,49 @@ function roomStorageKey(prefix) {
 
 // --- Room-aware API calls --------------------------------------------------
 
+// Every room-scoped action needs a different backend action name depending on
+// whether it's the kid's own bedroom or a shared family room (except photo
+// scoring, which is the same action either way) - callRoomApi() picks the
+// right name and adds room_id for shared rooms, so callers don't repeat that
+// branch themselves.
+const ROOM_ACTIONS = {
+  getState: { bedroom: "get_kid_state", shared: "get_family_room_state" },
+  updateItem: { bedroom: "update_checklist_item", shared: "update_family_room_item" },
+  parentCheck: { bedroom: "parent_check", shared: "family_room_parent_check" },
+  tryAgain: { bedroom: "parent_try_again", shared: "family_room_try_again" },
+  resetDay: { bedroom: "reset_day", shared: "family_room_reset_day" },
+  submitPhoto: { bedroom: "submit_photo_for_scoring", shared: "submit_photo_for_scoring" },
+};
+
+function callRoomApi(key, extraArgs = {}) {
+  const isBedroom = activeRoom.type === "bedroom";
+  const action = isBedroom ? ROOM_ACTIONS[key].bedroom : ROOM_ACTIONS[key].shared;
+  const args = { token, ...extraArgs };
+  if (!isBedroom) args.room_id = activeRoom.id;
+  return callApi(action, args);
+}
+
 function getRoomState() {
-  return activeRoom.type === "bedroom"
-    ? callApi("get_kid_state", { token })
-    : callApi("get_family_room_state", { token, room_id: activeRoom.id });
+  return callRoomApi("getState");
 }
 function updateRoomItem(itemId, checked) {
-  return activeRoom.type === "bedroom"
-    ? callApi("update_checklist_item", { token, item_id: itemId, checked })
-    : callApi("update_family_room_item", { token, room_id: activeRoom.id, item_id: itemId, checked });
+  return callRoomApi("updateItem", { item_id: itemId, checked });
 }
 function roomParentCheck(eventType, pin) {
-  return activeRoom.type === "bedroom"
-    ? callApi("parent_check", { token, event_type: eventType, pin })
-    : callApi("family_room_parent_check", { token, room_id: activeRoom.id, event_type: eventType, pin });
+  return callRoomApi("parentCheck", { event_type: eventType, pin });
 }
 function roomTryAgain() {
-  return activeRoom.type === "bedroom"
-    ? callApi("parent_try_again", { token })
-    : callApi("family_room_try_again", { token, room_id: activeRoom.id });
+  return callRoomApi("tryAgain");
 }
 function roomResetDay() {
-  return activeRoom.type === "bedroom"
-    ? callApi("reset_day", { token })
-    : callApi("family_room_reset_day", { token, room_id: activeRoom.id });
+  return callRoomApi("resetDay");
 }
 // The bedroom's progress lives under `streak`, a shared room's under `progress` - same shape either way.
 function progressOf(data) {
   return activeRoom.type === "bedroom" ? data.streak : data.progress;
 }
 function submitRoomPhotoForScoring(base64, contentType, photoTakenAt) {
-  return activeRoom.type === "bedroom"
-    ? callApi("submit_photo_for_scoring", { token, image_base64: base64, content_type: contentType, photo_taken_at: photoTakenAt })
-    : callApi("submit_photo_for_scoring", { token, room_id: activeRoom.id, image_base64: base64, content_type: contentType, photo_taken_at: photoTakenAt });
+  return callRoomApi("submitPhoto", { image_base64: base64, content_type: contentType, photo_taken_at: photoTakenAt });
 }
 
 // --- Room switcher -----------------------------------------------------
@@ -186,18 +190,25 @@ function groupByCategory(items) {
   return order.map((cat) => ({ category: cat, items: map.get(cat) }));
 }
 
+// Each entry's `boxes` is that category's slice of the checkboxes just built,
+// so updateCategories() can check completeness from memory instead of
+// re-querying the DOM on every checkbox tap.
+let categorySections = [];
+
 function renderChecklist() {
   checklistEl.innerHTML = "";
   const categories =
     activeRoom.type === "bedroom"
       ? groupByCategory(activeRoom.items || [])
       : [{ category: activeRoom.name, items: (activeRoom.items || []).map((i) => ({ id: i.id, label: i.label })) }];
+  const catBadgeEls = [];
   categories.forEach((cat) => {
     const section = document.createElement("section");
     section.className = "category";
     const h2 = document.createElement("h2");
     h2.innerHTML = `${cat.category} <span class="catBadge"></span>`;
     section.appendChild(h2);
+    catBadgeEls.push(h2.querySelector(".catBadge"));
     cat.items.forEach((item) => {
       const label = document.createElement("label");
       label.className = "item";
@@ -208,10 +219,16 @@ function renderChecklist() {
   });
   boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
   totalCount.textContent = boxes.length;
+  categorySections = [];
+  let offset = 0;
+  categories.forEach((cat, i) => {
+    categorySections.push({ badge: catBadgeEls[i], boxes: boxes.slice(offset, offset + cat.items.length) });
+    offset += cat.items.length;
+  });
   boxes.forEach((box) =>
     box.addEventListener("change", () => {
       updateItem(box);
-      updateEverything();
+      updateChecklistUI();
       saveLocalChecklist();
       syncItem(box.dataset.id, box.checked);
     })
@@ -291,53 +308,32 @@ async function fetchAndReconcile() {
   }
   lastSyncOk = true;
 
-  if (activeRoom.type === "shared") {
-    activeRoom.items = res.data.items || [];
-    renderChecklist();
-    loadLocalChecklist();
-    const stateMap = Object.fromEntries((res.data.state || []).map((s) => [s.item_id, s.checked]));
-    const toReconcile = [];
-    boxes.forEach((box) => {
-      const id = box.dataset.id;
-      if (id in stateMap) {
-        box.checked = stateMap[id];
-        updateItem(box);
-      } else if (box.checked) {
-        toReconcile.push(id);
-      }
-    });
-    applyStreak(res.data.progress, { celebrate: false });
-    photos = res.data.photos || [];
-    renderPhotos();
-    applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold, res.data.ai_score_avg_seconds);
-    saveLocalChecklist();
-    renderSyncStatus();
-    updateEverything();
-    for (const id of toReconcile) syncItem(id, true);
-    return;
-  }
-
-  activeRoom.items = res.data.bedroom_items || [];
-  localStorage.setItem(BEDROOM_ITEMS_CACHE_KEY, JSON.stringify(activeRoom.items));
+  const isBedroom = activeRoom.type === "bedroom";
+  // A bedroom's item definitions/state map live under different field names
+  // than a shared room's (see progressOf() for the same split on streak data).
+  activeRoom.items = (isBedroom ? res.data.bedroom_items : res.data.items) || [];
+  if (isBedroom) localStorage.setItem(BEDROOM_ITEMS_CACHE_KEY, JSON.stringify(activeRoom.items));
   renderChecklist();
   loadLocalChecklist();
-  const serverMap = Object.fromEntries((res.data.items || []).map((i) => [i.item_id, i.checked]));
+  const stateMap = Object.fromEntries(((isBedroom ? res.data.items : res.data.state) || []).map((s) => [s.item_id, s.checked]));
   const toReconcile = [];
   boxes.forEach((box) => {
     const id = box.dataset.id;
-    if (id in serverMap) {
-      box.checked = serverMap[id];
+    if (id in stateMap) {
+      box.checked = stateMap[id];
       updateItem(box);
     } else if (box.checked) {
       toReconcile.push(id);
     }
   });
-  applyStreak(res.data.streak, { celebrate: false });
+  applyStreak(progressOf(res.data), { celebrate: false });
   photos = res.data.photos || [];
   renderPhotos();
   applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold, res.data.ai_score_avg_seconds);
-  sharedRoomsList = res.data.shared_rooms || [];
-  renderRoomSwitcher();
+  if (isBedroom) {
+    sharedRoomsList = res.data.shared_rooms || [];
+    renderRoomSwitcher();
+  }
   saveLocalChecklist();
   renderSyncStatus();
   updateEverything();
@@ -455,9 +451,7 @@ function updateBadgesUI() {
 }
 
 function updateCategories() {
-  document.querySelectorAll(".category").forEach((section) => {
-    const catBoxes = Array.from(section.querySelectorAll('input[type="checkbox"]'));
-    const badge = section.querySelector(".catBadge");
+  categorySections.forEach(({ badge, boxes: catBoxes }) => {
     if (!badge) return;
     badge.textContent = catBoxes.length > 0 && catBoxes.every((b) => b.checked) ? "✅" : "";
   });
@@ -476,18 +470,6 @@ function renderPhotos() {
     photoGrid.appendChild(tile);
   });
 }
-
-function openLightbox(photo) {
-  lightboxImg.src = photo.url;
-  lightbox.classList.remove("hidden");
-}
-function closeLightbox() {
-  lightbox.classList.add("hidden");
-}
-lightboxClose.addEventListener("click", closeLightbox);
-lightbox.addEventListener("click", (e) => {
-  if (e.target === lightbox) closeLightbox();
-});
 
 // --- AI room score -------------------------------------------------------
 // Optional, off by default per family. A kid can snap a photo and a
@@ -511,12 +493,21 @@ function applyAiScore(score, mode, threshold, avgSeconds) {
   scheduleAiScorePollIfNeeded();
 }
 
+// A pending AI score is polled on its own lightweight timer rather than via
+// fetchAndReconcile(), which would tear down and rebuild the whole checklist
+// (and re-run photo/room-switcher/streak sync) just to refresh this one card.
+async function pollAiScoreStatus() {
+  const res = await getRoomState();
+  if (!res.ok) return;
+  applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold, res.data.ai_score_avg_seconds);
+}
+
 function scheduleAiScorePollIfNeeded() {
   clearTimeout(aiScorePollTimeout);
   clearInterval(aiScoreTickInterval);
   aiScoreTickInterval = null;
   if (aiScore?.status === "pending") {
-    aiScorePollTimeout = setTimeout(() => fetchAndReconcile(), 20000);
+    aiScorePollTimeout = setTimeout(() => pollAiScoreStatus(), 20000);
     // Ticks the "N seconds so far" text every second so a kid can see time
     // is actually passing, instead of tapping the (disabled) button again.
     aiScoreTickInterval = setInterval(() => renderAiScoreCard(), 1000);
@@ -640,27 +631,6 @@ function showToast(emoji, text, duration = 2600) {
     toastEl.classList.remove("show");
   }, duration);
 }
-
-// --- Confirm modal ---------------------------------------------------------
-
-let confirmResolve = null;
-function askConfirm(text) {
-  confirmTextEl.textContent = text;
-  confirmModal.classList.remove("hidden");
-  return new Promise((resolve) => {
-    confirmResolve = resolve;
-  });
-}
-confirmYesBtn.addEventListener("click", () => {
-  confirmModal.classList.add("hidden");
-  if (confirmResolve) confirmResolve(true);
-  confirmResolve = null;
-});
-confirmNoBtn.addEventListener("click", () => {
-  confirmModal.classList.add("hidden");
-  if (confirmResolve) confirmResolve(false);
-  confirmResolve = null;
-});
 
 // --- Parent PIN modal ---------------------------------------------------------
 
@@ -789,10 +759,18 @@ function updateFocus() {
   focusDoneBtn.classList.remove("hidden");
 }
 
-function updateEverything() {
+// The parts that must reflect a checkbox's checked state immediately, on the
+// optimistic local click - level/badges can't change until the server
+// confirms the point award (see applyStreak(), which updates those once it
+// does), so redoing them on every tap would just repeat unchanged work.
+function updateChecklistUI() {
   updateProgress();
   updateFocus();
   updateCategories();
+}
+
+function updateEverything() {
+  updateChecklistUI();
   updateLevelUI();
   updateBadgesUI();
 }
@@ -807,7 +785,7 @@ focusDoneBtn.addEventListener("click", () => {
   if (!next) return;
   next.checked = true;
   updateItem(next);
-  updateEverything();
+  updateChecklistUI();
   saveLocalChecklist();
   syncItem(next.dataset.id, true);
 });
@@ -826,39 +804,27 @@ resetBtn.addEventListener("click", async () => {
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
-passBtn.addEventListener("click", () => {
-  requestParentPin("Parent Check - Pass", async (pin) => {
-    const res = await roomParentCheck("parent_pass", pin);
-    if (res.ok) {
-      const alreadyCelebrated = applyStreak(progressOf(res.data));
-      if (!alreadyCelebrated && res.data.awarded_points > 0) {
-        showToast("✅", `Passed by a parent! ++${res.data.awarded_points} points`);
-        confettiBurst(16);
+function wireParentCheckButton(button, eventType, title, emoji, verb, confettiCount) {
+  button.addEventListener("click", () => {
+    requestParentPin(title, async (pin) => {
+      const res = await roomParentCheck(eventType, pin);
+      if (res.ok) {
+        const alreadyCelebrated = applyStreak(progressOf(res.data));
+        if (!alreadyCelebrated && res.data.awarded_points > 0) {
+          showToast(emoji, `${verb} ++${res.data.awarded_points} points`);
+          confettiBurst(confettiCount);
+        }
+        updateEverything();
+        return { ok: true };
       }
-      updateEverything();
-      return { ok: true };
-    }
-    if (res.error === "wrong_pin") return { ok: false, message: "Wrong PIN - try again." };
-    return { ok: false, message: "Couldn't reach the server. Check the connection and try again." };
+      if (res.error === "wrong_pin") return { ok: false, message: "Wrong PIN - try again." };
+      return { ok: false, message: "Couldn't reach the server. Check the connection and try again." };
+    });
   });
-});
+}
 
-starBtn.addEventListener("click", () => {
-  requestParentPin("Parent Check - Great Job", async (pin) => {
-    const res = await roomParentCheck("parent_star", pin);
-    if (res.ok) {
-      const alreadyCelebrated = applyStreak(progressOf(res.data));
-      if (!alreadyCelebrated && res.data.awarded_points > 0) {
-        showToast("⭐", `Great job from a parent! ++${res.data.awarded_points} points`);
-        confettiBurst(24);
-      }
-      updateEverything();
-      return { ok: true };
-    }
-    if (res.error === "wrong_pin") return { ok: false, message: "Wrong PIN - try again." };
-    return { ok: false, message: "Couldn't reach the server. Check the connection and try again." };
-  });
-});
+wireParentCheckButton(passBtn, "parent_pass", "Parent Check - Pass", "✅", "Passed by a parent!", 16);
+wireParentCheckButton(starBtn, "parent_star", "Parent Check - Great Job", "⭐", "Great job from a parent!", 24);
 
 tryBtn.addEventListener("click", async () => {
   const res = await roomTryAgain();
@@ -875,9 +841,7 @@ if ("serviceWorker" in navigator) {
 }
 
 function bootRoom() {
-  aiScore = null;
-  aiScoreMode = "off";
-  if (aiScoreCard) aiScoreCard.classList.add("hidden");
+  applyAiScore(null, "off", null, null);
   const kidName = localStorage.getItem(DEVICE_NAME_KEY) || "Kid";
   if (activeRoom.type === "bedroom") {
     roomTitleEl.textContent = "Bedroom Reset";

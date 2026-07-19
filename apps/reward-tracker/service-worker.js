@@ -1,4 +1,4 @@
-const CACHE_NAME = "reward-tracker-pwa-v13";
+const CACHE_NAME = "reward-tracker-pwa-v14";
 const ASSETS = [
   "./",
   "./index.html",

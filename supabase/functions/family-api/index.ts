@@ -454,31 +454,33 @@ async function getSpinCreditAvailability(familyId: string, reasons: { id: string
   return availability;
 }
 
+// A kid can never carry more unconsumed bonus spins than the client's own
+// spin-chain safety cap (MAX_SPINS_PER_ROUND, app.js) can actually redeem
+// in one go - without this, consume_bonus_spins could hand back more spins
+// than the client will ever play, silently losing the excess.
+const MAX_BONUS_SPINS = 20;
+
 // Shared by grant_spin_credit (manual, from Reward Tracker, or automated,
 // from another app like Bedroom Reset) and the auto-approve path in
 // submit_photo_score - one code path enforces the per-period cap
 // regardless of who's asking, so it can't be bypassed by calling from a
 // different place. Returns null on success, or an error string.
+//
+// Runs as a single Postgres function (grant_spin_credit_atomic) that locks
+// the kid row for the duration of the check+insert+increment, instead of a
+// plain SELECT-then-UPDATE from here - a concurrent grant or consume for
+// the same kid used to be able to interleave with the read here and clobber
+// or lose an increment (see the 2026-07-19 code review's race-condition
+// finding). The row lock makes the whole sequence atomic per kid.
 async function grantSpinCredit(familyId: string, kidId: string, reasonId: string): Promise<string | null> {
-  const { data: kid } = await db.from("kids").select("id, bonus_spins").eq("id", kidId).eq("family_id", familyId).maybeSingle();
-  if (!kid) return "not_found";
-  const { data: reason } = await db.from("family_spin_reasons").select("id, period").eq("id", reasonId).eq("family_id", familyId).maybeSingle();
-  if (!reason) return "not_found";
-
-  const windowMs = SPIN_REASON_PERIOD_MS[reason.period] || SPIN_REASON_PERIOD_MS.weekly;
-  const since = new Date(Date.now() - windowMs).toISOString();
-  const { data: recent } = await db
-    .from("kid_spin_credit_grants")
-    .select("id")
-    .eq("kid_id", kidId)
-    .eq("reason_id", reason.id)
-    .gte("granted_at", since)
-    .limit(1);
-  if (recent && recent.length > 0) return "already_granted_this_period";
-
-  await db.from("kid_spin_credit_grants").insert({ family_id: familyId, kid_id: kidId, reason_id: reason.id });
-  await db.from("kids").update({ bonus_spins: kid.bonus_spins + 1 }).eq("id", kidId);
-  return null;
+  const { data, error } = await db.rpc("grant_spin_credit_atomic", {
+    p_family_id: familyId,
+    p_kid_id: kidId,
+    p_reason_id: reasonId,
+    p_max: MAX_BONUS_SPINS,
+  });
+  if (error) return "not_found";
+  return data;
 }
 
 async function getPhotosWithUrls(kidId: string) {
@@ -1210,11 +1212,16 @@ Deno.serve(async (req) => {
         if (itemAction === "delete") {
           const { data: item } = await db
             .from("family_spin_reasons")
-            .select("id")
+            .select("id, trigger_key")
             .eq("id", body.item_id)
             .eq("family_id", session.family_id)
             .maybeSingle();
           if (!item) return json({ ok: false, error: "not_found" }, 404);
+          // A trigger_key-linked reason (e.g. Bedroom Reset's AI room-score
+          // grant) is looked up by that key, not by id - deleting it would
+          // silently and permanently sever the automated grant with no way
+          // to relink it from this UI. Block it instead of losing the link.
+          if (item.trigger_key) return json({ ok: false, error: "reason_linked_to_another_app" }, 400);
           await db.from("family_spin_reasons").delete().eq("id", item.id);
           return json({ ok: true });
         }
@@ -1233,7 +1240,25 @@ Deno.serve(async (req) => {
         if (!session) return json({ ok: false, error: "session_expired" }, 401);
         const kidId = String(body.kid_id || "");
         if (session.role === "kid" && kidId !== session.kid_id) return json({ ok: false, error: "forbidden" }, 403);
-        const error = await grantSpinCredit(session.family_id, kidId, String(body.reason_id || ""));
+
+        // Accepts either the internal reason_id or a stable trigger_key -
+        // the latter is what actually makes this "generic" for a real
+        // external caller (a future app, not just Bedroom Reset's in-process
+        // call), which otherwise has no way to resolve a trigger_key to an
+        // id without direct DB access.
+        let reasonId = String(body.reason_id || "");
+        if (!reasonId && typeof body.trigger_key === "string" && body.trigger_key) {
+          const { data: reason } = await db
+            .from("family_spin_reasons")
+            .select("id")
+            .eq("family_id", session.family_id)
+            .eq("trigger_key", body.trigger_key)
+            .maybeSingle();
+          if (!reason) return json({ ok: false, error: "not_found" }, 404);
+          reasonId = reason.id;
+        }
+
+        const error = await grantSpinCredit(session.family_id, kidId, reasonId);
         if (error) return json({ ok: false, error }, error === "not_found" ? 404 : 409);
         return json({ ok: true });
       }
@@ -1247,11 +1272,13 @@ Deno.serve(async (req) => {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
         const kidId = String(body.kid_id || "");
-        const { data: kid } = await db.from("kids").select("id, bonus_spins").eq("id", kidId).eq("family_id", session.family_id).maybeSingle();
+        const { data: kid } = await db.from("kids").select("id").eq("id", kidId).eq("family_id", session.family_id).maybeSingle();
         if (!kid) return json({ ok: false, error: "not_found" }, 404);
-        const consumed = kid.bonus_spins;
-        if (consumed > 0) await db.from("kids").update({ bonus_spins: 0 }).eq("id", kidId);
-        return json({ ok: true, data: { consumed } });
+        // Atomic (row-locked) so a grant landing between the read and the
+        // zero-out can't be silently wiped out - see grantSpinCredit's comment.
+        const { data: consumed, error } = await db.rpc("consume_bonus_spins_atomic", { p_kid_id: kidId });
+        if (error) return json({ ok: false, error: "server_error" }, 500);
+        return json({ ok: true, data: { consumed: consumed || 0 } });
       }
 
       // Wipes the family's whole reward ledger (categories are kept) - the
@@ -2138,7 +2165,15 @@ Deno.serve(async (req) => {
               .eq("family_id", updated.family_id)
               .eq("trigger_key", "bedroom_ai_score")
               .maybeSingle();
-            if (aiScoreReason) await grantSpinCredit(updated.family_id, updated.kid_id, aiScoreReason.id);
+            if (aiScoreReason) {
+              const grantError = await grantSpinCredit(updated.family_id, updated.kid_id, aiScoreReason.id);
+              // already_granted_this_period is expected/benign (most reasons
+              // are weekly-capped) - only log the case that indicates an
+              // actual data problem, so this doesn't silently vanish.
+              if (grantError && grantError !== "already_granted_this_period") {
+                console.error(`grantSpinCredit failed during AI auto-approve: ${grantError}`, { family_id: updated.family_id, kid_id: updated.kid_id });
+              }
+            }
           } else if (updated.room_id) {
             await awardRoomPass(updated.room_id, null, opts);
           }

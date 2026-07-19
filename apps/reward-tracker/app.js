@@ -208,7 +208,9 @@ function pinProtectionOn() {
 // "off" itself) passes through unchanged.
 function spinSoundPreset() {
   const raw = localStorage.getItem(SPIN_SOUND_KEY);
-  if (raw === "off" || raw in SPIN_SOUND_PRESETS) return raw;
+  // Object.hasOwn (not `in`) - `in` walks the prototype chain, so a stored
+  // value like "toString" would otherwise pass as a "valid" preset name.
+  if (raw === "off" || Object.hasOwn(SPIN_SOUND_PRESETS, raw || "")) return raw;
   return raw === "0" ? "off" : "chimes";
 }
 
@@ -488,6 +490,11 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
     historyView.classList.toggle("hidden", mode !== "history");
     renderActiveKidBanner();
     updateHeaderForMode();
+    // wheel.clientWidth reads 0 while #spinView has display:none, so any
+    // renderWheel() that ran while this tab was hidden positioned the
+    // wedge labels using the 300px fallback - re-render now that the
+    // section is actually visible and its real size can be measured.
+    if (mode === "spin") renderWheel();
   });
 });
 
@@ -680,8 +687,17 @@ function renderSpinReasonsList() {
       btn.disabled = true;
       const res = await callApi("grant_spin_credit", { token, kid_id: selectedKidId, reason_id: btn.dataset.id });
       if (!res.ok) {
-        showErrorToast("Couldn't grant that spin - try again.");
-        btn.disabled = false;
+        // A 409 (already_granted_this_period) means another device or app
+        // granted this exact reason since our last loadState() - resync to
+        // the real "Used" state instead of re-enabling a button that will
+        // just 409 again on retry.
+        if (res.error === "already_granted_this_period") {
+          showErrorToast("Someone already used that one this period.");
+          await loadState();
+        } else {
+          showErrorToast("Couldn't grant that spin - try again.");
+          btn.disabled = false;
+        }
         return;
       }
       await loadState();
@@ -1144,6 +1160,13 @@ function renderSpinReasonsManageList() {
   (state.spin_reasons || []).forEach((reason) => {
     const row = document.createElement("div");
     row.className = "catRow";
+    // A trigger_key-linked reason (e.g. Bedroom Reset's AI score) is looked
+    // up by that key, not by id - deleting it would silently and
+    // permanently sever the automated grant with no way to relink it here,
+    // so its delete button is replaced with an explanatory lock instead.
+    const deleteControl = reason.trigger_key
+      ? `<span class="catUnusedBadge" title="Linked to another app (e.g. Bedroom Reset) - can't be deleted here">🔒 Linked</span>`
+      : `<button type="button" class="catDeleteBtn" data-id="${reason.id}">🗑</button>`;
     row.innerHTML = `
       <input type="text" value="${escapeAttr(reason.label)}" data-id="${reason.id}" class="catLabelInput" maxlength="60" />
       <select class="catWeightSelect" data-id="${reason.id}" title="How often this reason can grant a bonus spin">
@@ -1151,7 +1174,7 @@ function renderSpinReasonsManageList() {
           .map((p) => `<option value="${p}"${p === reason.period ? " selected" : ""}>${p[0].toUpperCase() + p.slice(1)}</option>`)
           .join("")}
       </select>
-      <button type="button" class="catDeleteBtn" data-id="${reason.id}">🗑</button>
+      ${deleteControl}
     `;
     spinReasonsManageList.appendChild(row);
   });
@@ -1166,18 +1189,29 @@ function renderSpinReasonsManageList() {
     select.addEventListener("change", () => updateSpinReason(select.dataset.id, { period: select.value }));
   });
   spinReasonsManageList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const ok = await askConfirm("Delete this bonus spin reason?");
-      if (!ok) return;
-      await callApi("manage_spin_reasons", { token, itemAction: "delete", item_id: btn.dataset.id });
-      await loadState();
-      renderSpinReasonsManageList();
+    btn.addEventListener("click", () => {
+      requirePin("PIN needed to delete a bonus spin reason", async () => {
+        const ok = await askConfirm("Delete this bonus spin reason?");
+        if (!ok) return;
+        const res = await callApi("manage_spin_reasons", { token, itemAction: "delete", item_id: btn.dataset.id });
+        if (!res.ok) {
+          showErrorToast("Couldn't delete that reason - try again.");
+          return;
+        }
+        await loadState();
+        renderSpinReasonsManageList();
+      });
     });
   });
 }
 
 async function updateSpinReason(id, patch) {
-  await callApi("manage_spin_reasons", { token, itemAction: "update", item_id: id, ...patch });
+  const res = await callApi("manage_spin_reasons", { token, itemAction: "update", item_id: id, ...patch });
+  if (!res.ok) {
+    showErrorToast("Couldn't update that reason - try again.");
+    renderSpinReasonsManageList(); // revert the input back to the saved value
+    return;
+  }
   await loadState();
   renderSpinReasonsManageList();
 }
@@ -1190,7 +1224,12 @@ addSpinReasonBtn.addEventListener("click", async () => {
     spinReasonsError.classList.remove("hidden");
     return;
   }
-  await callApi("manage_spin_reasons", { token, itemAction: "add", label, period: newSpinReasonPeriod.value });
+  const res = await callApi("manage_spin_reasons", { token, itemAction: "add", label, period: newSpinReasonPeriod.value });
+  if (!res.ok) {
+    spinReasonsError.textContent = "Couldn't add that reason - try again.";
+    spinReasonsError.classList.remove("hidden");
+    return;
+  }
   newSpinReasonLabel.value = "";
   await loadState();
   renderSpinReasonsManageList();

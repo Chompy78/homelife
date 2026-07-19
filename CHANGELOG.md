@@ -8,6 +8,24 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-19
 
+- Fixed 10 issues a high-effort multi-angle code review found in the bonus-spin system (8 finder
+  agents, 12 candidates verified, 10 confirmed - see `D-2026-07-19-spin-credit-code-review-fixes`).
+  Headline fix: `bonus_spins` increments/decrements are now atomic Postgres functions
+  (`grant_spin_credit_atomic`/`consume_bonus_spins_atomic`, row-locked via `SELECT ... FOR UPDATE`)
+  instead of a plain read-then-write that let a concurrent grant and consume silently clobber or lose
+  a spin - three independent review angles converged on this bug from different directions.
+  `bonus_spins` is now also capped at 20 so a spin chain can never lose spins beyond the client's
+  25-spin safety limit. Also fixed: deleting the seeded "Tidy Room AI Score" reason no longer silently
+  and permanently breaks Bedroom Reset's auto-grant (blocked server-side, shown as "🔒 Linked" in the
+  UI); the new "Manage Bonus Spin Reasons" delete now requires the family PIN like every other
+  destructive reward-tracker action; the wheel's wedge labels are correctly sized on first view of the
+  Spin tab instead of using a stale 300px fallback; three `manage_spin_reasons` UI actions now surface
+  errors instead of silently doing nothing on failure; the grant button resyncs to "Used" instead of
+  retry-looping on a conflict; `grant_spin_credit` accepts a `trigger_key` (not just the internal
+  `reason_id`), making it genuinely usable by a real external caller; a previously-discarded grant
+  error in Bedroom Reset's auto-approve path is now logged; and `spinSoundPreset()` no longer trusts
+  an inherited `Object.prototype` property name as a valid sound preset. Bumped reward-tracker's
+  service worker cache to v14.
 - Fixed two Reward Tracker bugs and added a bonus-spin system plus wheel/
   sound upgrades, from six items the user reported after trying the mobile
   redesign. Fixes: the sticky header no longer travels ~16px before locking

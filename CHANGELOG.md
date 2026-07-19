@@ -8,6 +8,18 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-19
 
+- Added spin weighting, sound, and adjustable duration to the reward
+  wheel. Each reward category now has a 1-5 spin weight (editable in
+  Manage Categories) that controls the wedge's *size* on the wheel -
+  bigger wedge, more likely landing, no separate odds logic needed since
+  a uniform-random landing angle is weighted by construction. Spin sound
+  (synthesized ticks + a landing chime, no sound files) is on by default,
+  toggleable in Settings; spin duration is also a Settings slider (2-8s,
+  default 2.6s). Fixed a real bug where a never-set duration silently
+  clamped to the 2s minimum instead of the intended 2.6s default
+  (`Number(null)` is `0`, not `NaN`). See
+  `D-2026-07-19-reward-tracker-spin-weighting`. Bumped the reward-tracker
+  service worker cache to v10.
 - Added kid-to-kid reward trading to My Rewards: a kid can propose giving
   up some of one reward for some of a sibling's, the sibling accepts or
   declines with no parent step. Accepting is gated by picking your own

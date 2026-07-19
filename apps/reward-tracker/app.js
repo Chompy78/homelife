@@ -8,6 +8,11 @@ const DARK_MODE_KEY = "homelife_reward_dark_mode";
 const PIN_PROTECTION_KEY = "homelife_reward_pin_protection";
 const PIN_UNLOCK_MS = 5 * 60 * 1000;
 const UNDO_TOAST_MS = 5000;
+const SPIN_SOUND_KEY = "homelife_spin_sound";
+const SPIN_DURATION_KEY = "homelife_spin_duration";
+const SPIN_DURATION_DEFAULT = 2.6;
+const SPIN_DURATION_MIN = 2;
+const SPIN_DURATION_MAX = 8;
 
 // kids has no colour column - assigned client-side by position instead, so
 // it's stable across loads without needing a schema change just for this.
@@ -77,6 +82,9 @@ const pinCancelBtn = document.getElementById("pinCancelBtn");
 const settingsModal = document.getElementById("settingsModal");
 const settingsModalClose = document.getElementById("settingsModalClose");
 const pinProtectionToggle = document.getElementById("pinProtectionToggle");
+const spinSoundToggle = document.getElementById("spinSoundToggle");
+const spinDurationSlider = document.getElementById("spinDurationSlider");
+const spinDurationValue = document.getElementById("spinDurationValue");
 const avatarList = document.getElementById("avatarList");
 const resetHistoryBtn = document.getElementById("resetHistoryBtn");
 
@@ -125,6 +133,18 @@ let pinResolve = null;
 
 function pinProtectionOn() {
   return localStorage.getItem(PIN_PROTECTION_KEY) !== "0"; // on by default
+}
+
+function spinSoundOn() {
+  return localStorage.getItem(SPIN_SOUND_KEY) !== "0"; // on by default
+}
+
+function getSpinDurationSeconds() {
+  const raw = localStorage.getItem(SPIN_DURATION_KEY);
+  if (raw === null) return SPIN_DURATION_DEFAULT; // Number(null) is 0, not NaN - handle "never set" explicitly
+  const stored = Number(raw);
+  if (!Number.isFinite(stored)) return SPIN_DURATION_DEFAULT;
+  return Math.min(SPIN_DURATION_MAX, Math.max(SPIN_DURATION_MIN, stored));
 }
 
 function requirePin(title, run) {
@@ -338,18 +358,75 @@ function renderRewardRows() {
 let wheelRotation = 0;
 let spinning = false;
 let winningCategoryId = null;
+let wheelWedges = []; // [{ cat, start, end }] in degrees - kept in sync with the rendered wheel for weighted landing
 const MAX_SPINS_PER_ROUND = 25; // safety cap against a runaway chain (e.g. every category renamed to "Spin twice")
 
+// --- Spin sound - synthesized with Web Audio, no sound files needed. A
+// series of ticks that spread out over the spin (like a wheel clicking
+// past pegs, slowing down), then a two-note chime on landing. ---------
+
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(ctx, freq, startTime, duration, type, peakGain) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(peakGain, startTime + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+}
+
+function playSpinTicks(durationSeconds) {
+  if (!spinSoundOn()) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  const tickCount = Math.round(10 + durationSeconds * 4); // more ticks for a longer spin
+  for (let i = 0; i < tickCount; i++) {
+    const t = i / tickCount;
+    const eased = 1 - (1 - t) * (1 - t); // spreads ticks out near the end, matching the wheel's own deceleration
+    playTone(ctx, 500, now + eased * durationSeconds, 0.04, "square", 0.05);
+  }
+}
+
+function playLandingChime() {
+  if (!spinSoundOn()) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  playTone(ctx, 660, now, 0.18, "sine", 0.16);
+  playTone(ctx, 880, now + 0.08, 0.25, "sine", 0.16);
+}
+
+// Wedge width is proportional to spin_weight, so a plain uniform-random
+// landing angle is already correctly weighted - no separate weighted-pick
+// step needed, the geometry does it.
 function renderWheel() {
   const cats = state.categories;
   wheelLegend.innerHTML = "";
+  wheelWedges = [];
   if (!cats.length) {
     wheel.style.background = "var(--line)";
     spinBtn.disabled = true;
     return;
   }
-  const slice = 360 / cats.length;
-  wheel.style.background = `conic-gradient(${cats.map((cat, i) => `${cat.color} ${i * slice}deg ${(i + 1) * slice}deg`).join(", ")})`;
+  const totalWeight = cats.reduce((sum, cat) => sum + (cat.spin_weight || 1), 0);
+  const stops = [];
+  let angle = 0;
+  cats.forEach((cat) => {
+    const span = ((cat.spin_weight || 1) / totalWeight) * 360;
+    stops.push(`${cat.color} ${angle}deg ${angle + span}deg`);
+    wheelWedges.push({ cat, start: angle, end: angle + span });
+    angle += span;
+  });
+  wheel.style.background = `conic-gradient(${stops.join(", ")})`;
   cats.forEach((cat) => {
     const item = document.createElement("span");
     item.className = "wheelLegendItem" + (cat.id === winningCategoryId ? " winning" : "");
@@ -397,18 +474,19 @@ async function spin() {
 // One physical wheel rotation - always spins forward from wherever it
 // currently sits (never snaps back), lands under the fixed top pointer.
 async function runOneSpin() {
-  const cats = state.categories;
-  if (!cats.length) return null;
-  const slice = 360 / cats.length;
-  const index = Math.floor(Math.random() * cats.length);
-  const cat = cats[index];
-  const mid = index * slice + slice / 2;
-  const jitter = (Math.random() - 0.5) * slice * 0.6; // land off-centre within the wedge, not always dead-centre
-  const base = ((360 - (mid + jitter)) % 360 + 360) % 360;
+  if (!wheelWedges.length) return null;
+  const targetAngle = Math.random() * 360; // uniform - wedge width already encodes weight, so this is correctly weighted by construction
+  const wedge = wheelWedges.find((w) => targetAngle >= w.start && targetAngle < w.end) || wheelWedges[wheelWedges.length - 1];
+  const cat = wedge.cat;
+
+  const base = ((360 - targetAngle) % 360 + 360) % 360;
   const current = ((wheelRotation % 360) + 360) % 360;
   const forwardDelta = ((base - current) % 360 + 360) % 360;
   wheelRotation += forwardDelta + 4 * 360;
+  const duration = getSpinDurationSeconds();
+  wheel.style.transitionDuration = `${duration}s`;
   wheel.style.transform = `rotate(${wheelRotation}deg)`;
+  playSpinTicks(duration);
 
   await new Promise((resolve) => {
     const onEnd = () => {
@@ -420,6 +498,7 @@ async function runOneSpin() {
 
   winningCategoryId = cat.id;
   wheelLegend.querySelectorAll(".wheelLegendItem").forEach((el) => el.classList.toggle("winning", el.dataset.cat === cat.id));
+  playLandingChime();
   return cat;
 }
 
@@ -703,9 +782,13 @@ function renderCatList() {
     const unused = categoryUsageTotal(cat.id) === 0;
     const row = document.createElement("div");
     row.className = "catRow";
+    const weight = cat.spin_weight || 1;
     row.innerHTML = `
       <input type="color" value="${cat.color}" data-id="${cat.id}" class="catColorInput" />
       <input type="text" value="${escapeAttr(cat.label)}" data-id="${cat.id}" class="catLabelInput" maxlength="60" />
+      <select class="catWeightSelect" data-id="${cat.id}" title="Spin wheel odds - higher means more likely to land on this">
+        ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}"${n === weight ? " selected" : ""}>${n}× spin odds</option>`).join("")}
+      </select>
       ${unused ? '<span class="catUnusedBadge" title="No kid has earned or spent this reward yet">Unused</span>' : ""}
       <button type="button" class="catDeleteBtn" data-id="${cat.id}">🗑</button>
     `;
@@ -714,6 +797,9 @@ function renderCatList() {
 
   catList.querySelectorAll(".catColorInput").forEach((input) => {
     input.addEventListener("change", () => updateCategory(input.dataset.id, { color: input.value }));
+  });
+  catList.querySelectorAll(".catWeightSelect").forEach((select) => {
+    select.addEventListener("change", () => updateCategory(select.dataset.id, { spin_weight: Number(select.value) }));
   });
   catList.querySelectorAll(".catLabelInput").forEach((input) => {
     input.addEventListener("change", () => {
@@ -758,6 +844,9 @@ addCatBtn.addEventListener("click", async () => {
 
 settingsBtn.addEventListener("click", () => {
   pinProtectionToggle.checked = pinProtectionOn();
+  spinSoundToggle.checked = spinSoundOn();
+  spinDurationSlider.value = String(getSpinDurationSeconds());
+  spinDurationValue.textContent = getSpinDurationSeconds();
   renderAvatarList();
   settingsModal.classList.remove("hidden");
 });
@@ -765,6 +854,15 @@ settingsModalClose.addEventListener("click", () => settingsModal.classList.add("
 
 pinProtectionToggle.addEventListener("change", () => {
   localStorage.setItem(PIN_PROTECTION_KEY, pinProtectionToggle.checked ? "1" : "0");
+});
+
+spinSoundToggle.addEventListener("change", () => {
+  localStorage.setItem(SPIN_SOUND_KEY, spinSoundToggle.checked ? "1" : "0");
+});
+
+spinDurationSlider.addEventListener("input", () => {
+  localStorage.setItem(SPIN_DURATION_KEY, spinDurationSlider.value);
+  spinDurationValue.textContent = spinDurationSlider.value;
 });
 
 function renderAvatarList() {

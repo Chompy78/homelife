@@ -126,3 +126,17 @@ balance moved. Landing on "Spin twice" (the seeded default category)
 doesn't tally a literal reward - it triggers two more spins instead,
 since that's what the category actually represents. See
 `D-2026-07-18-reward-tracker-spin-wheel`.
+
+Each category has a spin weight (1-5, editable in "Manage reward
+categories" - `family_reward_categories.spin_weight`, defaults to 1).
+Wedge *size* is proportional to weight, which does double duty: a
+category weighted 5 is both visibly the biggest slice and, since landing
+is just a uniform-random angle, correctly 5x as likely to be hit - no
+separate weighted-random-pick logic needed, the geometry does it.
+
+Spin sound (synthesized with Web Audio, no sound files - ticks that
+spread out as the wheel slows, then a two-note chime on landing) is on by
+default; a parent can turn it off in Settings. Spin duration is also a
+Settings control (2-8 seconds, defaults to 2.6) - both are per-device
+`localStorage` preferences, same as dark mode and PIN protection, not
+family-wide settings. See `D-2026-07-19-reward-tracker-spin-weighting`.

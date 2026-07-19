@@ -351,7 +351,7 @@ async function bedroomProgressCounts(familyId: string, kidId: string) {
 async function getRewardCategories(familyId: string) {
   const { data } = await db
     .from("family_reward_categories")
-    .select("id, label, color")
+    .select("id, label, color, spin_weight")
     .eq("family_id", familyId)
     .order("sort_order");
   return data || [];
@@ -967,15 +967,17 @@ Deno.serve(async (req) => {
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
         const itemAction = String(body.itemAction || "");
         const validColor = (c: unknown) => typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c);
+        const validWeight = (w: unknown) => Number.isInteger(w) && (w as number) >= 1 && (w as number) <= 5;
 
         if (itemAction === "add") {
           const label = String(body.label || "").trim().slice(0, 60);
           if (!label) return json({ ok: false, error: "label_required" }, 400);
           const color = validColor(body.color) ? (body.color as string) : "#888888";
+          const spinWeight = validWeight(Number(body.spin_weight)) ? Number(body.spin_weight) : 1;
           const { data: existing } = await db.from("family_reward_categories").select("id").eq("family_id", session.family_id);
           const { data: item, error } = await db
             .from("family_reward_categories")
-            .insert({ family_id: session.family_id, label, color, sort_order: (existing?.length || 0) + 1 })
+            .insert({ family_id: session.family_id, label, color, spin_weight: spinWeight, sort_order: (existing?.length || 0) + 1 })
             .select()
             .single();
           if (error || !item) return json({ ok: false, error: "could_not_add" }, 500);
@@ -993,6 +995,7 @@ Deno.serve(async (req) => {
           const patch: Record<string, unknown> = {};
           if (typeof body.label === "string" && body.label.trim()) patch.label = body.label.trim().slice(0, 60);
           if (validColor(body.color)) patch.color = body.color;
+          if (body.spin_weight !== undefined && validWeight(Number(body.spin_weight))) patch.spin_weight = Number(body.spin_weight);
           if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
           await db.from("family_reward_categories").update(patch).eq("id", item.id);
           return json({ ok: true });

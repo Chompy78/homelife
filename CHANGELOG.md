@@ -8,6 +8,13 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-18
 
+- Added a 🎡 Spin wheel mode to the reward tracker: a wheel of the
+  family's reward categories, spun for whichever kid is selected,
+  landing logs a real earn (no backend changes - reuses `adjust_reward`).
+  Landing on "Spin twice" triggers two bonus spins instead of tallying a
+  literal reward, since that's what the category actually represents.
+  See `D-2026-07-18-reward-tracker-spin-wheel`. Bumped the reward-tracker
+  service worker cache to v9.
 - Made earning/spending instant: removed the PIN requirement on Spend and
   the "pick a reason" note modal on every tap (both had made adding/
   spending feel slow), and made the balance update optimistically on tap

@@ -142,14 +142,26 @@
 
     <div class="modeSwitch" id="modeSwitch">
       <button data-mode="quick" class="modeBtn active">Quick Tap</button>
+      <button data-mode="spin" class="modeBtn">🎡 Spin</button>
       <button data-mode="table" class="modeBtn">Table</button>
       <button data-mode="insights" class="modeBtn">Insights</button>
       <button data-mode="history" class="modeBtn">History</button>
     </div>
 
+    <div class="activeKidBanner hidden" id="activeKidBanner"></div>
+
     <section id="quickView" class="view">
-      <div class="activeKidBanner hidden" id="activeKidBanner"></div>
       <div class="rewardRows" id="tileGrid"></div>
+    </section>
+
+    <section id="spinView" class="view hidden">
+      <div class="wheelWrap">
+        <div class="wheelPointer">▼</div>
+        <div class="wheel" id="wheel"></div>
+      </div>
+      <button id="spinBtn" type="button" class="spinBtn">SPIN</button>
+      <p class="spinResult hidden" id="spinResult"></p>
+      <div class="wheelLegend" id="wheelLegend"></div>
     </section>
 
     <section id="tableView" class="view hidden">

@@ -28,11 +28,16 @@ const kidViewBtn = document.getElementById("kidViewBtn");
 const kidPickerRow = document.getElementById("kidPickerRow");
 const modeSwitch = document.getElementById("modeSwitch");
 const quickView = document.getElementById("quickView");
+const spinView = document.getElementById("spinView");
 const tableView = document.getElementById("tableView");
 const insightsView = document.getElementById("insightsView");
 const historyView = document.getElementById("historyView");
 const activeKidBanner = document.getElementById("activeKidBanner");
 const tileGrid = document.getElementById("tileGrid");
+const wheel = document.getElementById("wheel");
+const wheelLegend = document.getElementById("wheelLegend");
+const spinBtn = document.getElementById("spinBtn");
+const spinResult = document.getElementById("spinResult");
 const rewardTable = document.getElementById("rewardTable");
 const insightsContent = document.getElementById("insightsContent");
 const historyList = document.getElementById("historyList");
@@ -254,7 +259,9 @@ function totalFor(kidId) {
 
 function renderAll() {
   renderKidPicker();
+  renderActiveKidBanner();
   renderRewardRows();
+  renderWheel();
   renderTable();
   renderInsights();
   renderHistory();
@@ -280,27 +287,29 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
     mode = btn.dataset.mode;
     modeSwitch.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b === btn));
     quickView.classList.toggle("hidden", mode !== "quick");
+    spinView.classList.toggle("hidden", mode !== "spin");
     tableView.classList.toggle("hidden", mode !== "table");
     insightsView.classList.toggle("hidden", mode !== "insights");
     historyView.classList.toggle("hidden", mode !== "history");
+    renderActiveKidBanner();
   });
 });
 
+// Shared by Quick Tap and Spin - both act on selectedKidId, so both show
+// "who this affects" the same way. Hidden for Table/Insights/History,
+// which aren't single-kid-at-a-time interactions.
 function renderActiveKidBanner() {
   const kid = state.kids.find((k) => k.id === selectedKidId);
-  quickView.style.setProperty("--kid-colour", kid ? kidColour(kid.id) : "#888");
-  if (!kid) {
-    activeKidBanner.classList.add("hidden");
-    return;
-  }
-  activeKidBanner.classList.remove("hidden");
-  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> Now tapping rewards for <strong>${escapeHtml(kid.name)}</strong>`;
+  appEl.style.setProperty("--kid-colour", kid ? kidColour(kid.id) : "#888");
+  activeKidBanner.classList.toggle("hidden", !kid || (mode !== "quick" && mode !== "spin"));
+  if (!kid) return;
+  const verb = mode === "spin" ? "Spinning for" : "Now tapping rewards for";
+  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> ${verb} <strong>${escapeHtml(kid.name)}</strong>`;
 }
 
 // Each row has its own +/- so a tap is one click instead of toggling an
 // Earn/Spend mode first, then tapping the category.
 function renderRewardRows() {
-  renderActiveKidBanner();
   tileGrid.innerHTML = "";
   if (!selectedKidId) return;
   const kidId = selectedKidId;
@@ -319,6 +328,99 @@ function renderRewardRows() {
     row.querySelector(".rewardPlus").addEventListener("click", () => tapReward(kidId, cat.id, "earn"));
     tileGrid.appendChild(row);
   });
+}
+
+// --- Spin wheel: one wedge per reward category, coloured the same as
+// everywhere else. Landing logs a real earn exactly like tapping + does -
+// except landing on "Spin twice" (the seeded default category, meaning
+// "spin the wheel two more times") triggers two bonus spins instead of a
+// literal +1 tally entry for it, since that's what it actually represents.
+let wheelRotation = 0;
+let spinning = false;
+let winningCategoryId = null;
+const MAX_SPINS_PER_ROUND = 25; // safety cap against a runaway chain (e.g. every category renamed to "Spin twice")
+
+function renderWheel() {
+  const cats = state.categories;
+  wheelLegend.innerHTML = "";
+  if (!cats.length) {
+    wheel.style.background = "var(--line)";
+    spinBtn.disabled = true;
+    return;
+  }
+  const slice = 360 / cats.length;
+  wheel.style.background = `conic-gradient(${cats.map((cat, i) => `${cat.color} ${i * slice}deg ${(i + 1) * slice}deg`).join(", ")})`;
+  cats.forEach((cat) => {
+    const item = document.createElement("span");
+    item.className = "wheelLegendItem" + (cat.id === winningCategoryId ? " winning" : "");
+    item.dataset.cat = cat.id;
+    item.innerHTML = `<span class="catSwatch" style="background:${cat.color}"></span>${escapeHtml(cat.label)}`;
+    wheelLegend.appendChild(item);
+  });
+  spinBtn.disabled = !selectedKidId || spinning;
+}
+
+spinBtn.addEventListener("click", () => spin());
+
+async function spin() {
+  if (spinning || !selectedKidId) return;
+  const kidId = selectedKidId;
+  spinning = true;
+  spinBtn.disabled = true;
+  winningCategoryId = null;
+  spinResult.classList.add("hidden");
+
+  let spinsLeft = 1;
+  let spinsDone = 0;
+  while (spinsLeft > 0 && spinsDone < MAX_SPINS_PER_ROUND) {
+    spinsLeft -= 1;
+    spinsDone += 1;
+    const cat = await runOneSpin();
+    if (!cat) break;
+    if (cat.label.trim().toLowerCase() === "spin twice") {
+      spinResult.textContent = `🎡 ${cat.label} - two more spins coming up!`;
+      spinResult.classList.remove("hidden");
+      spinsLeft += 2;
+      await new Promise((r) => setTimeout(r, 700));
+    } else {
+      spinResult.textContent = `🎉 ${kidName(kidId)} won ${escapeHtml(cat.label)}!`;
+      spinResult.classList.remove("hidden");
+      await tapReward(kidId, cat.id, "earn", `🎡 Spinner: ${cat.label}`);
+      if (spinsLeft > 0) await new Promise((r) => setTimeout(r, 900)); // let the result be read before the next bonus spin
+    }
+  }
+
+  spinning = false;
+  spinBtn.disabled = !selectedKidId;
+}
+
+// One physical wheel rotation - always spins forward from wherever it
+// currently sits (never snaps back), lands under the fixed top pointer.
+async function runOneSpin() {
+  const cats = state.categories;
+  if (!cats.length) return null;
+  const slice = 360 / cats.length;
+  const index = Math.floor(Math.random() * cats.length);
+  const cat = cats[index];
+  const mid = index * slice + slice / 2;
+  const jitter = (Math.random() - 0.5) * slice * 0.6; // land off-centre within the wedge, not always dead-centre
+  const base = ((360 - (mid + jitter)) % 360 + 360) % 360;
+  const current = ((wheelRotation % 360) + 360) % 360;
+  const forwardDelta = ((base - current) % 360 + 360) % 360;
+  wheelRotation += forwardDelta + 4 * 360;
+  wheel.style.transform = `rotate(${wheelRotation}deg)`;
+
+  await new Promise((resolve) => {
+    const onEnd = () => {
+      wheel.removeEventListener("transitionend", onEnd);
+      resolve();
+    };
+    wheel.addEventListener("transitionend", onEnd);
+  });
+
+  winningCategoryId = cat.id;
+  wheelLegend.querySelectorAll(".wheelLegendItem").forEach((el) => el.classList.toggle("winning", el.dataset.cat === cat.id));
+  return cat;
 }
 
 function renderTable() {
@@ -468,7 +570,7 @@ function renderHistory() {
 // (also picking up anything another device did) without blocking the
 // visual update. Undo (5s toast, or History any time after) is the
 // safety net that replaces the PIN as protection against a mis-tap.
-async function tapReward(kidId, categoryId, type) {
+async function tapReward(kidId, categoryId, type, note = "") {
   const forKid = (state.balances[kidId] ??= {});
   const cell = (forKid[categoryId] ??= { earned: 0, spent: 0, balance: 0 });
   if (type === "earn") {
@@ -479,7 +581,7 @@ async function tapReward(kidId, categoryId, type) {
     cell.balance -= 1;
   }
   renderAll();
-  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note: "" });
+  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note });
   if (res.ok && res.data?.entry) showUndoToast(res.data.entry, kidId, categoryId, type);
   loadState();
 }

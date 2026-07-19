@@ -114,3 +114,15 @@ Every earn/spend tap shows a toast with an Undo button, live for 5 seconds -
 the fast path for catching a mis-tap immediately, no confirmation needed.
 History's own Undo (with a confirm dialog) still covers correcting an
 older entry.
+
+## Spin wheel
+
+A 🎡 Spin mode alongside Quick Tap: a wheel with one wedge per reward
+category (same colours as everywhere else), spun for whichever kid is
+selected. Landing logs a real earn exactly like tapping + does, no
+backend changes needed - it's `adjust_reward` under the hood, with an
+automatic note ("🎡 Spinner: <category>") so History shows why the
+balance moved. Landing on "Spin twice" (the seeded default category)
+doesn't tally a literal reward - it triggers two more spins instead,
+since that's what the category actually represents. See
+`D-2026-07-18-reward-tracker-spin-wheel`.

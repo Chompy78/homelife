@@ -85,7 +85,7 @@ header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
 /* Selected kid's colour, set on #quickView from JS - tints the banner below
    and the tile grid's own frame, so it stays obvious which kid a tap will
    affect without needing to look back up at the kid picker. */
-#quickView { --kid-colour: #888; }
+.app { --kid-colour: #888; }
 
 .activeKidBanner {
   display: flex;
@@ -129,6 +129,59 @@ header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
 .rewardBtn { width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-weight: 900; cursor: pointer; flex: 0 0 auto; }
 .rewardMinus { color: var(--red); }
 .rewardPlus { color: var(--green); }
+
+/* Spin wheel - a fixed pointer at 12 o'clock, a conic-gradient wheel built
+   from the family's own reward categories (same colours as everywhere
+   else), rotated with CSS transform on spin. */
+.wheelWrap { position: relative; width: 220px; height: 220px; margin: 10px auto 16px; }
+.wheel {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 6px solid var(--card);
+  box-shadow: var(--shadow);
+  transition: transform 2.6s cubic-bezier(0.15, 0.85, 0.35, 1);
+}
+.wheelPointer {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.8rem;
+  line-height: 1;
+  z-index: 2;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));
+}
+.spinBtn {
+  display: block;
+  margin: 0 auto 16px;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 44px;
+  font-weight: 900;
+  font-size: 1.1rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.spinBtn:disabled { opacity: 0.6; cursor: default; }
+.spinResult { text-align: center; font-weight: 800; font-size: 1.05rem; margin: 0 0 16px; min-height: 1.3em; }
+.spinResult.hidden { visibility: hidden; }
+.wheelLegend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.wheelLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  background: var(--card);
+  border-radius: 999px;
+  padding: 5px 12px;
+  box-shadow: var(--shadow);
+}
+.wheelLegendItem.winning { outline: 2px solid var(--ink); }
 
 .tableWrap { overflow-x: auto; background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 10px; }
 #rewardTable { width: 100%; border-collapse: collapse; }

@@ -122,6 +122,33 @@ h1 { margin: 0 0 8px; font-size: clamp(1.6rem, 4vw, 2.2rem); }
 .publicToggle { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-bottom: 12px; }
 .publicToggle input { width: 20px; height: 20px; }
 .aiScoreSettings { border-top: 1px dashed var(--line); padding-top: 12px; margin-bottom: 12px; }
+.verifyMethodSection { border-top: 1px dashed var(--line); border-bottom: 1px dashed var(--line); padding: 12px 0; margin-bottom: 12px; }
+.settingsRowTitle { font-weight: 800; margin-bottom: 8px; }
+.settingsRowSub { color: var(--muted); font-weight: 700; font-size: 0.82rem; margin: 0 0 10px; }
+.verifyMethodSwitch { display: flex; gap: 18px; margin-bottom: 12px; font-weight: 700; }
+.verifyMethodSwitch label { display: flex; align-items: center; gap: 6px; color: var(--ink); cursor: pointer; }
+#pinMethodFields .settingsGrid, #pinMethodFields label { max-width: 200px; }
+.iconPickerGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 300px; }
+.iconPickerGrid button {
+  font-size: 1.8rem;
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 12px 0;
+  cursor: pointer;
+  position: relative;
+}
+.iconPickerGrid button.selected { border-color: var(--blue); background: #fff; }
+.iconPickerGrid button.selected::after {
+  content: "✓";
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  font-size: 0.9rem;
+  font-weight: 900;
+  color: var(--blue);
+}
+.iconPickerError { color: var(--red); font-weight: 700; margin-top: 8px; }
 .settingsGrid select { font-size: 1rem; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); font-family: inherit; color: var(--ink); }
 .aiScoreHint { color: var(--muted); font-weight: 700; font-size: 0.82rem; margin: 0; }
 .saveBtn { background: var(--blue); color: #fff; border: 0; border-radius: 12px; padding: 10px 18px; font-weight: 800; cursor: pointer; }

@@ -68,3 +68,83 @@ body {
 
 .switchKid { text-align: center; margin-top: 20px; }
 .switchKid a { color: var(--muted); font-weight: 700; }
+
+/* Trade entry point on the main card */
+.tradeOpenBtn {
+  position: relative;
+  display: block;
+  width: 100%;
+  margin-top: 22px;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 16px;
+  padding: 14px;
+  font-weight: 800;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.tradeBadge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--gold);
+  color: #2a3320;
+  border-radius: 999px;
+  min-width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 900;
+  padding: 0 4px;
+}
+
+/* Trade Center modal */
+.tradeModal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: grid; place-items: center; z-index: 60; padding: 16px; }
+.tradeModal.hidden { display: none; }
+.tradeCard { background: var(--card); border-radius: 24px; padding: 22px; max-width: 420px; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow); }
+.tradeHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.tradeHead h2 { margin: 0; font-size: 1.2rem; }
+.tradeClose { background: transparent; border: 0; font-size: 1.3rem; cursor: pointer; color: var(--ink); }
+.tradeBack { background: transparent; border: 0; color: var(--muted); font-weight: 800; cursor: pointer; padding: 0; margin-bottom: 12px; }
+
+.tradeSectionTitle { font-weight: 800; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 14px 0 8px; }
+.tradeSectionTitle:first-child { margin-top: 0; }
+.tradeOfferCard { background: var(--bg); border-radius: 16px; padding: 14px; margin-bottom: 10px; }
+.tradeOfferText { font-weight: 700; margin-bottom: 10px; }
+.tradeOfferText strong { color: var(--star); }
+.tradeOfferBtns { display: flex; gap: 8px; }
+.tradeAccept { flex: 1; background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 10px; font-weight: 800; cursor: pointer; }
+.tradeDecline { flex: 1; background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 12px; padding: 10px; font-weight: 800; cursor: pointer; }
+.tradeCancel { width: 100%; background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 12px; padding: 10px; font-weight: 800; cursor: pointer; }
+.tradeWaiting { color: var(--muted); font-weight: 700; font-size: 0.85rem; margin-bottom: 8px; }
+
+.tradeActionBtn { display: block; width: 100%; margin-top: 14px; background: var(--star); color: #fff; border: 0; border-radius: 14px; padding: 13px; font-weight: 800; cursor: pointer; }
+.tradeSecretLink { text-align: center; margin-top: 12px; }
+.tradeSecretLink a { color: var(--muted); font-weight: 700; font-size: 0.85rem; }
+.tradeError { color: #d9534f; font-weight: 700; margin-top: 10px; text-align: center; }
+
+.tradeField { margin-bottom: 16px; }
+.tradeField label { display: block; font-weight: 800; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 8px; }
+.siblingPicker { display: flex; gap: 8px; flex-wrap: wrap; }
+.siblingChip { display: flex; align-items: center; gap: 6px; background: var(--bg); border: 2px solid transparent; border-radius: 999px; padding: 8px 14px; font-weight: 800; cursor: pointer; }
+.siblingChip.selected { border-color: var(--star); background: var(--card); }
+.tradeQtyRow { display: flex; gap: 8px; }
+.tradeQtyRow select { flex: 1; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-family: inherit; font-weight: 700; }
+.tradeQtyRow input { width: 64px; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-family: inherit; font-weight: 700; text-align: center; }
+
+/* Verification: a shuffled 4x4 grid of pictures instead of a PIN - a kid
+   picks their own secret picture once, then picks it again to accept a
+   trade. Wrong picks lock accepting out for a while (see app.js). */
+.verifyModal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: grid; place-items: center; z-index: 70; padding: 16px; }
+.verifyModal.hidden { display: none; }
+.verifyCard { background: var(--card); border-radius: 24px; padding: 22px; max-width: 380px; width: 100%; text-align: center; box-shadow: var(--shadow); }
+.verifyCard h2 { margin: 0 0 6px; font-size: 1.15rem; }
+.verifySub { color: var(--muted); font-weight: 700; font-size: 0.85rem; margin: 0 0 16px; }
+.verifyGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.verifyGrid button { font-size: 1.8rem; background: var(--bg); border: 2px solid transparent; border-radius: 14px; padding: 10px 0; cursor: pointer; }
+.verifyGrid button:active { border-color: var(--star); }
+.verifyError { color: #d9534f; font-weight: 700; margin-bottom: 10px; }
+.verifyCancel { background: transparent; border: 0; color: var(--muted); font-weight: 700; cursor: pointer; }

@@ -29,9 +29,127 @@ on `TASK_BOARD.md`.
   hand-rolled reset. Verified live via Playwright (checklist render,
   checkbox sync, category badges, the new shared confirm modal - zero
   console errors). Bumped `bedroom-reset`'s service worker to v21.
+- Fixed 10 issues a high-effort multi-angle code review found in the bonus-spin system (8 finder
+  agents, 12 candidates verified, 10 confirmed - see `D-2026-07-19-spin-credit-code-review-fixes`).
+  Headline fix: `bonus_spins` increments/decrements are now atomic Postgres functions
+  (`grant_spin_credit_atomic`/`consume_bonus_spins_atomic`, row-locked via `SELECT ... FOR UPDATE`)
+  instead of a plain read-then-write that let a concurrent grant and consume silently clobber or lose
+  a spin - three independent review angles converged on this bug from different directions.
+  `bonus_spins` is now also capped at 20 so a spin chain can never lose spins beyond the client's
+  25-spin safety limit. Also fixed: deleting the seeded "Tidy Room AI Score" reason no longer silently
+  and permanently breaks Bedroom Reset's auto-grant (blocked server-side, shown as "🔒 Linked" in the
+  UI); the new "Manage Bonus Spin Reasons" delete now requires the family PIN like every other
+  destructive reward-tracker action; the wheel's wedge labels are correctly sized on first view of the
+  Spin tab instead of using a stale 300px fallback; three `manage_spin_reasons` UI actions now surface
+  errors instead of silently doing nothing on failure; the grant button resyncs to "Used" instead of
+  retry-looping on a conflict; `grant_spin_credit` accepts a `trigger_key` (not just the internal
+  `reason_id`), making it genuinely usable by a real external caller; a previously-discarded grant
+  error in Bedroom Reset's auto-approve path is now logged; and `spinSoundPreset()` no longer trusts
+  an inherited `Object.prototype` property name as a valid sound preset. Bumped reward-tracker's
+  service worker cache to v14.
+- Fixed two Reward Tracker bugs and added a bonus-spin system plus wheel/
+  sound upgrades, from six items the user reported after trying the mobile
+  redesign. Fixes: the sticky header no longer travels ~16px before locking
+  to the top on scroll (removed `body`'s top padding, which was the actual
+  gap); History's Undo button now works on entries with a long note (the
+  row had no `min-width: 0`, so it silently overflowed the viewport and
+  pushed the button off-screen) and any future undo failure shows a visible
+  error instead of leaving the button stuck disabled with no feedback.
+  New: a bonus-spin system - named reasons (e.g. "Weekly Mathletics Award")
+  grant a kid a bonus spin, each capped to once per its own daily/weekly/
+  monthly period, tickable manually in Reward Tracker's Spin tab or granted
+  automatically by another app (Bedroom Reset's AI room-score auto-approve
+  is the first caller) through one shared, generic `grant_spin_credit`
+  action - not a gate on spinning, a bonus spin just chains an extra
+  automatic spin onto the next SPIN tap, same mechanic as the existing
+  "Spin twice" category. New "Manage Bonus Spin Reasons" screen in the
+  overflow menu. The wheel itself is bigger, shows each category's label
+  directly on its wedge, and the SPIN button now sits in the wheel's hub,
+  hidden while spinning instead of just disabled. Spin sound is now a
+  preset picker (Chimes/Arcade/Retro/Off) instead of an on/off toggle,
+  migrating anyone's existing on/off preference automatically. New
+  `kids.bonus_spins` column, `family_spin_reasons`/`kid_spin_credit_grants`
+  tables, `manage_spin_reasons`/`grant_spin_credit`/`consume_bonus_spins`
+  actions. See `D-2026-07-19-spin-credit-system` (including a noted
+  verification gap: the Bedroom Reset trigger itself couldn't be tested
+  live, since it's gated by a worker-only secret this session can't reach -
+  every other new action was verified against a disposable test family).
+  Bumped reward-tracker's service worker cache to v13.
+- Redesigned Reward Tracker's header and Table view for mobile, from a
+  user-supplied UI brief. The large orange header is now a compact
+  sticky app bar (title + context controls only; height cut from a
+  multi-line block to ~57px in Table view, ~106px in Quick Tap/Spin
+  where the kid picker still shows); Settings, dark mode, Kid View, and
+  the two category/reason management screens moved into a new overflow
+  menu (☰). The reward table now behaves like a real spreadsheet on
+  scroll: the child-name header row, the reward/category left column,
+  and their shared top-left corner cell all stay pinned in place while
+  scrolling vertically, horizontally, or both at once
+  (`border-collapse: separate` + per-cell `position: sticky`, since
+  collapsed borders and sticky cells don't reliably mix, especially in
+  Safari). Table view also gained a View Mode (default - just the
+  balance number, no clutter) and Edit Mode (Edit/Done toggle in the
+  header, reveals the existing +/- controls) - Quick Tap/Spin are
+  unchanged, they were never in scope for the toggle. See
+  `D-2026-07-19-reward-tracker-mobile-header-and-table-redesign`.
+  Regression-tested the full existing reward-tracker Playwright suite
+  (spin weighting, kid themes, instant-tap, icon-picker verification)
+  after moving the admin buttons into the menu - caught and fixed one
+  real bug in the process (the sticky header's z-index outranked every
+  modal, silently blocking clicks on modal content underneath it).
+  Bumped reward-tracker's service worker cache to v12.
+- Added a 3-of-9 icon-picker as a family-chosen alternative to the
+  4-digit parent PIN, covering every PIN-gated flow that shares
+  `families.parent_pin` today: reward-tracker (delete category, Reset,
+  Kid View exit) and Bedroom Reset's Parent Check. A family picks PIN
+  or icon-picker in the parent dashboard's Settings (not a replacement
+  - only one is active at a time); the 9-icon grid reshuffles positions
+  on every open and after every wrong attempt so a kid watching can't
+  learn the picker's *layout*, only which pictures matter, matching
+  order doesn't matter (3-of-9, ~1-in-84 odds). New
+  `families.parent_auth_method`/`parent_icons` columns, one shared
+  `verifyParentSecret` backend helper replacing three previously-
+  duplicated inline PIN comparisons, and a new role-agnostic
+  `get_family_auth_method` action so a kid's own device can pick the
+  right verification UI before a parent authenticates. See
+  `D-2026-07-19-parent-icon-auth-alternative`. Verified live against
+  disposable test families for all three apps. Bumped service worker
+  caches: parent-dashboard v6, reward-tracker v11, bedroom-reset v21.
+- Added spin weighting, sound, and adjustable duration to the reward
+  wheel. Each reward category now has a 1-5 spin weight (editable in
+  Manage Categories) that controls the wedge's *size* on the wheel -
+  bigger wedge, more likely landing, no separate odds logic needed since
+  a uniform-random landing angle is weighted by construction. Spin sound
+  (synthesized ticks + a landing chime, no sound files) is on by default,
+  toggleable in Settings; spin duration is also a Settings slider (2-8s,
+  default 2.6s). Fixed a real bug where a never-set duration silently
+  clamped to the 2s minimum instead of the intended 2.6s default
+  (`Number(null)` is `0`, not `NaN`). See
+  `D-2026-07-19-reward-tracker-spin-weighting`. Bumped the reward-tracker
+  service worker cache to v10.
+- Added kid-to-kid reward trading to My Rewards: a kid can propose giving
+  up some of one reward for some of a sibling's, the sibling accepts or
+  declines with no parent step. Accepting is gated by picking your own
+  secret picture out of a shuffled 4x4 grid instead of a PIN (kid-friendlier,
+  same "friction, not a real boundary" posture as the parent PIN
+  elsewhere) - two wrong picks locks accepting out for 15 minutes. New
+  `kid_reward_trades` table, new `kids.verify_image`/`verify_fail_count`/
+  `verify_locked_until` columns, five new edge-function actions. Found
+  and fixed three real bugs during testing (an `action`-field name
+  collision that silently broke every accept/decline, a stale lockout
+  check, and the main balance not refreshing after a trade). Verified
+  live against a disposable two-kid test family. Bumped the my-rewards
+  service worker cache to v2. See `D-2026-07-19-my-rewards-trading`.
 
 ## 2026-07-18
 
+- Added a 🎡 Spin wheel mode to the reward tracker: a wheel of the
+  family's reward categories, spun for whichever kid is selected,
+  landing logs a real earn (no backend changes - reuses `adjust_reward`).
+  Landing on "Spin twice" triggers two bonus spins instead of tallying a
+  literal reward, since that's what the category actually represents.
+  See `D-2026-07-18-reward-tracker-spin-wheel`. Bumped the reward-tracker
+  service worker cache to v9.
 - Gave the parent dashboard its own distinct favicon/app icon
   (`Homelife_parents_favicon.png` - blue background, purple checkmark,
   differentiating it from the other apps' green house icon, per the

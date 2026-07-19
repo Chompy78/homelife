@@ -71,15 +71,41 @@
     </div>
   </div>
 
-  <!-- PIN gate: shown before Spend, category delete, Reset, or leaving Kid View -->
+  <!-- Bonus-spin reasons: named achievements a parent can tick as done for
+       a kid (or another app can grant automatically, e.g. Bedroom Reset's
+       AI room score) - each capped to once per its own period. -->
+  <div class="catModal hidden" id="spinReasonsModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>Bonus Spin Reasons</h2>
+        <button id="spinReasonsModalClose" type="button" class="catModalClose">✕</button>
+      </div>
+      <div class="catList" id="spinReasonsManageList"></div>
+      <div class="addCatRow">
+        <input id="newSpinReasonLabel" type="text" placeholder="New reason (e.g. Weekly Mathletics Award)" maxlength="60" />
+        <select id="newSpinReasonPeriod" class="catWeightSelect">
+          <option value="daily">Daily</option>
+          <option value="weekly" selected>Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <button id="addSpinReasonBtn" type="button">+ Add</button>
+      </div>
+      <p class="catError hidden" id="spinReasonsError"></p>
+    </div>
+  </div>
+
+  <!-- Parent gate: shown before Spend, category delete, Reset, or leaving Kid View.
+       Renders either a PIN form or a 3-of-9 icon grid, depending on the
+       family's chosen verification method. -->
   <div class="pinModal hidden" id="pinModal">
     <div class="pinCard">
       <h2 id="pinModalTitle">Enter PIN</h2>
-      <p class="pinSub">A parent's 4-digit PIN is needed for this.</p>
+      <p class="pinSub" id="pinSub">A parent's 4-digit PIN is needed for this.</p>
       <form id="pinForm">
         <input id="pinInput" class="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" />
         <button type="submit" class="pinSubmit">Unlock</button>
       </form>
+      <div class="pinIconsGrid hidden" id="pinIconsGrid"></div>
       <p class="pinError hidden" id="pinError"></p>
       <button type="button" class="pinCancel" id="pinCancelBtn">Cancel</button>
     </div>
@@ -106,6 +132,28 @@
       </div>
 
       <div class="settingsSection">
+        <div class="settingsRow">
+          <div>
+            <div class="settingsRowTitle">🔊 Spin sound</div>
+            <div class="settingsRowSub">Ticking while the wheel spins, a chime when it lands.</div>
+          </div>
+          <select id="spinSoundPresetSelect" class="catWeightSelect">
+            <option value="off">Off</option>
+            <option value="chimes">Chimes</option>
+            <option value="arcade">Arcade</option>
+            <option value="retro">Retro</option>
+          </select>
+        </div>
+        <div class="settingsRow" style="margin-top: 14px;">
+          <div>
+            <div class="settingsRowTitle">⏱️ Spin duration</div>
+            <div class="settingsRowSub">How long the wheel spins before landing: <span id="spinDurationValue"></span>s</div>
+          </div>
+        </div>
+        <input type="range" id="spinDurationSlider" min="2" max="8" step="0.5" class="spinDurationSlider" />
+      </div>
+
+      <div class="settingsSection">
         <div class="settingsRowTitle">👤 Kid avatars &amp; colours</div>
         <div class="settingsRowSub">Shown in Quick Tap, Table, History and Kid View. Each kid gets a random colour when added - change it here any time.</div>
         <div id="avatarList" class="avatarList"></div>
@@ -128,36 +176,60 @@
   <div class="toastContainer" id="toastContainer"></div>
 
   <div class="app hidden" id="app">
-    <header>
+    <header id="appHeader">
       <div class="headerTop">
-        <h1>🎡 Reward Tracker</h1>
+        <h1>🎡 Reward Tracker<span class="editingBadge hidden" id="editingBadge">Editing</span></h1>
         <div class="headerBtns">
-          <button id="kidViewBtn" type="button" class="iconBtn" title="Kid View">👶</button>
-          <button id="settingsBtn" type="button" class="iconBtn" title="Settings">⚙️</button>
-          <button id="darkModeBtn" type="button" class="iconBtn" title="Toggle dark mode">🌙</button>
+          <button id="editModeBtn" type="button" class="editModeBtn hidden">Edit</button>
+          <button id="menuBtn" type="button" class="iconBtn" title="Menu">☰</button>
         </div>
       </div>
       <div class="kidPickerRow" id="kidPickerRow"></div>
     </header>
 
+    <div class="menuDropdown hidden" id="menuDropdown">
+      <button id="kidViewBtn" type="button" class="menuItem">👶 Kid View</button>
+      <button id="settingsBtn" type="button" class="menuItem">⚙️ Settings</button>
+      <button id="darkModeBtn" type="button" class="menuItem"><span id="darkModeIcon">🌙</span> Dark mode</button>
+      <button id="manageCatBtn" type="button" class="menuItem">🏷️ Manage reward categories</button>
+      <button id="manageReasonsBtn2" type="button" class="menuItem">📝 Manage reward reasons</button>
+      <button id="manageSpinReasonsBtn" type="button" class="menuItem">🎁 Manage bonus spin reasons</button>
+    </div>
+
     <div class="modeSwitch" id="modeSwitch">
       <button data-mode="quick" class="modeBtn active">Quick Tap</button>
+      <button data-mode="spin" class="modeBtn">🎡 Spin</button>
       <button data-mode="table" class="modeBtn">Table</button>
       <button data-mode="insights" class="modeBtn">Insights</button>
       <button data-mode="history" class="modeBtn">History</button>
     </div>
 
+    <div class="activeKidBanner hidden" id="activeKidBanner"></div>
+
     <section id="quickView" class="view">
-      <div class="activeKidBanner hidden" id="activeKidBanner"></div>
       <div class="rewardRows" id="tileGrid"></div>
+    </section>
+
+    <section id="spinView" class="view hidden">
+      <div class="bonusSpinRow hidden" id="bonusSpinRow">🎁 <span id="bonusSpinText"></span></div>
+      <div class="wheelWrap">
+        <div class="wheelPointer">▼</div>
+        <div class="wheel" id="wheel"></div>
+        <button id="spinBtn" type="button" class="spinBtn">SPIN</button>
+      </div>
+      <p class="spinResult hidden" id="spinResult"></p>
+      <div class="wheelLegend" id="wheelLegend"></div>
+
+      <div class="spinReasonsCard">
+        <h3 class="spinReasonsTitle">Earn a bonus spin</h3>
+        <div class="spinReasonsList" id="spinReasonsList"></div>
+      </div>
     </section>
 
     <section id="tableView" class="view hidden">
       <div class="tableWrap">
         <table id="rewardTable"></table>
       </div>
-      <button id="manageCatBtn" type="button" class="adminBtn">Manage reward categories</button>
-      <button id="manageReasonsBtn2" type="button" class="adminBtn">Manage reward reasons</button>
     </section>
 
     <section id="insightsView" class="view hidden">

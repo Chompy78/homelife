@@ -10,7 +10,7 @@ codes, and can optionally share their stats on a public leaderboard.
 - [`apps/parent-dashboard`](apps/parent-dashboard) - a parent enters their family's parent code once, then can see every kid's progress, manage kids (add/rename/remove, get their codes), add/remove shared rooms and edit their checklist items, change the family's confirmation PIN, and opt in to the public leaderboard.
 - [`apps/leaderboard`](apps/leaderboard) - public, no code needed. Shows aggregate stats (total points, best streak, rooms passed) for families that have opted in. Never shows individual kids' names or checklist details, even for opted-in families.
 - [`apps/reward-tracker`](apps/reward-tracker) - a parent enters their family's parent code (same one as the parent dashboard) and taps a reward category to earn or spend for any of their kids. Quick Tap, Table and History+Undo views. A separate currency from the bedroom-reset points/streaks system - not merged into it or the leaderboard.
-- [`apps/my-rewards`](apps/my-rewards) - read-only, kid-facing: a kid enters their own kid code (same one as bedroom-reset) and sees their own reward balance, on their own device. No write path at all, so no PIN is needed.
+- [`apps/my-rewards`](apps/my-rewards) - kid-facing: a kid enters their own kid code (same one as bedroom-reset) and sees their own reward balance, on their own device. Mostly read-only, except trading with a sibling (give some of one reward for some of theirs) - accepting is gated by a 4x4 picture-grid pick instead of a PIN.
 
 ## Shared
 
@@ -22,7 +22,8 @@ codes, and can optionally share their stats on a public leaderboard.
 Data lives in a dedicated Supabase project ("homelife", `ap-southeast-2`).
 Every family-data table (`families`, `kids`, `kid_checklist_state`,
 `kid_streaks`, `kid_progress_log`, `sessions`, `kid_reference_photos`,
-`family_reward_categories`, `family_reward_notes`, `kid_reward_log`) has
+`family_reward_categories`, `family_reward_notes`, `kid_reward_log`,
+`kid_reward_trades`) has
 Row Level Security enabled with **zero policies** - meaning nothing is
 reachable through the public API key at all, from any family. Reference
 photos live in a private Storage bucket (`reference-photos`) with the same
@@ -56,6 +57,7 @@ Tables:
 - `family_reward_categories` - the family's own customizable list of reward types (label + color), used by the reward tracker. Seeded with 9 defaults automatically when a family is created (same trigger pattern as `family_bedroom_items`)
 - `family_reward_notes` - the family's own customizable list of preset "reasons" (per earn/spend type) shown in the reward tracker's note modal. Seeded with the original hardcoded defaults automatically when a family is created (same trigger pattern); a reason is copied as free text onto a `kid_reward_log` row at tap time, not referenced by id, so deleting one never touches existing history
 - `kid_reward_log` - append-only ledger for the reward tracker: one row per +1/-1 tap (kid, category, note, timestamp). Balances (and the earned/spent split) are a live sum over this table, computed by the edge function - not a stored running total, so Undo is just deleting the row
+- `kid_reward_trades` - a kid-to-kid trade proposal (from_kid, to_kid, what's given, what's wanted back, status). Accepting writes four `kid_reward_log` rows (each kid loses what they gave, gains what they received); declining/cancelling just changes status, no ledger writes. `kids.verify_image`/`verify_fail_count`/`verify_locked_until` back the picture-grid verification a kid does to accept - see [`apps/my-rewards`](apps/my-rewards)
 - `photo_score_requests` - a kid's "score my room" submission for the self-hosted AI photo-scoring feature: family_id, kid_id or room_id, storage_path, status (`pending`/`scored`/`failed`), score (1-10), comment, timestamps. A partial unique index caps it at one pending request per kid/room at a time. See [`docs/TASK_BOARD.md`](docs/TASK_BOARD.md) for the full design
 
 The actual reference photo images (both kids' and shared rooms') live in one private Storage bucket, `reference-photos`.

@@ -8,10 +8,59 @@ const DARK_MODE_KEY = "homelife_reward_dark_mode";
 const PIN_PROTECTION_KEY = "homelife_reward_pin_protection";
 const PIN_UNLOCK_MS = 5 * 60 * 1000;
 const UNDO_TOAST_MS = 5000;
+const SPIN_SOUND_KEY = "homelife_spin_sound"; // stores a preset name now, not "0"/"1" - see spinSoundPreset()
+const SPIN_DURATION_KEY = "homelife_spin_duration";
+const SPIN_DURATION_DEFAULT = 2.6;
+const SPIN_DURATION_MIN = 2;
+const SPIN_DURATION_MAX = 8;
 
 // kids has no colour column - assigned client-side by position instead, so
 // it's stable across loads without needing a schema change just for this.
 const KID_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
+
+// Spin sound presets - "off" is handled separately (no config needed), the
+// rest are named tick-tone + landing-tone configs for playTone(). "chimes"
+// is the original sound, kept as the default so nobody's existing
+// preference silently changes.
+const SPIN_SOUND_PRESETS = {
+  chimes: {
+    tick: { freq: 500, type: "square", gain: 0.05 },
+    landing: [
+      { freq: 660, type: "sine", dur: 0.18, gain: 0.16, delay: 0 },
+      { freq: 880, type: "sine", dur: 0.25, gain: 0.16, delay: 0.08 },
+    ],
+  },
+  arcade: {
+    tick: { freq: 720, type: "sawtooth", gain: 0.045 },
+    landing: [
+      { freq: 523, type: "square", dur: 0.12, gain: 0.14, delay: 0 },
+      { freq: 659, type: "square", dur: 0.12, gain: 0.14, delay: 0.1 },
+      { freq: 784, type: "square", dur: 0.2, gain: 0.15, delay: 0.2 },
+    ],
+  },
+  retro: {
+    tick: { freq: 380, type: "square", gain: 0.05 },
+    landing: [
+      { freq: 440, type: "square", dur: 0.1, gain: 0.14, delay: 0 },
+      { freq: 440, type: "square", dur: 0.1, gain: 0.14, delay: 0.14 },
+    ],
+  },
+};
+
+// Same fixed 9-icon set the backend validates against - a family picks any
+// 3 as an alternative to the 4-digit PIN. A parent sets which 3 in Parent
+// Dashboard; this app only ever verifies a guess, never sees the answer.
+const PARENT_ICON_SET = [
+  { id: "dragon", emoji: "🐉" },
+  { id: "castle", emoji: "🏰" },
+  { id: "crown", emoji: "👑" },
+  { id: "potion", emoji: "🧪" },
+  { id: "treasure", emoji: "💰" },
+  { id: "ship", emoji: "🏴‍☠️" },
+  { id: "owl", emoji: "🦉" },
+  { id: "crystal", emoji: "💎" },
+  { id: "sword", emoji: "⚔️" },
+];
 
 const AVATAR_SUGGESTIONS = ["🌸", "🌟", "🦄", "⭐", "🦁", "🐬", "🚀", "🎨", "🐱", "🐶"];
 
@@ -22,17 +71,30 @@ const codeError = document.getElementById("codeError");
 const appEl = document.getElementById("app");
 const switchFamilyLink = document.getElementById("switchFamilyLink");
 const darkModeBtn = document.getElementById("darkModeBtn");
+const darkModeIcon = document.getElementById("darkModeIcon");
 const settingsBtn = document.getElementById("settingsBtn");
 const kidViewBtn = document.getElementById("kidViewBtn");
+
+const menuBtn = document.getElementById("menuBtn");
+const menuDropdown = document.getElementById("menuDropdown");
+const editModeBtn = document.getElementById("editModeBtn");
+const editingBadge = document.getElementById("editingBadge");
 
 const kidPickerRow = document.getElementById("kidPickerRow");
 const modeSwitch = document.getElementById("modeSwitch");
 const quickView = document.getElementById("quickView");
+const spinView = document.getElementById("spinView");
 const tableView = document.getElementById("tableView");
 const insightsView = document.getElementById("insightsView");
 const historyView = document.getElementById("historyView");
 const activeKidBanner = document.getElementById("activeKidBanner");
 const tileGrid = document.getElementById("tileGrid");
+const wheel = document.getElementById("wheel");
+const wheelLegend = document.getElementById("wheelLegend");
+const spinBtn = document.getElementById("spinBtn");
+const spinResult = document.getElementById("spinResult");
+const bonusSpinRow = document.getElementById("bonusSpinRow");
+const bonusSpinText = document.getElementById("bonusSpinText");
 const rewardTable = document.getElementById("rewardTable");
 const insightsContent = document.getElementById("insightsContent");
 const historyList = document.getElementById("historyList");
@@ -62,16 +124,31 @@ const addCatBtn = document.getElementById("addCatBtn");
 const catError = document.getElementById("catError");
 const catUnusedSummary = document.getElementById("catUnusedSummary");
 
+const spinReasonsList = document.getElementById("spinReasonsList");
+const manageSpinReasonsBtn = document.getElementById("manageSpinReasonsBtn");
+const spinReasonsModal = document.getElementById("spinReasonsModal");
+const spinReasonsModalClose = document.getElementById("spinReasonsModalClose");
+const spinReasonsManageList = document.getElementById("spinReasonsManageList");
+const newSpinReasonLabel = document.getElementById("newSpinReasonLabel");
+const newSpinReasonPeriod = document.getElementById("newSpinReasonPeriod");
+const addSpinReasonBtn = document.getElementById("addSpinReasonBtn");
+const spinReasonsError = document.getElementById("spinReasonsError");
+
 const pinModal = document.getElementById("pinModal");
 const pinModalTitle = document.getElementById("pinModalTitle");
+const pinSub = document.getElementById("pinSub");
 const pinForm = document.getElementById("pinForm");
 const pinInput = document.getElementById("pinInput");
+const pinIconsGrid = document.getElementById("pinIconsGrid");
 const pinError = document.getElementById("pinError");
 const pinCancelBtn = document.getElementById("pinCancelBtn");
 
 const settingsModal = document.getElementById("settingsModal");
 const settingsModalClose = document.getElementById("settingsModalClose");
 const pinProtectionToggle = document.getElementById("pinProtectionToggle");
+const spinSoundPresetSelect = document.getElementById("spinSoundPresetSelect");
+const spinDurationSlider = document.getElementById("spinDurationSlider");
+const spinDurationValue = document.getElementById("spinDurationValue");
 const avatarList = document.getElementById("avatarList");
 const resetHistoryBtn = document.getElementById("resetHistoryBtn");
 
@@ -87,7 +164,10 @@ let reasonsType = "earn";
 let insights = [];
 let selectedKidId = null;
 let mode = "quick";
+let tableEditMode = false; // View Mode is the default; Table view only
 let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
+let parentAuthMethod = "pin"; // "pin" or "icons" - which the family has chosen, refreshed each loadState()
+let pinSelectedIcons = [];
 
 // --- Confirm modal -----------------------------------------------------
 
@@ -122,17 +202,60 @@ function pinProtectionOn() {
   return localStorage.getItem(PIN_PROTECTION_KEY) !== "0"; // on by default
 }
 
+// Migrates the old on/off boolean ("0"/"1") to a preset name - anything
+// already stored as "0" becomes "off", "1" or unset becomes the default
+// "chimes" preset (the original sound), any valid preset name (including
+// "off" itself) passes through unchanged.
+function spinSoundPreset() {
+  const raw = localStorage.getItem(SPIN_SOUND_KEY);
+  // Object.hasOwn (not `in`) - `in` walks the prototype chain, so a stored
+  // value like "toString" would otherwise pass as a "valid" preset name.
+  if (raw === "off" || Object.hasOwn(SPIN_SOUND_PRESETS, raw || "")) return raw;
+  return raw === "0" ? "off" : "chimes";
+}
+
+function getSpinDurationSeconds() {
+  const raw = localStorage.getItem(SPIN_DURATION_KEY);
+  if (raw === null) return SPIN_DURATION_DEFAULT; // Number(null) is 0, not NaN - handle "never set" explicitly
+  const stored = Number(raw);
+  if (!Number.isFinite(stored)) return SPIN_DURATION_DEFAULT;
+  return Math.min(SPIN_DURATION_MAX, Math.max(SPIN_DURATION_MIN, stored));
+}
+
 function requirePin(title, run) {
   if (!pinProtectionOn() || Date.now() < pinUnlockedUntil) {
     run();
     return;
   }
+  const usingIcons = parentAuthMethod === "icons";
   pinModalTitle.textContent = title;
+  pinSub.textContent = usingIcons ? "Pick the 3 parent icons (any order)." : "A parent's 4-digit PIN is needed for this.";
   pinError.classList.add("hidden");
-  pinInput.value = "";
+  pinForm.classList.toggle("hidden", usingIcons);
+  pinIconsGrid.classList.toggle("hidden", !usingIcons);
+  if (usingIcons) {
+    pinSelectedIcons = [];
+    renderPinIconsGrid();
+  } else {
+    pinInput.value = "";
+    setTimeout(() => pinInput.focus(), 50);
+  }
   pinModal.classList.remove("hidden");
-  setTimeout(() => pinInput.focus(), 50);
   pinResolve = run;
+}
+
+// Shared by both methods - a successful check unlocks for PIN_UNLOCK_MS and
+// runs whatever action was waiting; a failed one reports the error but
+// leaves the modal open so the parent can try again.
+async function submitParentSecret(payload) {
+  const res = await callApi("verify_pin", { token, ...payload });
+  if (!res.ok) return false;
+  pinUnlockedUntil = Date.now() + PIN_UNLOCK_MS;
+  pinModal.classList.add("hidden");
+  const run = pinResolve;
+  pinResolve = null;
+  if (run) run();
+  return true;
 }
 
 pinForm.addEventListener("submit", async (e) => {
@@ -141,32 +264,103 @@ pinForm.addEventListener("submit", async (e) => {
   if (!pin) return;
   const btn = pinForm.querySelector(".pinSubmit");
   btn.disabled = true;
-  const res = await callApi("verify_pin", { token, pin });
+  const ok = await submitParentSecret({ pin });
   btn.disabled = false;
-  if (!res.ok) {
+  if (!ok) {
     pinError.textContent = "Wrong PIN. Try again.";
     pinError.classList.remove("hidden");
     pinInput.value = "";
     pinInput.focus();
+  }
+});
+
+function shuffledIconSet() {
+  const arr = [...PARENT_ICON_SET];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function renderPinIconsGrid() {
+  pinIconsGrid.innerHTML = "";
+  shuffledIconSet().forEach((icon) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.id = icon.id;
+    btn.textContent = icon.emoji;
+    btn.classList.toggle("selected", pinSelectedIcons.includes(icon.id));
+    btn.addEventListener("click", () => onPinIconTap(icon.id));
+    pinIconsGrid.appendChild(btn);
+  });
+}
+
+async function onPinIconTap(iconId) {
+  pinError.classList.add("hidden");
+  if (pinSelectedIcons.includes(iconId)) {
+    pinSelectedIcons = pinSelectedIcons.filter((id) => id !== iconId);
+    renderPinIconsGrid();
     return;
   }
-  pinUnlockedUntil = Date.now() + PIN_UNLOCK_MS;
-  pinModal.classList.add("hidden");
-  const run = pinResolve;
-  pinResolve = null;
-  if (run) run();
-});
+  if (pinSelectedIcons.length >= 3) return; // ignore a 4th tap rather than replacing one - keeps the gesture simple
+  pinSelectedIcons = [...pinSelectedIcons, iconId];
+  if (pinSelectedIcons.length < 3) {
+    renderPinIconsGrid();
+    return;
+  }
+  // Third icon picked - auto-submit, no separate "unlock" tap needed.
+  const ok = await submitParentSecret({ icons: pinSelectedIcons });
+  if (!ok) {
+    pinError.textContent = "Not quite. Try again.";
+    pinError.classList.remove("hidden");
+    pinSelectedIcons = [];
+    renderPinIconsGrid();
+    pinIconsGrid.classList.remove("shake");
+    requestAnimationFrame(() => pinIconsGrid.classList.add("shake"));
+  }
+}
 
 pinCancelBtn.addEventListener("click", () => {
   pinModal.classList.add("hidden");
   pinResolve = null;
+  pinSelectedIcons = [];
+});
+
+// --- Table View Mode / Edit Mode ------------------------------------------
+// View Mode (default) hides the +/- controls so the table reads cleanly;
+// Edit Mode brings them back. Purely a display toggle - every tap still
+// saves immediately either way, there's no separate "save" step.
+
+editModeBtn.addEventListener("click", () => {
+  tableEditMode = !tableEditMode;
+  editModeBtn.textContent = tableEditMode ? "Done" : "Edit";
+  editModeBtn.classList.toggle("active", tableEditMode);
+  editingBadge.classList.toggle("hidden", !tableEditMode);
+  renderTable();
+});
+
+// --- Overflow menu ---------------------------------------------------------
+// Everything that isn't Edit/Done or the menu button itself: Kid View,
+// Settings, dark mode, and the two category/reason management screens.
+
+menuBtn.addEventListener("click", () => {
+  menuDropdown.classList.toggle("hidden");
+});
+menuDropdown.addEventListener("click", (e) => {
+  if (e.target.closest("button")) menuDropdown.classList.add("hidden");
+});
+document.addEventListener("click", (e) => {
+  if (!menuDropdown.classList.contains("hidden") && !menuDropdown.contains(e.target) && e.target !== menuBtn) {
+    menuDropdown.classList.add("hidden");
+  }
 });
 
 // --- Dark mode -----------------------------------------------------------
 
 function applyDarkMode(on) {
   document.documentElement.classList.toggle("dark", on);
-  darkModeBtn.textContent = on ? "☀️" : "🌙";
+  darkModeIcon.textContent = on ? "☀️" : "🌙";
 }
 applyDarkMode(localStorage.getItem(DARK_MODE_KEY) === "1");
 darkModeBtn.addEventListener("click", () => {
@@ -214,9 +408,10 @@ async function enterApp() {
 // --- Data loading -----------------------------------------------------
 
 async function loadState() {
-  const [stateRes, insightsRes] = await Promise.all([
+  const [stateRes, insightsRes, authRes] = await Promise.all([
     callApi("get_reward_state", { token }),
     callApi("get_reward_insights", { token }),
+    callApi("get_family_auth_method", { token }),
   ]);
   if (!stateRes.ok) {
     if (stateRes.error === "session_expired") {
@@ -228,6 +423,7 @@ async function loadState() {
   }
   state = stateRes.data;
   insights = insightsRes.ok ? insightsRes.data.insights : [];
+  if (authRes.ok) parentAuthMethod = authRes.data.method;
   if (!selectedKidId || !state.kids.some((k) => k.id === selectedKidId)) {
     selectedKidId = state.kids[0]?.id || null;
   }
@@ -253,20 +449,28 @@ function totalFor(kidId) {
 // --- Rendering -----------------------------------------------------
 
 function renderAll() {
+  updateHeaderForMode();
   renderKidPicker();
+  renderActiveKidBanner();
   renderRewardRows();
+  renderWheel();
+  renderBonusSpinRow();
+  renderSpinReasonsList();
   renderTable();
   renderInsights();
   renderHistory();
 }
 
+// No per-kid total here (deliberately) - it's still visible in Table view's
+// columns and the Insights tab, so the compact picker doesn't need to
+// duplicate it, keeping each chip (and the header row) as small as possible.
 function renderKidPicker() {
   kidPickerRow.innerHTML = "";
   state.kids.forEach((kid) => {
     const btn = document.createElement("button");
     btn.className = "kidChip" + (kid.id === selectedKidId ? " selected" : "");
     btn.style.setProperty("--kid-colour", kidColour(kid.id));
-    btn.innerHTML = `<span class="kidChipAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span><span class="kidChipTotal">${totalFor(kid.id)}</span>`;
+    btn.innerHTML = `<span class="kidChipAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span>`;
     btn.addEventListener("click", () => {
       selectedKidId = kid.id;
       renderAll();
@@ -280,27 +484,43 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
     mode = btn.dataset.mode;
     modeSwitch.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b === btn));
     quickView.classList.toggle("hidden", mode !== "quick");
+    spinView.classList.toggle("hidden", mode !== "spin");
     tableView.classList.toggle("hidden", mode !== "table");
     insightsView.classList.toggle("hidden", mode !== "insights");
     historyView.classList.toggle("hidden", mode !== "history");
+    renderActiveKidBanner();
+    updateHeaderForMode();
+    // wheel.clientWidth reads 0 while #spinView has display:none, so any
+    // renderWheel() that ran while this tab was hidden positioned the
+    // wedge labels using the 300px fallback - re-render now that the
+    // section is actually visible and its real size can be measured.
+    if (mode === "spin") renderWheel();
   });
 });
 
+// The sticky app bar's kid picker only makes sense for Quick Tap/Spin
+// (one active kid at a time); Table view shows every kid as its own
+// column instead, so it gets Edit/Done there rather than a kid picker.
+function updateHeaderForMode() {
+  kidPickerRow.classList.toggle("hidden", mode !== "quick" && mode !== "spin");
+  editModeBtn.classList.toggle("hidden", mode !== "table");
+}
+
+// Shared by Quick Tap and Spin - both act on selectedKidId, so both show
+// "who this affects" the same way. Hidden for Table/Insights/History,
+// which aren't single-kid-at-a-time interactions.
 function renderActiveKidBanner() {
   const kid = state.kids.find((k) => k.id === selectedKidId);
-  quickView.style.setProperty("--kid-colour", kid ? kidColour(kid.id) : "#888");
-  if (!kid) {
-    activeKidBanner.classList.add("hidden");
-    return;
-  }
-  activeKidBanner.classList.remove("hidden");
-  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> Now tapping rewards for <strong>${escapeHtml(kid.name)}</strong>`;
+  appEl.style.setProperty("--kid-colour", kid ? kidColour(kid.id) : "#888");
+  activeKidBanner.classList.toggle("hidden", !kid || (mode !== "quick" && mode !== "spin"));
+  if (!kid) return;
+  const verb = mode === "spin" ? "Spinning for" : "Now tapping rewards for";
+  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> ${verb} <strong>${escapeHtml(kid.name)}</strong>`;
 }
 
 // Each row has its own +/- so a tap is one click instead of toggling an
 // Earn/Spend mode first, then tapping the category.
 function renderRewardRows() {
-  renderActiveKidBanner();
   tileGrid.innerHTML = "";
   if (!selectedKidId) return;
   const kidId = selectedKidId;
@@ -321,6 +541,247 @@ function renderRewardRows() {
   });
 }
 
+// --- Spin wheel: one wedge per reward category, coloured the same as
+// everywhere else. Landing logs a real earn exactly like tapping + does -
+// except landing on "Spin twice" (the seeded default category, meaning
+// "spin the wheel two more times") triggers two bonus spins instead of a
+// literal +1 tally entry for it, since that's what it actually represents.
+let wheelRotation = 0;
+let spinning = false;
+let winningCategoryId = null;
+let wheelWedges = []; // [{ cat, start, end }] in degrees - kept in sync with the rendered wheel for weighted landing
+const MAX_SPINS_PER_ROUND = 25; // safety cap against a runaway chain (e.g. every category renamed to "Spin twice")
+
+// --- Spin sound - synthesized with Web Audio, no sound files needed. A
+// series of ticks that spread out over the spin (like a wheel clicking
+// past pegs, slowing down), then a two-note chime on landing. ---------
+
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(ctx, freq, startTime, duration, type, peakGain) {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(peakGain, startTime + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration);
+}
+
+function playSpinTicks(durationSeconds) {
+  const preset = SPIN_SOUND_PRESETS[spinSoundPreset()];
+  if (!preset) return; // "off"
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  const tickCount = Math.round(10 + durationSeconds * 4); // more ticks for a longer spin
+  for (let i = 0; i < tickCount; i++) {
+    const t = i / tickCount;
+    const eased = 1 - (1 - t) * (1 - t); // spreads ticks out near the end, matching the wheel's own deceleration
+    playTone(ctx, preset.tick.freq, now + eased * durationSeconds, 0.04, preset.tick.type, preset.tick.gain);
+  }
+}
+
+function playLandingChime() {
+  const preset = SPIN_SOUND_PRESETS[spinSoundPreset()];
+  if (!preset) return; // "off"
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  preset.landing.forEach((tone) => playTone(ctx, tone.freq, now + tone.delay, tone.dur, tone.type, tone.gain));
+}
+
+// Wedge width is proportional to spin_weight, so a plain uniform-random
+// landing angle is already correctly weighted - no separate weighted-pick
+// step needed, the geometry does it.
+function renderWheel() {
+  const cats = state.categories;
+  wheelLegend.innerHTML = "";
+  wheel.querySelectorAll(".wheelLabel").forEach((el) => el.remove());
+  wheelWedges = [];
+  if (!cats.length) {
+    wheel.style.background = "var(--line)";
+    spinBtn.disabled = true;
+    return;
+  }
+  const totalWeight = cats.reduce((sum, cat) => sum + (cat.spin_weight || 1), 0);
+  const stops = [];
+  let angle = 0;
+  cats.forEach((cat) => {
+    const span = ((cat.spin_weight || 1) / totalWeight) * 360;
+    stops.push(`${cat.color} ${angle}deg ${angle + span}deg`);
+    wheelWedges.push({ cat, start: angle, end: angle + span });
+    angle += span;
+  });
+  wheel.style.background = `conic-gradient(${stops.join(", ")})`;
+
+  // Labels are children of #wheel itself, so they rotate together with it
+  // during a spin (no separate animation to keep in sync) - positioned
+  // radially at each wedge's middle angle, at ~62% of the wheel's radius.
+  // Computed in JS (not a CSS percentage) since translate() on a
+  // top:50%/left:50% element is relative to the label's own box, not the
+  // wheel's - and .wheelWrap's size is itself responsive (min(320px, 88vw)).
+  const wheelRadiusPx = (wheel.clientWidth || 300) / 2;
+  const labelRadiusPx = wheelRadiusPx * 0.62;
+  cats.forEach((cat, i) => {
+    const wedge = wheelWedges[i];
+    const midAngle = (wedge.start + wedge.end) / 2;
+    const label = document.createElement("span");
+    label.className = "wheelLabel";
+    label.textContent = cat.label;
+    label.style.transform = `rotate(${midAngle}deg) translateY(-${labelRadiusPx}px) rotate(${-midAngle}deg) translate(-50%, -50%)`;
+    wheel.appendChild(label);
+  });
+
+  cats.forEach((cat) => {
+    const item = document.createElement("span");
+    item.className = "wheelLegendItem" + (cat.id === winningCategoryId ? " winning" : "");
+    item.dataset.cat = cat.id;
+    item.innerHTML = `<span class="catSwatch" style="background:${cat.color}"></span>${escapeHtml(cat.label)}`;
+    wheelLegend.appendChild(item);
+  });
+  spinBtn.disabled = !selectedKidId || spinning;
+  spinBtn.classList.toggle("hidden", spinning);
+}
+
+spinBtn.addEventListener("click", () => spin());
+
+function renderBonusSpinRow() {
+  const kid = state.kids.find((k) => k.id === selectedKidId);
+  const count = kid?.bonus_spins || 0;
+  bonusSpinRow.classList.toggle("hidden", count === 0);
+  bonusSpinText.textContent = `${count} bonus spin${count === 1 ? "" : "s"} available`;
+}
+
+const SPIN_REASON_PERIOD_LABEL = { daily: "once a day", weekly: "once a week", monthly: "once a month" };
+
+// The "tick yes" list for the currently selected kid - a reason already
+// used this period is greyed out rather than hidden, so a parent can still
+// see it's configured and when it'll next be available.
+function renderSpinReasonsList() {
+  spinReasonsList.innerHTML = "";
+  const reasons = state.spin_reasons || [];
+  if (!reasons.length || !selectedKidId) return;
+  const availability = state.spin_credit_availability?.[selectedKidId] || {};
+  reasons.forEach((reason) => {
+    const available = availability[reason.id] !== false;
+    const row = document.createElement("div");
+    row.className = "spinReasonRow";
+    row.innerHTML = `
+      <div class="spinReasonInfo">
+        <span class="spinReasonLabel">${escapeHtml(reason.label)}</span>
+        <span class="spinReasonPeriod">${SPIN_REASON_PERIOD_LABEL[reason.period] || "once a week"}</span>
+      </div>
+      <button type="button" class="spinReasonGrantBtn" data-id="${reason.id}" ${available ? "" : "disabled"}>${available ? "Yes!" : "Used"}</button>
+    `;
+    spinReasonsList.appendChild(row);
+  });
+  spinReasonsList.querySelectorAll(".spinReasonGrantBtn:not(:disabled)").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const res = await callApi("grant_spin_credit", { token, kid_id: selectedKidId, reason_id: btn.dataset.id });
+      if (!res.ok) {
+        // A 409 (already_granted_this_period) means another device or app
+        // granted this exact reason since our last loadState() - resync to
+        // the real "Used" state instead of re-enabling a button that will
+        // just 409 again on retry.
+        if (res.error === "already_granted_this_period") {
+          showErrorToast("Someone already used that one this period.");
+          await loadState();
+        } else {
+          showErrorToast("Couldn't grant that spin - try again.");
+          btn.disabled = false;
+        }
+        return;
+      }
+      await loadState();
+    });
+  });
+}
+
+async function spin() {
+  if (spinning || !selectedKidId) return;
+  const kidId = selectedKidId;
+  spinning = true;
+  spinBtn.disabled = true;
+  spinBtn.classList.add("hidden");
+  winningCategoryId = null;
+  spinResult.classList.add("hidden");
+
+  // Bonus spins earned from named reasons (grant_spin_credit) are
+  // consumed as extra automatic spins chained onto this one - same
+  // mechanic the "Spin twice" category already uses, just seeded from a
+  // server-tracked count instead of a wheel result.
+  const consumeRes = await callApi("consume_bonus_spins", { token, kid_id: kidId });
+  const bonusSpins = consumeRes.ok ? consumeRes.data.consumed : 0;
+  if (bonusSpins > 0) {
+    const kid = state.kids.find((k) => k.id === kidId);
+    if (kid) kid.bonus_spins = 0;
+    renderBonusSpinRow();
+  }
+
+  let spinsLeft = 1 + bonusSpins;
+  let spinsDone = 0;
+  while (spinsLeft > 0 && spinsDone < MAX_SPINS_PER_ROUND) {
+    spinsLeft -= 1;
+    spinsDone += 1;
+    const cat = await runOneSpin();
+    if (!cat) break;
+    if (cat.label.trim().toLowerCase() === "spin twice") {
+      spinResult.textContent = `🎡 ${cat.label} - two more spins coming up!`;
+      spinResult.classList.remove("hidden");
+      spinsLeft += 2;
+      await new Promise((r) => setTimeout(r, 700));
+    } else {
+      spinResult.textContent = `🎉 ${kidName(kidId)} won ${cat.label}!`;
+      spinResult.classList.remove("hidden");
+      await tapReward(kidId, cat.id, "earn", `🎡 Spinner: ${cat.label}`);
+      if (spinsLeft > 0) await new Promise((r) => setTimeout(r, 900)); // let the result be read before the next bonus spin
+    }
+  }
+
+  spinning = false;
+  spinBtn.disabled = !selectedKidId;
+  spinBtn.classList.remove("hidden");
+}
+
+// One physical wheel rotation - always spins forward from wherever it
+// currently sits (never snaps back), lands under the fixed top pointer.
+async function runOneSpin() {
+  if (!wheelWedges.length) return null;
+  const targetAngle = Math.random() * 360; // uniform - wedge width already encodes weight, so this is correctly weighted by construction
+  const wedge = wheelWedges.find((w) => targetAngle >= w.start && targetAngle < w.end) || wheelWedges[wheelWedges.length - 1];
+  const cat = wedge.cat;
+
+  const base = ((360 - targetAngle) % 360 + 360) % 360;
+  const current = ((wheelRotation % 360) + 360) % 360;
+  const forwardDelta = ((base - current) % 360 + 360) % 360;
+  wheelRotation += forwardDelta + 4 * 360;
+  const duration = getSpinDurationSeconds();
+  wheel.style.transitionDuration = `${duration}s`;
+  wheel.style.transform = `rotate(${wheelRotation}deg)`;
+  playSpinTicks(duration);
+
+  await new Promise((resolve) => {
+    const onEnd = () => {
+      wheel.removeEventListener("transitionend", onEnd);
+      resolve();
+    };
+    wheel.addEventListener("transitionend", onEnd);
+  });
+
+  winningCategoryId = cat.id;
+  wheelLegend.querySelectorAll(".wheelLegendItem").forEach((el) => el.classList.toggle("winning", el.dataset.cat === cat.id));
+  playLandingChime();
+  return cat;
+}
+
 function renderTable() {
   if (!state.kids.length) {
     rewardTable.innerHTML = "";
@@ -335,14 +796,17 @@ function renderTable() {
     html += `<tr><td><span class="catSwatch" style="background:${cat.color}"></span>${escapeHtml(cat.label)}</td>`;
     state.kids.forEach((kid) => {
       const cell = state.balances[kid.id]?.[cat.id] || { earned: 0, spent: 0, balance: 0 };
-      html += `<td>
-        <div class="cellButtons">
-          <button type="button" class="cellMinus" data-kid="${kid.id}" data-cat="${cat.id}" data-type="spend">−</button>
-          <span class="cellBalance">${cell.balance}</span>
-          <button type="button" class="cellPlus" data-kid="${kid.id}" data-cat="${cat.id}" data-type="earn">+</button>
-        </div>
-        <div class="cellSub">earned ${cell.earned} · spent ${cell.spent}</div>
-      </td>`;
+      // View Mode (default) shows just the number - Edit Mode adds the
+      // +/- controls back in. Same cell data either way, just less to look
+      // at when the parent's only reading the table, not tapping it.
+      const balanceHtml = tableEditMode
+        ? `<div class="cellButtons">
+            <button type="button" class="cellMinus" data-kid="${kid.id}" data-cat="${cat.id}" data-type="spend">−</button>
+            <span class="cellBalance">${cell.balance}</span>
+            <button type="button" class="cellPlus" data-kid="${kid.id}" data-cat="${cat.id}" data-type="earn">+</button>
+          </div>`
+        : `<div class="cellBalance">${cell.balance}</div>`;
+      html += `<td>${balanceHtml}<div class="cellSub">earned ${cell.earned} · spent ${cell.spent}</div></td>`;
     });
     html += "</tr>";
   });
@@ -453,7 +917,15 @@ function renderHistory() {
       const ok = await askConfirm("Undo this entry?");
       if (!ok) return;
       btn.disabled = true;
-      await callApi("undo_reward_log", { token, log_id: Number(btn.dataset.log) });
+      const res = await callApi("undo_reward_log", { token, log_id: Number(btn.dataset.log) });
+      if (!res.ok) {
+        // Previously silent on failure - the button just stayed disabled
+        // forever with no feedback, which looks identical to "the button
+        // doesn't work" no matter what the actual server-side cause was.
+        btn.disabled = false;
+        showErrorToast("Couldn't undo that entry - try again.");
+        return;
+      }
       await loadState();
     });
   });
@@ -468,7 +940,7 @@ function renderHistory() {
 // (also picking up anything another device did) without blocking the
 // visual update. Undo (5s toast, or History any time after) is the
 // safety net that replaces the PIN as protection against a mis-tap.
-async function tapReward(kidId, categoryId, type) {
+async function tapReward(kidId, categoryId, type, note = "") {
   const forKid = (state.balances[kidId] ??= {});
   const cell = (forKid[categoryId] ??= { earned: 0, spent: 0, balance: 0 });
   if (type === "earn") {
@@ -479,7 +951,7 @@ async function tapReward(kidId, categoryId, type) {
     cell.balance -= 1;
   }
   renderAll();
-  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note: "" });
+  const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note });
   if (res.ok && res.data?.entry) showUndoToast(res.data.entry, kidId, categoryId, type);
   loadState();
 }
@@ -564,9 +1036,24 @@ function showUndoToast(entry, kidId, categoryId, type) {
   toast.querySelector(".toastUndoBtn").addEventListener("click", async () => {
     clearTimeout(timer);
     remove();
-    await callApi("undo_reward_log", { token, log_id: entry.id });
+    const res = await callApi("undo_reward_log", { token, log_id: entry.id });
+    if (!res.ok) {
+      showErrorToast("Couldn't undo that entry - try again.");
+      return;
+    }
     await loadState();
   });
+  toastContainer.appendChild(toast);
+}
+
+// Same visual family as the undo toast, minus the undo button and countdown
+// bar - a short-lived, self-dismissing way to surface a failure instead of
+// letting an action silently do nothing.
+function showErrorToast(message) {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.innerHTML = `<div>${escapeHtml(message)}</div>`;
+  setTimeout(() => toast.remove(), UNDO_TOAST_MS);
   toastContainer.appendChild(toast);
 }
 
@@ -601,9 +1088,13 @@ function renderCatList() {
     const unused = categoryUsageTotal(cat.id) === 0;
     const row = document.createElement("div");
     row.className = "catRow";
+    const weight = cat.spin_weight || 1;
     row.innerHTML = `
       <input type="color" value="${cat.color}" data-id="${cat.id}" class="catColorInput" />
       <input type="text" value="${escapeAttr(cat.label)}" data-id="${cat.id}" class="catLabelInput" maxlength="60" />
+      <select class="catWeightSelect" data-id="${cat.id}" title="Spin wheel odds - higher means more likely to land on this">
+        ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}"${n === weight ? " selected" : ""}>${n}× spin odds</option>`).join("")}
+      </select>
       ${unused ? '<span class="catUnusedBadge" title="No kid has earned or spent this reward yet">Unused</span>' : ""}
       <button type="button" class="catDeleteBtn" data-id="${cat.id}">🗑</button>
     `;
@@ -612,6 +1103,9 @@ function renderCatList() {
 
   catList.querySelectorAll(".catColorInput").forEach((input) => {
     input.addEventListener("change", () => updateCategory(input.dataset.id, { color: input.value }));
+  });
+  catList.querySelectorAll(".catWeightSelect").forEach((select) => {
+    select.addEventListener("change", () => updateCategory(select.dataset.id, { spin_weight: Number(select.value) }));
   });
   catList.querySelectorAll(".catLabelInput").forEach((input) => {
     input.addEventListener("change", () => {
@@ -652,10 +1146,102 @@ addCatBtn.addEventListener("click", async () => {
   renderCatList();
 });
 
+// --- Manage bonus spin reasons ------------------------------------------
+
+manageSpinReasonsBtn.addEventListener("click", () => {
+  spinReasonsError.classList.add("hidden");
+  renderSpinReasonsManageList();
+  spinReasonsModal.classList.remove("hidden");
+});
+spinReasonsModalClose.addEventListener("click", () => spinReasonsModal.classList.add("hidden"));
+
+function renderSpinReasonsManageList() {
+  spinReasonsManageList.innerHTML = "";
+  (state.spin_reasons || []).forEach((reason) => {
+    const row = document.createElement("div");
+    row.className = "catRow";
+    // A trigger_key-linked reason (e.g. Bedroom Reset's AI score) is looked
+    // up by that key, not by id - deleting it would silently and
+    // permanently sever the automated grant with no way to relink it here,
+    // so its delete button is replaced with an explanatory lock instead.
+    const deleteControl = reason.trigger_key
+      ? `<span class="catUnusedBadge" title="Linked to another app (e.g. Bedroom Reset) - can't be deleted here">🔒 Linked</span>`
+      : `<button type="button" class="catDeleteBtn" data-id="${reason.id}">🗑</button>`;
+    row.innerHTML = `
+      <input type="text" value="${escapeAttr(reason.label)}" data-id="${reason.id}" class="catLabelInput" maxlength="60" />
+      <select class="catWeightSelect" data-id="${reason.id}" title="How often this reason can grant a bonus spin">
+        ${["daily", "weekly", "monthly"]
+          .map((p) => `<option value="${p}"${p === reason.period ? " selected" : ""}>${p[0].toUpperCase() + p.slice(1)}</option>`)
+          .join("")}
+      </select>
+      ${deleteControl}
+    `;
+    spinReasonsManageList.appendChild(row);
+  });
+
+  spinReasonsManageList.querySelectorAll(".catLabelInput").forEach((input) => {
+    input.addEventListener("change", () => {
+      const label = input.value.trim();
+      if (label) updateSpinReason(input.dataset.id, { label });
+    });
+  });
+  spinReasonsManageList.querySelectorAll(".catWeightSelect").forEach((select) => {
+    select.addEventListener("change", () => updateSpinReason(select.dataset.id, { period: select.value }));
+  });
+  spinReasonsManageList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      requirePin("PIN needed to delete a bonus spin reason", async () => {
+        const ok = await askConfirm("Delete this bonus spin reason?");
+        if (!ok) return;
+        const res = await callApi("manage_spin_reasons", { token, itemAction: "delete", item_id: btn.dataset.id });
+        if (!res.ok) {
+          showErrorToast("Couldn't delete that reason - try again.");
+          return;
+        }
+        await loadState();
+        renderSpinReasonsManageList();
+      });
+    });
+  });
+}
+
+async function updateSpinReason(id, patch) {
+  const res = await callApi("manage_spin_reasons", { token, itemAction: "update", item_id: id, ...patch });
+  if (!res.ok) {
+    showErrorToast("Couldn't update that reason - try again.");
+    renderSpinReasonsManageList(); // revert the input back to the saved value
+    return;
+  }
+  await loadState();
+  renderSpinReasonsManageList();
+}
+
+addSpinReasonBtn.addEventListener("click", async () => {
+  const label = newSpinReasonLabel.value.trim();
+  spinReasonsError.classList.add("hidden");
+  if (!label) {
+    spinReasonsError.textContent = "Enter a reason first.";
+    spinReasonsError.classList.remove("hidden");
+    return;
+  }
+  const res = await callApi("manage_spin_reasons", { token, itemAction: "add", label, period: newSpinReasonPeriod.value });
+  if (!res.ok) {
+    spinReasonsError.textContent = "Couldn't add that reason - try again.";
+    spinReasonsError.classList.remove("hidden");
+    return;
+  }
+  newSpinReasonLabel.value = "";
+  await loadState();
+  renderSpinReasonsManageList();
+});
+
 // --- Settings (PIN protection toggle, kid avatars, reset history) ---------
 
 settingsBtn.addEventListener("click", () => {
   pinProtectionToggle.checked = pinProtectionOn();
+  spinSoundPresetSelect.value = spinSoundPreset();
+  spinDurationSlider.value = String(getSpinDurationSeconds());
+  spinDurationValue.textContent = getSpinDurationSeconds();
   renderAvatarList();
   settingsModal.classList.remove("hidden");
 });
@@ -663,6 +1249,15 @@ settingsModalClose.addEventListener("click", () => settingsModal.classList.add("
 
 pinProtectionToggle.addEventListener("change", () => {
   localStorage.setItem(PIN_PROTECTION_KEY, pinProtectionToggle.checked ? "1" : "0");
+});
+
+spinSoundPresetSelect.addEventListener("change", () => {
+  localStorage.setItem(SPIN_SOUND_KEY, spinSoundPresetSelect.value);
+});
+
+spinDurationSlider.addEventListener("input", () => {
+  localStorage.setItem(SPIN_DURATION_KEY, spinDurationSlider.value);
+  spinDurationValue.textContent = spinDurationSlider.value;
 });
 
 function renderAvatarList() {

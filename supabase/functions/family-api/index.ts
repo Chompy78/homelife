@@ -35,6 +35,45 @@ const POINTS = {
 // A parent can override it afterwards (rename with a `color`).
 const KID_THEME_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
 
+// Kid-to-kid trade verification: a lightweight stand-in for a PIN, aimed at
+// kids who might not read/type numbers confidently yet. A kid picks one of
+// these as their own secret picture (kids.verify_image); accepting an
+// incoming trade means picking it again out of a shuffled 4x4 grid of
+// decoys from the same pool. Wrong picks lock accepting out for a while -
+// same "friction layer, not a real security boundary" posture as the
+// parent PIN elsewhere in this app (see reward-tracker's own PIN docs).
+const VERIFY_IMAGE_POOL = ["🐸", "🦄", "🍕", "🚗", "⚽", "🎈", "🐶", "🌈", "🍦", "🎨", "🐱", "🚀", "🦋", "🍩", "🐢", "🎵"];
+const VERIFY_MAX_ATTEMPTS = 2;
+const VERIFY_LOCKOUT_MINUTES = 15;
+
+// Parent verification: a family picks one of two methods (never both at
+// once) - the original 4-digit PIN, or picking the same 3 of these 9
+// fantasy icons every time (order doesn't matter). Same "friction, not a
+// real security boundary" posture as everywhere else PIN-style checks
+// happen in this app. The icon set is a fixed public list - there's
+// nothing secret about which 9 icons exist, only which 3 a family picked.
+const PARENT_ICON_IDS = ["dragon", "castle", "crown", "potion", "treasure", "ship", "owl", "crystal", "sword"];
+
+async function verifyParentSecret(familyId: string, body: Record<string, unknown>) {
+  const { data: family } = await db
+    .from("families")
+    .select("parent_auth_method, parent_pin, parent_icons")
+    .eq("id", familyId)
+    .single();
+  if (!family) return false;
+
+  if (family.parent_auth_method === "icons") {
+    const submitted = Array.isArray(body.icons) ? body.icons.map((i: unknown) => String(i)) : [];
+    const correct = family.parent_icons || [];
+    if (submitted.length !== 3 || correct.length !== 3) return false;
+    const submittedSet = new Set(submitted);
+    if (submittedSet.size !== 3) return false; // no repeated taps counted as 3 distinct icons
+    return correct.every((icon: string) => submittedSet.has(icon));
+  }
+
+  return String(body.pin || "") === family.parent_pin;
+}
+
 const PHOTO_BUCKET = "reference-photos";
 const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
@@ -340,7 +379,7 @@ async function bedroomProgressCounts(familyId: string, kidId: string) {
 async function getRewardCategories(familyId: string) {
   const { data } = await db
     .from("family_reward_categories")
-    .select("id, label, color")
+    .select("id, label, color, spin_weight")
     .eq("family_id", familyId)
     .order("sort_order");
   return data || [];
@@ -374,6 +413,74 @@ async function getRewardBalances(familyId: string) {
     cell.balance += row.delta;
   }
   return balances;
+}
+
+// Named reasons that grant a bonus spin credit - see D-2026-07-19-spin-credit-system.
+// Same rolling-window convention as get_reward_insights's weekly/monthly
+// figures (last N days from now, not calendar-aligned).
+const SPIN_REASON_PERIOD_MS: Record<string, number> = {
+  daily: 86400000,
+  weekly: 7 * 86400000,
+  monthly: 30 * 86400000,
+};
+
+async function getSpinReasons(familyId: string) {
+  const { data } = await db
+    .from("family_spin_reasons")
+    .select("id, label, period, trigger_key")
+    .eq("family_id", familyId)
+    .order("sort_order");
+  return data || [];
+}
+
+// Per kid+reason, whether a grant is still available this period - computed
+// here rather than shipping every grant row to the client. Absence of a
+// (kid_id, reason_id) entry in the returned map means "available".
+async function getSpinCreditAvailability(familyId: string, reasons: { id: string; period: string }[]) {
+  const availability: Record<string, Record<string, boolean>> = {};
+  if (!reasons.length) return availability;
+  const periodById: Record<string, string> = Object.fromEntries(reasons.map((r) => [r.id, r.period]));
+  const { data: grants } = await db
+    .from("kid_spin_credit_grants")
+    .select("kid_id, reason_id, granted_at")
+    .eq("family_id", familyId);
+  const now = Date.now();
+  for (const grant of grants || []) {
+    const windowMs = SPIN_REASON_PERIOD_MS[periodById[grant.reason_id]] || SPIN_REASON_PERIOD_MS.weekly;
+    if (now - new Date(grant.granted_at).getTime() < windowMs) {
+      (availability[grant.kid_id] ??= {})[grant.reason_id] = false;
+    }
+  }
+  return availability;
+}
+
+// A kid can never carry more unconsumed bonus spins than the client's own
+// spin-chain safety cap (MAX_SPINS_PER_ROUND, app.js) can actually redeem
+// in one go - without this, consume_bonus_spins could hand back more spins
+// than the client will ever play, silently losing the excess.
+const MAX_BONUS_SPINS = 20;
+
+// Shared by grant_spin_credit (manual, from Reward Tracker, or automated,
+// from another app like Bedroom Reset) and the auto-approve path in
+// submit_photo_score - one code path enforces the per-period cap
+// regardless of who's asking, so it can't be bypassed by calling from a
+// different place. Returns null on success, or an error string.
+//
+// Runs as a single Postgres function (grant_spin_credit_atomic) that locks
+// the kid row for the duration of the check+insert+increment, instead of a
+// plain SELECT-then-UPDATE from here - a concurrent grant or consume for
+// the same kid used to be able to interleave with the read here and clobber
+// or lose an increment (see the 2026-07-19 code review's race-condition
+// finding). The row lock makes the whole sequence atomic per kid.
+async function grantSpinCredit(familyId: string, kidId: string, reasonId: string): Promise<string | null> {
+  const { data, error } = await db.rpc("grant_spin_credit_atomic", {
+    p_family_id: familyId,
+    p_kid_id: kidId,
+    p_reason_id: reasonId,
+    p_max: MAX_BONUS_SPINS,
+  });
+  if (error) return "not_found";
+  return data;
 }
 
 async function getPhotosWithUrls(kidId: string) {
@@ -634,8 +741,7 @@ Deno.serve(async (req) => {
         const eventType = String(body.event_type || "");
         if (!["parent_pass", "parent_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
 
-        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
-        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        if (!(await verifyParentSecret(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
 
         const emoji = eventType === "parent_star" ? "⭐" : "✅";
         const label = eventType === "parent_star" ? "Great job from a parent!" : "Passed by a parent!";
@@ -742,6 +848,20 @@ Deno.serve(async (req) => {
         if (typeof body.is_public === "boolean") patch.is_public = body.is_public;
         if (typeof body.parent_pin === "string" && /^\d{4}$/.test(body.parent_pin)) patch.parent_pin = body.parent_pin;
         if (typeof body.icon === "string" && body.icon.trim()) patch.icon = body.icon.trim().slice(0, 8);
+
+        const validIconSet = (arr: unknown): arr is string[] =>
+          Array.isArray(arr) && arr.length === 3 && new Set(arr).size === 3 && arr.every((i) => typeof i === "string" && PARENT_ICON_IDS.includes(i));
+        if (validIconSet(body.parent_icons)) patch.parent_icons = body.parent_icons;
+
+        if (typeof body.parent_auth_method === "string" && ["pin", "icons"].includes(body.parent_auth_method)) {
+          if (body.parent_auth_method === "icons" && !("parent_icons" in patch)) {
+            // Switching to icons without providing 3 in this same call - only
+            // allow it if the family already has 3 saved from before.
+            const { data: existing } = await db.from("families").select("parent_icons").eq("id", session.family_id).maybeSingle();
+            if (!validIconSet(existing?.parent_icons)) return json({ ok: false, error: "icons_not_set" }, 400);
+          }
+          patch.parent_auth_method = body.parent_auth_method;
+        }
         if (typeof body.ai_score_mode === "string" && ["off", "informational", "nudge", "auto_approve"].includes(body.ai_score_mode)) {
           patch.ai_score_mode = body.ai_score_mode;
         }
@@ -869,8 +989,8 @@ Deno.serve(async (req) => {
       case "get_reward_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: kids }, categories, balances, { data: historyRows }, notes] = await Promise.all([
-          db.from("kids").select("id, name, avatar_emoji, theme_color").eq("family_id", session.family_id).order("sort_order"),
+        const [{ data: kids }, categories, balances, { data: historyRows }, notes, spinReasons] = await Promise.all([
+          db.from("kids").select("id, name, avatar_emoji, theme_color, bonus_spins").eq("family_id", session.family_id).order("sort_order"),
           getRewardCategories(session.family_id),
           getRewardBalances(session.family_id),
           db
@@ -880,10 +1000,12 @@ Deno.serve(async (req) => {
             .order("created_at", { ascending: false })
             .limit(100),
           getRewardNotes(session.family_id),
+          getSpinReasons(session.family_id),
         ]);
+        const spinCreditAvailability = await getSpinCreditAvailability(session.family_id, spinReasons);
         return json({
           ok: true,
-          data: { kids: kids || [], categories, balances, history: historyRows || [], notes },
+          data: { kids: kids || [], categories, balances, history: historyRows || [], notes, spin_reasons: spinReasons, spin_credit_availability: spinCreditAvailability },
         });
       }
 
@@ -956,15 +1078,17 @@ Deno.serve(async (req) => {
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
         const itemAction = String(body.itemAction || "");
         const validColor = (c: unknown) => typeof c === "string" && /^#[0-9a-fA-F]{6}$/.test(c);
+        const validWeight = (w: unknown) => Number.isInteger(w) && (w as number) >= 1 && (w as number) <= 5;
 
         if (itemAction === "add") {
           const label = String(body.label || "").trim().slice(0, 60);
           if (!label) return json({ ok: false, error: "label_required" }, 400);
           const color = validColor(body.color) ? (body.color as string) : "#888888";
+          const spinWeight = validWeight(Number(body.spin_weight)) ? Number(body.spin_weight) : 1;
           const { data: existing } = await db.from("family_reward_categories").select("id").eq("family_id", session.family_id);
           const { data: item, error } = await db
             .from("family_reward_categories")
-            .insert({ family_id: session.family_id, label, color, sort_order: (existing?.length || 0) + 1 })
+            .insert({ family_id: session.family_id, label, color, spin_weight: spinWeight, sort_order: (existing?.length || 0) + 1 })
             .select()
             .single();
           if (error || !item) return json({ ok: false, error: "could_not_add" }, 500);
@@ -982,6 +1106,7 @@ Deno.serve(async (req) => {
           const patch: Record<string, unknown> = {};
           if (typeof body.label === "string" && body.label.trim()) patch.label = body.label.trim().slice(0, 60);
           if (validColor(body.color)) patch.color = body.color;
+          if (body.spin_weight !== undefined && validWeight(Number(body.spin_weight))) patch.spin_weight = Number(body.spin_weight);
           if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
           await db.from("family_reward_categories").update(patch).eq("id", item.id);
           return json({ ok: true });
@@ -1044,6 +1169,118 @@ Deno.serve(async (req) => {
         return json({ ok: false, error: "unknown_item_action" }, 400);
       }
 
+      // A family's own customizable list of named reasons that grant a
+      // bonus spin credit (once per reason's period, enforced by
+      // grantSpinCredit regardless of who calls it). Parent-only to
+      // configure - matches manage_reward_notes/manage_reward_categories.
+      case "manage_spin_reasons": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const itemAction = String(body.itemAction || "");
+        const validPeriod = (p: unknown) => typeof p === "string" && ["daily", "weekly", "monthly"].includes(p);
+
+        if (itemAction === "add") {
+          const label = String(body.label || "").trim().slice(0, 60);
+          if (!label) return json({ ok: false, error: "label_required" }, 400);
+          const period = validPeriod(body.period) ? (body.period as string) : "weekly";
+          const { data: existing } = await db.from("family_spin_reasons").select("id").eq("family_id", session.family_id);
+          const { data: item, error } = await db
+            .from("family_spin_reasons")
+            .insert({ family_id: session.family_id, label, period, sort_order: (existing?.length || 0) + 1 })
+            .select()
+            .single();
+          if (error || !item) return json({ ok: false, error: "could_not_add" }, 500);
+          return json({ ok: true, data: { item } });
+        }
+
+        if (itemAction === "update") {
+          const { data: item } = await db
+            .from("family_spin_reasons")
+            .select("id")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          const patch: Record<string, unknown> = {};
+          if (typeof body.label === "string" && body.label.trim()) patch.label = body.label.trim().slice(0, 60);
+          if (validPeriod(body.period)) patch.period = body.period;
+          if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
+          await db.from("family_spin_reasons").update(patch).eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        if (itemAction === "delete") {
+          const { data: item } = await db
+            .from("family_spin_reasons")
+            .select("id, trigger_key")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          // A trigger_key-linked reason (e.g. Bedroom Reset's AI room-score
+          // grant) is looked up by that key, not by id - deleting it would
+          // silently and permanently sever the automated grant with no way
+          // to relink it from this UI. Block it instead of losing the link.
+          if (item.trigger_key) return json({ ok: false, error: "reason_linked_to_another_app" }, 400);
+          await db.from("family_spin_reasons").delete().eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        return json({ ok: false, error: "unknown_item_action" }, 400);
+      }
+
+      // Generic - callable by a parent session (any kid in their family,
+      // e.g. ticking a reason "yes" in Reward Tracker) or a kid session
+      // (self only, e.g. Bedroom Reset's own kid device automatically
+      // granting one on an AI score success). Both paths share the same
+      // grantSpinCredit helper, so the per-period cap applies identically
+      // regardless of who's calling.
+      case "grant_spin_credit": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const kidId = String(body.kid_id || "");
+        if (session.role === "kid" && kidId !== session.kid_id) return json({ ok: false, error: "forbidden" }, 403);
+
+        // Accepts either the internal reason_id or a stable trigger_key -
+        // the latter is what actually makes this "generic" for a real
+        // external caller (a future app, not just Bedroom Reset's in-process
+        // call), which otherwise has no way to resolve a trigger_key to an
+        // id without direct DB access.
+        let reasonId = String(body.reason_id || "");
+        if (!reasonId && typeof body.trigger_key === "string" && body.trigger_key) {
+          const { data: reason } = await db
+            .from("family_spin_reasons")
+            .select("id")
+            .eq("family_id", session.family_id)
+            .eq("trigger_key", body.trigger_key)
+            .maybeSingle();
+          if (!reason) return json({ ok: false, error: "not_found" }, 404);
+          reasonId = reason.id;
+        }
+
+        const error = await grantSpinCredit(session.family_id, kidId, reasonId);
+        if (error) return json({ ok: false, error }, error === "not_found" ? 404 : 409);
+        return json({ ok: true });
+      }
+
+      // Called right as a spin sequence starts - zeroes the kid's bonus
+      // count and reports how many there were, so the client can chain
+      // that many extra automatic spins onto the one just requested (same
+      // mechanic as landing on the "Spin twice" category, just a
+      // server-tracked count instead of a wheel result).
+      case "consume_bonus_spins": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const kidId = String(body.kid_id || "");
+        const { data: kid } = await db.from("kids").select("id").eq("id", kidId).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        // Atomic (row-locked) so a grant landing between the read and the
+        // zero-out can't be silently wiped out - see grantSpinCredit's comment.
+        const { data: consumed, error } = await db.rpc("consume_bonus_spins_atomic", { p_kid_id: kidId });
+        if (error) return json({ ok: false, error: "server_error" }, 500);
+        return json({ ok: true, data: { consumed: consumed || 0 } });
+      }
+
       // Wipes the family's whole reward ledger (categories are kept) - the
       // client gates this behind its PIN-lock UI first, same as every other
       // reward-tracker action here that only checks for a parent session:
@@ -1059,9 +1296,18 @@ Deno.serve(async (req) => {
       case "verify_pin": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
-        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
-        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        if (!(await verifyParentSecret(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
         return json({ ok: true });
+      }
+
+      // Lets a kid or parent session find out which method to render
+      // (numeric keypad vs. the 9-icon grid) before attempting a check -
+      // reveals only the method, never the PIN or which 3 icons are correct.
+      case "get_family_auth_method": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const { data: family } = await db.from("families").select("parent_auth_method").eq("id", session.family_id).single();
+        return json({ ok: true, data: { method: family?.parent_auth_method || "pin" } });
       }
 
       // Weekly/monthly earned-per-kid, all-time balance and top category -
@@ -1119,6 +1365,167 @@ Deno.serve(async (req) => {
         });
 
         return json({ ok: true, data: { insights } });
+      }
+
+      // --- Kid-to-kid trading (My Rewards) ---------------------------------
+      // A kid proposes giving up some of one reward for some of a sibling's -
+      // the sibling can accept (after picking their own secret picture out
+      // of a shuffled decoy grid) or decline. No parent step, no balance
+      // floor check - both match how every other reward-tracker action here
+      // already works (a parent can already tap Spend into negative freely).
+
+      case "get_kid_trade_state": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+
+        const [{ data: me }, { data: siblings }, categories, balances, { data: incoming }, { data: outgoing }] = await Promise.all([
+          db.from("kids").select("id, name, avatar_emoji, verify_image, verify_locked_until").eq("id", session.kid_id).single(),
+          db.from("kids").select("id, name, avatar_emoji, theme_color").eq("family_id", session.family_id).neq("id", session.kid_id).order("sort_order"),
+          getRewardCategories(session.family_id),
+          getRewardBalances(session.family_id),
+          db.from("kid_reward_trades").select("*").eq("to_kid_id", session.kid_id).eq("status", "pending").order("created_at", { ascending: false }),
+          db.from("kid_reward_trades").select("*").eq("from_kid_id", session.kid_id).eq("status", "pending").order("created_at", { ascending: false }),
+        ]);
+
+        const nameFor = (id: string) => (id === session.kid_id ? me?.name : (siblings || []).find((s) => s.id === id)?.name) || "Unknown";
+        const decorate = (t: Record<string, unknown>) => ({ ...t, from_kid_name: nameFor(t.from_kid_id as string), to_kid_name: nameFor(t.to_kid_id as string) });
+        const stillLocked = me?.verify_locked_until && new Date(me.verify_locked_until as string) > new Date();
+
+        return json({
+          ok: true,
+          data: {
+            verify_image_set: !!me?.verify_image,
+            verify_locked_until: stillLocked ? me?.verify_locked_until ?? null : null,
+            siblings: (siblings || []).map((s) => ({ ...s, balances: balances[s.id] || {} })),
+            categories,
+            my_balances: balances[session.kid_id] || {},
+            incoming_trades: (incoming || []).map(decorate),
+            outgoing_trades: (outgoing || []).map(decorate),
+          },
+        });
+      }
+
+      case "set_kid_verify_image": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        const image = String(body.image || "");
+        if (!VERIFY_IMAGE_POOL.includes(image)) return json({ ok: false, error: "bad_image" }, 400);
+        await db.from("kids").update({ verify_image: image, verify_fail_count: 0, verify_locked_until: null }).eq("id", session.kid_id);
+        return json({ ok: true });
+      }
+
+      case "propose_trade": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+
+        const toKidId = String(body.to_kid_id || "");
+        if (toKidId === session.kid_id) return json({ ok: false, error: "cant_trade_with_self" }, 400);
+        const { data: toKid } = await db.from("kids").select("id").eq("id", toKidId).eq("family_id", session.family_id).maybeSingle();
+        if (!toKid) return json({ ok: false, error: "not_found" }, 404);
+
+        const giveCategoryId = String(body.give_category_id || "");
+        const receiveCategoryId = String(body.receive_category_id || "");
+        const wantedIds = [...new Set([giveCategoryId, receiveCategoryId])];
+        const { data: cats } = await db.from("family_reward_categories").select("id").eq("family_id", session.family_id).in("id", wantedIds);
+        if (!cats || cats.length < wantedIds.length) return json({ ok: false, error: "not_found" }, 404);
+
+        const giveQty = Math.max(1, Math.min(20, Math.round(Number(body.give_qty)) || 1));
+        const receiveQty = Math.max(1, Math.min(20, Math.round(Number(body.receive_qty)) || 1));
+
+        const { data: trade, error } = await db
+          .from("kid_reward_trades")
+          .insert({
+            family_id: session.family_id,
+            from_kid_id: session.kid_id,
+            to_kid_id: toKidId,
+            give_category_id: giveCategoryId,
+            give_qty: giveQty,
+            receive_category_id: receiveCategoryId,
+            receive_qty: receiveQty,
+          })
+          .select()
+          .single();
+        if (error || !trade) return json({ ok: false, error: "could_not_add" }, 500);
+        return json({ ok: true, data: { trade } });
+      }
+
+      case "cancel_trade": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: trade } = await db
+          .from("kid_reward_trades")
+          .select("id, from_kid_id, status")
+          .eq("id", String(body.trade_id || ""))
+          .eq("family_id", session.family_id)
+          .maybeSingle();
+        if (!trade || trade.status !== "pending" || trade.from_kid_id !== session.kid_id) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_reward_trades").update({ status: "cancelled", resolved_at: new Date().toISOString() }).eq("id", trade.id);
+        return json({ ok: true });
+      }
+
+      case "respond_to_trade": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+
+        const { data: trade } = await db
+          .from("kid_reward_trades")
+          .select("*")
+          .eq("id", String(body.trade_id || ""))
+          .eq("family_id", session.family_id)
+          .maybeSingle();
+        if (!trade || trade.status !== "pending") return json({ ok: false, error: "not_found" }, 404);
+        if (trade.to_kid_id !== session.kid_id) return json({ ok: false, error: "not_your_trade" }, 403);
+
+        // Named "response", not "action" - the request body's top-level
+        // "action" field is the dispatch key ("respond_to_trade" itself);
+        // reusing that name here would collide with it client-side.
+        const tradeResponse = String(body.response || "");
+        if (tradeResponse === "decline") {
+          await db.from("kid_reward_trades").update({ status: "declined", resolved_at: new Date().toISOString() }).eq("id", trade.id);
+          return json({ ok: true, data: { status: "declined" } });
+        }
+        if (tradeResponse !== "accept") return json({ ok: false, error: "unknown_action" }, 400);
+
+        const { data: me } = await db
+          .from("kids")
+          .select("verify_image, verify_fail_count, verify_locked_until")
+          .eq("id", session.kid_id)
+          .single();
+        if (me?.verify_locked_until && new Date(me.verify_locked_until) > new Date()) {
+          return json({ ok: false, error: "locked", locked_until: me.verify_locked_until }, 403);
+        }
+        if (!me?.verify_image) return json({ ok: false, error: "verify_image_not_set" }, 400);
+
+        const image = String(body.image || "");
+        if (!VERIFY_IMAGE_POOL.includes(image)) return json({ ok: false, error: "bad_image" }, 400);
+
+        if (image !== me.verify_image) {
+          const failCount = (me.verify_fail_count || 0) + 1;
+          if (failCount >= VERIFY_MAX_ATTEMPTS) {
+            const lockedUntil = new Date(Date.now() + VERIFY_LOCKOUT_MINUTES * 60000).toISOString();
+            await db.from("kids").update({ verify_fail_count: 0, verify_locked_until: lockedUntil }).eq("id", session.kid_id);
+            return json({ ok: false, error: "locked", locked_until: lockedUntil }, 403);
+          }
+          await db.from("kids").update({ verify_fail_count: failCount }).eq("id", session.kid_id);
+          return json({ ok: false, error: "wrong_image", attempts_remaining: VERIFY_MAX_ATTEMPTS - failCount }, 403);
+        }
+
+        await db.from("kids").update({ verify_fail_count: 0, verify_locked_until: null }).eq("id", session.kid_id);
+
+        const [{ data: fromKid }, { data: toKid }] = await Promise.all([
+          db.from("kids").select("name").eq("id", trade.from_kid_id).single(),
+          db.from("kids").select("name").eq("id", trade.to_kid_id).single(),
+        ]);
+
+        await db.from("kid_reward_log").insert([
+          { family_id: session.family_id, kid_id: trade.from_kid_id, category_id: trade.give_category_id, delta: -trade.give_qty, note: `🔁 Traded to ${toKid?.name || "sibling"}` },
+          { family_id: session.family_id, kid_id: trade.to_kid_id, category_id: trade.give_category_id, delta: trade.give_qty, note: `🔁 Traded from ${fromKid?.name || "sibling"}` },
+          { family_id: session.family_id, kid_id: trade.to_kid_id, category_id: trade.receive_category_id, delta: -trade.receive_qty, note: `🔁 Traded to ${fromKid?.name || "sibling"}` },
+          { family_id: session.family_id, kid_id: trade.from_kid_id, category_id: trade.receive_category_id, delta: trade.receive_qty, note: `🔁 Traded from ${toKid?.name || "sibling"}` },
+        ]);
+
+        await db.from("kid_reward_trades").update({ status: "accepted", resolved_at: new Date().toISOString() }).eq("id", trade.id);
+        return json({ ok: true, data: { status: "accepted" } });
       }
 
       case "get_leaderboard": {
@@ -1291,8 +1698,7 @@ Deno.serve(async (req) => {
         const eventType = String(body.event_type || "");
         if (!["parent_pass", "parent_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
 
-        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
-        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        if (!(await verifyParentSecret(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
 
         const emoji = eventType === "parent_star" ? "⭐" : "✅";
         const label = eventType === "parent_star" ? "Great job from a parent!" : "Passed by a parent!";
@@ -1749,6 +2155,25 @@ Deno.serve(async (req) => {
           const opts = { eventType: "ai_auto_pass", emoji: "🤖", label: "Auto-approved by AI!", points: POINTS.PARENT_PASS };
           if (updated.kid_id) {
             await awardBedroomPass(updated.kid_id, updated.family_id, opts);
+            // Cross-app spin-credit trigger (see D-2026-07-19-spin-credit-system):
+            // only for an individual kid's own room, not a shared room's
+            // collective score, since bonus_spins is a per-kid column with
+            // no natural single kid to credit for a shared-room event.
+            const { data: aiScoreReason } = await db
+              .from("family_spin_reasons")
+              .select("id")
+              .eq("family_id", updated.family_id)
+              .eq("trigger_key", "bedroom_ai_score")
+              .maybeSingle();
+            if (aiScoreReason) {
+              const grantError = await grantSpinCredit(updated.family_id, updated.kid_id, aiScoreReason.id);
+              // already_granted_this_period is expected/benign (most reasons
+              // are weekly-capped) - only log the case that indicates an
+              // actual data problem, so this doesn't silently vanish.
+              if (grantError && grantError !== "already_granted_this_period") {
+                console.error(`grantSpinCredit failed during AI auto-approve: ${grantError}`, { family_id: updated.family_id, kid_id: updated.kid_id });
+              }
+            }
           } else if (updated.room_id) {
             await awardRoomPass(updated.room_id, null, opts);
           }

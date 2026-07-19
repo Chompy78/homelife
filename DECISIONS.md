@@ -6,6 +6,391 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-07-19-spin-credit-code-review-fixes
+
+**Context:** A high-effort multi-angle code review of the spin-credit system (8 finder agents, 12
+verified candidates) confirmed 10 real findings, topped by a race condition three independent finder
+angles converged on independently. All 10 were fixed in this pass.
+
+**Fixes:**
+1./2. **Atomic RPCs + a hard cap, not a bigger client-side loop.** `grantSpinCredit` and
+   `consume_bonus_spins` used to do a plain SELECT then a computed UPDATE - a concurrent grant and
+   consume for the same kid could interleave and silently lose an increment or wipe out a freshly
+   granted spin. Replaced both with single Postgres functions (`grant_spin_credit_atomic`,
+   `consume_bonus_spins_atomic`) that lock the kid row (`SELECT ... FOR UPDATE`) for the whole
+   check+insert+increment sequence, so a racing grant and consume now serialize instead of
+   interleaving. Separately, `consume_bonus_spins` handed back the kid's *entire* accumulated count in
+   one shot, but the client's spin-chain loop caps at `MAX_SPINS_PER_ROUND` (25) - anything beyond
+   that was already zeroed server-side and silently lost. Rather than teach the client to consume in
+   batches, `grant_spin_credit_atomic` now clamps `bonus_spins` at `MAX_BONUS_SPINS = 20` (comfortably
+   under 25, leaving room for one "Spin twice" chain), so the loss condition can't be reached at all.
+2. **Block deleting a trigger_key-linked reason, don't expose trigger_key for editing.** A parent
+   could delete the seeded "Tidy Room AI Score" reason with no warning, permanently and silently
+   severing Bedroom Reset's auto-grant (its lookup is by `trigger_key`, so nothing else could ever
+   find it again). `manage_spin_reasons`'s delete branch now rejects deleting a `trigger_key`-linked
+   row; the manage UI shows it as "🔒 Linked" instead of a delete button. Deliberately did NOT expose
+   `trigger_key` as a settable field - it's internal wiring, not something a parent needs to hand-edit.
+3. **PIN-gate spin-reason deletion**, matching the existing category-delete/Reset/Kid-View-exit
+   pattern - this destructive action had simply been missed when the feature was first built.
+4. **Re-render the wheel when the Spin tab becomes visible.** `renderWheel()`'s wedge-label math reads
+   `wheel.clientWidth`, which is 0 whenever `#spinView` has `display:none` on an ancestor - so any
+   render that happened while a different tab was active (which is most of them) positioned labels for
+   a hardcoded 300px fallback instead of the real `min(320px, 88vw)` wheel. Now the `modeSwitch`
+   handler calls `renderWheel()` again specifically when switching to Spin, when the section is
+   actually visible and can be measured correctly.
+5. **Checked `res.ok` on every `manage_spin_reasons` call site** (add/update/delete), matching the
+   error-toast pattern already established for the sibling `undo_reward_log`/`grant_spin_credit` flows
+   in the same feature - these three had been missed.
+6. **Resync instead of retry-loop on a 409.** The grant button's failure handler treated every error
+   identically - on the specific `already_granted_this_period` conflict (two devices, or a manual
+   grant racing Bedroom Reset's automated one), it now calls `loadState()` to flip to the real "Used"
+   state instead of re-enabling a button that would just 409 again.
+7. **`grant_spin_credit` now accepts `trigger_key` as an alternative to `reason_id`**, resolved
+   server-side. The action's own doc comment and this feature's original design (D-2026-07-19-
+   spin-credit-system) both describe it as "generic - any app can call it," but the only caller
+   (Bedroom Reset) cheated by resolving `trigger_key` via direct DB access in the same file/process; a
+   genuinely separate future caller had no public way to do that resolution. Now it does.
+8. **Logged (not surfaced in the response) `grantSpinCredit`'s previously-discarded error** in
+   `submit_photo_score`'s auto-approve branch - skips logging the benign, expected
+   `already_granted_this_period` case, but a real `not_found` (e.g. a stale kid/reason at the exact
+   moment of auto-approval) is no longer silently invisible.
+9. **`Object.hasOwn` instead of `in`** in `spinSoundPreset()` - `in` walks the prototype chain, so a
+   localStorage value like `"toString"` would pass as a "valid" preset name and later crash
+   `playSpinTicks`/`playLandingChime` with a TypeError. Devtools-tampering-only in practice, but a
+   one-line fix.
+
+**Why fix the counter's atomicity instead of switching to a derived-from-rows count:** the reviewer
+noted `kid_spin_credit_grants` already has full per-grant history, so `bonus_spins` could in principle
+be derived (grants minus consumptions) rather than stored as a mutable counter, avoiding the race
+class entirely. Not done here - the row-locked RPC fix is smaller, keeps the existing schema/API
+shape, and closes the specific confirmed race without a data-model change; deriving the count is a
+reasonable future refactor if more counter-style fields accumulate the same pattern, not warranted for
+one column today.
+
+**Status:** Done. Live-verified the two new RPCs directly (grant succeeds/caps correctly/rejects a
+same-period repeat, consume zeroes and returns the right count) against a disposable test family, then
+separately verified the deployed edge function end-to-end (`grant_spin_credit` resolving a
+`trigger_key` with no `reason_id` supplied, and `manage_spin_reasons` correctly rejecting a delete on
+the trigger_key-linked reason) against a second disposable family. Full Playwright regression suite
+(11 files, including a new one targeting all 10 fixes) passes.
+
+## D-2026-07-19-spin-credit-system
+
+**Context:** The user asked for six things at once: a sticky-header scroll glitch, a broken History
+Undo button, letting other apps (e.g. Bedroom Reset) grant a kid a spin, a bigger wheel with wedge
+labels and a centered/hideable SPIN button, customizable spin sound, and named "reasons" that grant a
+bonus spin with per-period limits. The last three (spin-granting, reasons, per-period limits) are one
+underlying feature - designing them separately would have meant redoing the schema twice.
+
+**Options considered (with the user's answers):**
+1. Does earning a bonus spin gate spinning itself (no spin without a credit), or stay purely additive
+   on top of the existing always-free SPIN button? **Chosen: additive** - a bonus credit just chains
+   one extra automatic spin onto the next SPIN tap (reusing the exact mechanic the "Spin twice"
+   category already has), rather than restricting spinning itself.
+2. Per-reason limit shape: one cadence per reason (daily/weekly/monthly) vs. a count+period pair
+   (e.g. "3 times per month"). **Chosen: one cadence per reason** - simpler to configure and to show
+   ("once a week") than a two-part number+period combination.
+3. Cross-app trigger: hardcode a specific Bedroom Reset event, or build one generic action any app can
+   call. **Chosen: generic** (`grant_spin_credit`, usable by a parent session for any kid, or a kid
+   session for themselves only) - the user deliberately didn't pick a specific Bedroom Reset event
+   when offered the choice, so the mechanism itself is the deliverable; it's wired to Bedroom Reset's
+   AI room-score auto-approve as the first real caller (matching the user's own example), not as the
+   only possible one.
+4. Sound customization: preset styles vs. an uploaded custom audio file. **Chosen: presets** (Chimes/
+   Arcade/Retro/Off) - keeps it a Settings dropdown, no storage/upload plumbing needed.
+
+**Why one shared `grantSpinCredit` helper for both manual and automated grants:** a parent ticking a
+reason "yes" in Reward Tracker and Bedroom Reset's AI auto-approve path both need the *same*
+per-reason-per-period cap enforced - if they used separate code paths, the cap could be bypassed by
+whichever path didn't check it. Both now call one function; `grant_spin_credit` (the action) and the
+`submit_photo_score` auto-approve branch (the automated caller) are just two callers of it.
+
+**Why `trigger_key`, not label matching:** an automated caller needs a stable way to find "the reason
+Bedroom Reset's AI score maps to" without breaking if a parent renames the human-readable label later.
+`family_spin_reasons.trigger_key` (e.g. `'bedroom_ai_score'`) is looked up directly; the label is free
+to edit without touching the link.
+
+**Why the grant is per-kid only, not shared rooms:** `bonus_spins` is a column on `kids`, and a shared
+room's AI auto-approval (`awardRoomPass`) has no single kid to attribute it to. The Bedroom Reset hook
+only fires on the `updated.kid_id` branch of `submit_photo_score`, not the `updated.room_id` one.
+
+**Known verification gap:** `submit_photo_score` (and so the Bedroom Reset auto-approve hook) is
+gated by a worker-only secret (`WORKER_TOKEN`) that lives only in the Supabase project's own secret
+store and the self-hosted AI-scoring worker machine - neither accessible from this session. Every
+other new action (`grant_spin_credit`, `manage_spin_reasons`, `consume_bonus_spins`, the per-period
+cap, the kid-can-only-grant-to-self boundary) was verified live against a disposable test family; the
+`submit_photo_score` hook itself was verified by code review only, calling the same already-verified
+`grantSpinCredit` helper. Worth a real end-to-end check next time the AI-scoring worker is run
+against a live `auto_approve` family.
+
+**Status:** Done, with the verification gap above noted.
+
+## D-2026-07-19-reward-tracker-mobile-header-and-table-redesign
+
+**Context:** The user supplied a detailed UI-improvement brief (a pasted design doc) asking for a
+compact sticky header, spreadsheet-style sticky table headers/columns, and a View/Edit mode split
+for the reward table, aimed at fixing a too-tall header and a cluttered table on mobile. The brief's
+own mockups assumed a single "[Child ▼]" selector in the header, but the app already has two
+different kid-selection models that don't map onto one selector cleanly - needed resolving before
+writing any CSS.
+
+**Options considered (with the user's answers):**
+1. Child selector scope: one selector everywhere, vs. only for Quick Tap/Spin (which pick one active
+   kid) with Table view showing no selector at all. **Chosen: Quick Tap/Spin only** - Table view
+   already shows every kid as its own spreadsheet column simultaneously, which is what the doc's own
+   sticky-column requirements need multiple columns *for*; forcing Table view down to one kid at a
+   time would contradict the rest of the brief.
+2. View/Edit mode scope: Table view only, vs. also Quick Tap's tile rows (same +/- clutter pattern).
+   **Chosen: Table view only** - Quick Tap is inherently a fast-tap-to-add-points screen, not a
+   read-then-edit one.
+3. Per-kid running totals (shown today on each kid chip): keep a compact total next to the selector,
+   vs. drop them. **Chosen: drop** - Table view's columns and the Insights tab already show totals;
+   duplicating them in the compact header works against the header's whole point.
+4. "Manage reward categories"/"Manage reward reasons" (previously permanent buttons under the
+   table): move into the new overflow menu, vs. leave in place. **Chosen: move into the menu** -
+   matches the doc's own "admin-style controls shouldn't take permanent space" instruction.
+
+**Why border-collapse: separate, not collapse, on the sticky table:** `border-collapse: collapse`
+has known rendering bugs with `position: sticky` cells (mainly Safari) where the shared border
+between a stuck and non-stuck cell can vanish or double up during scroll. `border-spacing: 0` with
+an explicit `border-right`/`border-bottom` per cell gets visually the same grid look without
+depending on collapsed-border-and-sticky interaction at all.
+
+**Why the sticky header's z-index needed to be low (20), not high:** the table's own sticky cells
+(header row, left column, corner) only need to beat plain page content, so a modest z-index clears
+that easily - but the app's existing modals sit much higher (settingsModal/catModal 60, confirmModal
+70, pinModal 80). Giving the sticky app bar a high z-index (100, the first attempt) made it paint
+*above* every modal, silently intercepting clicks on any modal content that happened to render
+underneath the header's screen area - caught by the `test_spin_weight.js` regression test failing
+with "element intercepts pointer events" on `#settingsModalClose`, not by visual inspection.
+
+**Status:** Done.
+
+## D-2026-07-19-parent-icon-auth-alternative
+
+**Context:** The user proposed a "3-of-9 graphical password" as a
+child-friendlier alternative to the 4-digit parent PIN: a 3x3 grid of
+distinctive fantasy icons, where a parent memorises any 3 (order
+doesn't matter) and the grid's positions shuffle on every attempt to
+resist shoulder-surfing by a kid watching. The spec was explicit that
+this is "not bank-level security," just meant to raise the bar above
+casual access while staying fast and touch-friendly for parents and
+kids around age 8-10. Two things needed deciding before writing code:
+which flows it should apply to, and whether it replaces the PIN
+outright.
+
+**Options considered (with the user's answers):**
+1. Scope: reward-tracker's PIN-gated actions only, vs. also Bedroom
+   Reset's Parent Check flow. **Chosen: both** - the two apps already
+   share one `families.parent_pin` value, so supporting the icon
+   picker in only one would leave the other's PIN meaning something
+   different depending on which app you're in, which is more
+   confusing than useful.
+2. Relationship to the PIN: full replacement vs. a per-family choice
+   between the two. **Chosen: per-family choice, in Settings** - some
+   parents may prefer a PIN; the icon picker is explicitly a
+   different security/UX tradeoff, not a strict upgrade, so families
+   pick which one they want rather than having it forced on them.
+
+**Why one shared verification helper, not three copies:** exploring
+existing `parent_pin` usage first turned up three separate inline
+string comparisons (`verify_pin`, `parent_check`,
+`family_room_parent_check`). Adding an icons branch to each
+independently would have tripled the duplication going forward, so all
+three now call one `verifyParentSecret(familyId, body)` helper that
+branches once on `family.parent_auth_method`.
+
+**Why a family-level method, not a per-parent one:** `parent_pin` was
+already a single family-wide value (not per-parent-login), and nothing
+in the request asked for individual parent accounts - `parent_icons`
+follows the same shape (`families.parent_auth_method` +
+`families.parent_icons`), so no new identity concept was introduced.
+
+**Why no lockout on wrong icon attempts:** matches the existing PIN's
+behaviour (wrong PIN just shows an error and lets the parent retry
+immediately) rather than the stricter 2-attempt lockout used elsewhere
+in the app for kid-side trade-image verification - that lockout exists
+to stop a kid brute-forcing a trade approval, which isn't the threat
+model here.
+
+**Why `get_family_auth_method` is callable by either role:** Bedroom
+Reset's Parent Check is triggered from a kid's own device, so the kid
+session needs to know which UI (numeric pad or icon grid) to render
+before a parent even shows up to authenticate - the action only ever
+returns the method name, never the secret, so this doesn't weaken the
+security boundary.
+
+**Status:** Done.
+
+## D-2026-07-19-reward-tracker-spin-weighting
+
+**Context:** The user asked for four spin-wheel improvements: a sound
+option, adjustable spin duration, customizable colours per option (colour
+was already covered by the existing category colour picker), and
+weighting so some options land more often than others. Asked before
+building rather than guessing, since the weighting/options question
+determines whether it needs a new data model.
+
+**Options considered (with the user's answers):**
+1. Wheel options: reuse `family_reward_categories` with weighting added,
+   vs. a wholly separate "Spin Options" list independent of the reward
+   categories. **Chosen: reuse + add weighting** - one list to manage,
+   not two.
+2. Sound: on by default vs off by default. **Chosen: on by default**,
+   toggle in Settings.
+3. Duration: one adjustable Settings value vs randomised per spin vs
+   both. **Chosen: one adjustable value.**
+4. Weighting style: a simple 1-5 relative weight vs percentages that must
+   total 100%. **Chosen: simple 1-5 weight** - no cross-option math
+   required to change one.
+
+**Why wedge size = weight, not just invisible odds:** making the wedge's
+*angular width* proportional to weight means a uniform-random landing
+angle is automatically correctly weighted - there's no separate
+weighted-random-selection step to get right or test independently, and
+it's also the more honest visual: a category weighted 5 visibly *is* the
+biggest slice, not secretly favoured behind an unchanged-looking wheel.
+
+**Why sound is synthesized, not sound files:** no external assets to
+fetch, host, or worry about size/licensing for - a few Web Audio
+oscillator tones (ticks that spread out as the wheel decelerates, a
+two-note chime on landing) cost nothing and need no network access,
+consistent with this being a fully offline-capable PWA.
+
+**Status:** Done. `family_reward_categories.spin_weight` (integer 1-5,
+default 1), editable via a `<select>` next to each category in Manage
+Categories. `manage_reward_categories`'s add/update now accept and
+validate it. The wheel's `conic-gradient` wedges are sized by weight;
+`runOneSpin()` simplified to a single uniform `Math.random() * 360` landing
+angle instead of a separate index-then-jitter pick, since wedge geometry
+now encodes the weighting itself. New Settings controls: a spin-sound
+toggle (on by default) and a spin-duration slider (2-8s, default 2.6),
+both per-device `localStorage`, same convention as dark mode and PIN
+protection. Caught and fixed a real bug during testing:
+`getSpinDurationSeconds()` read `Number(localStorage.getItem(...))`
+directly - `Number(null)` is `0`, not `NaN`, so a never-set duration was
+silently clamped to the 2-second minimum instead of falling through to
+the intended 2.6s default; fixed by checking for `null` explicitly before
+the `Number()` conversion. Verified via Playwright: wedge angles match
+the 5:1 weight ratio exactly, sound-off/duration persist to localStorage
+and the duration value actually changes the wheel's CSS transition
+timing, and the weight `<select>` in Manage Categories reflects and
+updates the right category. Bumped the reward-tracker service worker
+cache to v10.
+
+---
+
+## D-2026-07-19-my-rewards-trading
+
+**Context:** The user asked how kids see their own balance (answered by
+`apps/my-rewards`), then asked for kids to be able to trade rewards with
+each other from within that same app - one kid picks what to give up and
+what they want back, the other kid can accept or decline, no parent step.
+Accepting moves real balance, so it needed some gate against a mis-tap or
+a sibling accepting on someone else's behalf - the user's own suggestion
+was a 4x4 picture grid instead of a PIN, with a lockout after repeated
+wrong picks.
+
+**Decisions made (mine, since the user explicitly invited judgement on
+the specifics not covered by their description):**
+1. **Who picks a kid's secret picture:** the kid themselves, the first
+   time they need to accept a trade (or any time after, via a
+   "set/change my secret picture" link) - not a parent-assigned value.
+   Matches how a PIN works in Reward Tracker: something the person using
+   it controls, not something imposed on them.
+2. **Lockout:** 2 wrong picks -> 15 minutes locked. Two attempts before
+   locking (not more) keeps a genuine mis-tap forgivable without making
+   guessing practical; 15 minutes is long enough to be a real deterrent
+   without needing a parent to intervene to unlock it.
+3. **No parent approval step** - matches the user's own description
+   exactly (propose -> the other kid accepts/declines), so nothing extra
+   was added here.
+4. **No balance-floor check** on proposing or accepting a trade - matches
+   how every other reward-tracker action already works (Spend already
+   goes negative freely with no floor), so trading isn't held to a
+   different standard than tapping is.
+
+**Why the picture grid isn't a stronger security model than a PIN:**
+worth being explicit that this doesn't claim to be one. A sibling who
+watches an accept happen once learns the correct picture just as easily
+as they'd learn a 4-digit PIN by watching it typed - shuffling the grid
+position each time stops lazy screen-glancing from working by remembering
+a *position*, but the picture *identity* itself is exactly as memorable
+as a PIN digit sequence would be. This is fine and consistent with how
+the parent PIN elsewhere in this app suite is already documented ("a UX
+friction layer, not a real security boundary") - the ask was for
+something kid-friendlier than typing digits, not something cryptographically
+stronger.
+
+**Status:** Done. New `kid_reward_trades` table and
+`kids.verify_image`/`verify_fail_count`/`verify_locked_until` columns.
+New actions: `get_kid_trade_state`, `set_kid_verify_image`,
+`propose_trade`, `respond_to_trade`, `cancel_trade`. New Trade Center UI
+in `apps/my-rewards` (propose/incoming/outgoing lists, a shuffled 16-image
+verification grid, lockout messaging). Found and fixed three real bugs
+during testing: (1) the client sent a payload field literally named
+`action` inside `respond_to_trade`'s body, which collided with
+`callApi`'s own top-level `action` dispatch key via object spread and
+silently overwrote it - renamed to `response`, matching why this
+codebase already used `kidAction`/`itemAction` elsewhere instead of
+`action`; (2) a lockout wasn't reflected in the client's cached trade
+state until the next full refresh, so an immediate retry showed the
+picture grid again instead of the lockout screen; (3) accepting a trade
+refreshed the trade list but not the main balance card, so a kid's own
+total looked unchanged until the next 30-second auto-refresh. Verified
+via Playwright against a mocked backend and live against a disposable
+two-kid test family on production (propose, incoming/outgoing views,
+first-time picture setup chained into accept, wrong-pick messaging,
+lockout, lockout blocking even a correct pick, correct-pick acceptance
+with exact balance verification on both kids, decline, cancel,
+cross-kid cancel rejection, and double-accept rejection). Bumped the
+my-rewards service worker cache to v2.
+
+---
+
+## D-2026-07-18-reward-tracker-spin-wheel
+
+**Context:** The user asked for an actual spinning reward wheel a kid can
+watch land on a random category, added to their tally, operated from the
+parent app. One of the seeded default categories has always been called
+"Spin twice" - almost certainly a holdover from a real physical prize
+wheel this app's whole reward-tracker concept is modelled on (the app's
+own icon is a ferris wheel, 🎡), where earning "Spin twice" meant literally
+getting to spin the wheel two more times.
+
+**Options for what landing on "Spin twice" should do:**
+1. Tally it like any other category (+1 "Spin twice" on the kid's balance).
+2. Treat it as a wheel mechanic, not a reward: trigger two bonus spins
+   automatically instead of logging anything for that landing.
+
+**Decision:** Option 2.
+
+**Why:** A literal "+1 Spin twice" tally entry would be a reward that
+does nothing and means nothing on its own - the name only makes sense as
+an instruction to the wheel, not a prize. Auto-triggering two more spins
+is what the category is actually for, and it's a satisfying "landed on
+a bonus" moment for a kid watching, closer to what the original physical
+wheel almost certainly did. If a family renames or deletes that category
+the spinner just treats it as a normal wedge - the special case matches
+on the label "spin twice" (case-insensitive), not a schema flag, so it
+degrades gracefully.
+
+**Status:** Done. New "🎡 Spin" mode in `apps/reward-tracker`: a
+conic-gradient wheel built from `state.categories`, CSS-transform spin
+(always rotates forward from wherever it currently sits, never snaps
+back, so a chained bonus spin continues smoothly), landing calls the
+existing `adjust_reward` via `tapReward()` with an automatic note - no
+backend changes needed. A `MAX_SPINS_PER_ROUND` safety cap (25) guards
+against every category somehow being named "Spin twice" at once, which
+would otherwise loop forever. Verified via Playwright with `Math.random`
+stubbed to a fixed sequence, forcing a "Spin twice" landing followed by
+two real landings and confirming: exactly two bonus spins fired, no
+literal tally for "Spin twice" itself, correct balances for the two real
+landings, and the button disables for the whole chain. Bumped the
+reward-tracker service worker cache to v9.
+
+---
+
 ## D-2026-07-18-poller-token-out-of-source
 
 **Context:** `poller.py`'s `WORKER_TOKEN` was hardcoded as a plain

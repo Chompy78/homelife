@@ -23,10 +23,34 @@ Bedroom Reset - via the existing `redeem_kid_code` action. This reuses
 so a kid already logged into Bedroom Reset on a device is automatically
 logged into this app too.
 
-There is no write path at all here - `get_kid_reward_state` is the only
-action this app calls, and it only reads. A kid can't adjust their own
-tally from this app even without a PIN, because there's nothing here that
-writes anything.
+Checking a balance has no write path - `get_kid_reward_state` only reads.
+Trading with a sibling (below) does write, but only ever moves reward
+units between two kids in the same family; there's still no way for a kid
+to adjust their own tally out of thin air.
+
+## Trading with a sibling
+
+A kid can propose giving up some of one reward category for some of a
+sibling's, from the 🔁 Trade button on the main card. The other kid sees
+it as a pending offer and can Accept or Decline - no parent step. New
+actions: `get_kid_trade_state` (siblings, categories, pending trades in
+both directions), `propose_trade`, `respond_to_trade`, `cancel_trade`.
+Accepted trades write four `kid_reward_log` rows (each kid loses what
+they gave up, gains what they received), tagged "🔁 Traded to/from
+<name>" so History still makes sense afterward.
+
+**Verification instead of a PIN:** accepting is the one action here that
+moves real balance, so it's gated - but a 4-digit PIN felt like the wrong
+fit for a kid-facing app that might have younger readers than Reward
+Tracker's parent audience. Instead, a kid picks their own secret picture
+once (`kids.verify_image`, one of a fixed 16-emoji pool) and picks it
+again - out of a shuffled grid of all 16 - to accept. Two wrong picks
+locks accepting out for 15 minutes (`kids.verify_fail_count` /
+`verify_locked_until`). This is the same "friction, not a hardened
+security boundary" posture as Reward Tracker's parent PIN - a sibling who
+watches an accept happen once learns the picture just as easily as they'd
+learn a PIN, this is just the kid-friendlier version of the same idea. See
+`D-2026-07-19-my-rewards-trading`.
 
 ## Color convention
 

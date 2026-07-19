@@ -6,6 +6,22 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-19
+
+- Added kid-to-kid reward trading to My Rewards: a kid can propose giving
+  up some of one reward for some of a sibling's, the sibling accepts or
+  declines with no parent step. Accepting is gated by picking your own
+  secret picture out of a shuffled 4x4 grid instead of a PIN (kid-friendlier,
+  same "friction, not a real boundary" posture as the parent PIN
+  elsewhere) - two wrong picks locks accepting out for 15 minutes. New
+  `kid_reward_trades` table, new `kids.verify_image`/`verify_fail_count`/
+  `verify_locked_until` columns, five new edge-function actions. Found
+  and fixed three real bugs during testing (an `action`-field name
+  collision that silently broke every accept/decline, a stale lockout
+  check, and the main balance not refreshing after a trade). Verified
+  live against a disposable two-kid test family. Bumped the my-rewards
+  service worker cache to v2. See `D-2026-07-19-my-rewards-trading`.
+
 ## 2026-07-18
 
 - Added a 🎡 Spin wheel mode to the reward tracker: a wheel of the

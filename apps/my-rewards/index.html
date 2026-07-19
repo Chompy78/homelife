@@ -33,8 +33,59 @@
       <div class="totalLabel">rewards</div>
       <div class="total" id="total">0</div>
       <div class="categoryList" id="categoryList"></div>
+      <button id="openTradeBtn" type="button" class="tradeOpenBtn hidden">🔁 Trade<span class="tradeBadge hidden" id="tradeBadge"></span></button>
     </div>
     <p class="switchKid"><a href="#" id="switchKidLink">Not you?</a></p>
+  </div>
+
+  <div class="tradeModal hidden" id="tradeModal">
+    <div class="tradeCard">
+      <div class="tradeHead">
+        <h2>🔁 Trades</h2>
+        <button id="tradeModalClose" type="button" class="tradeClose">✕</button>
+      </div>
+
+      <div id="tradeListView">
+        <div id="incomingTrades"></div>
+        <div id="outgoingTrades"></div>
+        <button id="proposeTradeBtn" type="button" class="tradeActionBtn">+ Propose a trade</button>
+        <p class="tradeSecretLink"><a href="#" id="changeSecretLink">🔒 Set/change my secret picture</a></p>
+      </div>
+
+      <div id="tradeProposeView" class="hidden">
+        <button id="tradeProposeBack" type="button" class="tradeBack">‹ Back</button>
+        <div class="tradeField">
+          <label>Trade with</label>
+          <div id="siblingPicker" class="siblingPicker"></div>
+        </div>
+        <div class="tradeField">
+          <label>You give</label>
+          <div class="tradeQtyRow">
+            <select id="giveCategorySelect"></select>
+            <input id="giveQtyInput" type="number" min="1" max="20" value="1" />
+          </div>
+        </div>
+        <div class="tradeField">
+          <label>You get</label>
+          <div class="tradeQtyRow">
+            <select id="receiveCategorySelect"></select>
+            <input id="receiveQtyInput" type="number" min="1" max="20" value="1" />
+          </div>
+        </div>
+        <button id="sendTradeBtn" type="button" class="tradeActionBtn">Send trade offer</button>
+        <p class="tradeError hidden" id="tradeError"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="verifyModal hidden" id="verifyModal">
+    <div class="verifyCard">
+      <h2 id="verifyTitle">Pick your secret picture</h2>
+      <p class="verifySub" id="verifySub"></p>
+      <div class="verifyGrid" id="verifyGrid"></div>
+      <p class="verifyError hidden" id="verifyError"></p>
+      <button id="verifyCancelBtn" type="button" class="verifyCancel">Cancel</button>
+    </div>
   </div>
 
   <script type="module" src="app.js"></script>

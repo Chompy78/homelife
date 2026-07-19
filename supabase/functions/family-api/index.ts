@@ -35,6 +35,17 @@ const POINTS = {
 // A parent can override it afterwards (rename with a `color`).
 const KID_THEME_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
 
+// Kid-to-kid trade verification: a lightweight stand-in for a PIN, aimed at
+// kids who might not read/type numbers confidently yet. A kid picks one of
+// these as their own secret picture (kids.verify_image); accepting an
+// incoming trade means picking it again out of a shuffled 4x4 grid of
+// decoys from the same pool. Wrong picks lock accepting out for a while -
+// same "friction layer, not a real security boundary" posture as the
+// parent PIN elsewhere in this app (see reward-tracker's own PIN docs).
+const VERIFY_IMAGE_POOL = ["🐸", "🦄", "🍕", "🚗", "⚽", "🎈", "🐶", "🌈", "🍦", "🎨", "🐱", "🚀", "🦋", "🍩", "🐢", "🎵"];
+const VERIFY_MAX_ATTEMPTS = 2;
+const VERIFY_LOCKOUT_MINUTES = 15;
+
 const PHOTO_BUCKET = "reference-photos";
 const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
@@ -1119,6 +1130,167 @@ Deno.serve(async (req) => {
         });
 
         return json({ ok: true, data: { insights } });
+      }
+
+      // --- Kid-to-kid trading (My Rewards) ---------------------------------
+      // A kid proposes giving up some of one reward for some of a sibling's -
+      // the sibling can accept (after picking their own secret picture out
+      // of a shuffled decoy grid) or decline. No parent step, no balance
+      // floor check - both match how every other reward-tracker action here
+      // already works (a parent can already tap Spend into negative freely).
+
+      case "get_kid_trade_state": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+
+        const [{ data: me }, { data: siblings }, categories, balances, { data: incoming }, { data: outgoing }] = await Promise.all([
+          db.from("kids").select("id, name, avatar_emoji, verify_image, verify_locked_until").eq("id", session.kid_id).single(),
+          db.from("kids").select("id, name, avatar_emoji, theme_color").eq("family_id", session.family_id).neq("id", session.kid_id).order("sort_order"),
+          getRewardCategories(session.family_id),
+          getRewardBalances(session.family_id),
+          db.from("kid_reward_trades").select("*").eq("to_kid_id", session.kid_id).eq("status", "pending").order("created_at", { ascending: false }),
+          db.from("kid_reward_trades").select("*").eq("from_kid_id", session.kid_id).eq("status", "pending").order("created_at", { ascending: false }),
+        ]);
+
+        const nameFor = (id: string) => (id === session.kid_id ? me?.name : (siblings || []).find((s) => s.id === id)?.name) || "Unknown";
+        const decorate = (t: Record<string, unknown>) => ({ ...t, from_kid_name: nameFor(t.from_kid_id as string), to_kid_name: nameFor(t.to_kid_id as string) });
+        const stillLocked = me?.verify_locked_until && new Date(me.verify_locked_until as string) > new Date();
+
+        return json({
+          ok: true,
+          data: {
+            verify_image_set: !!me?.verify_image,
+            verify_locked_until: stillLocked ? me?.verify_locked_until ?? null : null,
+            siblings: (siblings || []).map((s) => ({ ...s, balances: balances[s.id] || {} })),
+            categories,
+            my_balances: balances[session.kid_id] || {},
+            incoming_trades: (incoming || []).map(decorate),
+            outgoing_trades: (outgoing || []).map(decorate),
+          },
+        });
+      }
+
+      case "set_kid_verify_image": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        const image = String(body.image || "");
+        if (!VERIFY_IMAGE_POOL.includes(image)) return json({ ok: false, error: "bad_image" }, 400);
+        await db.from("kids").update({ verify_image: image, verify_fail_count: 0, verify_locked_until: null }).eq("id", session.kid_id);
+        return json({ ok: true });
+      }
+
+      case "propose_trade": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+
+        const toKidId = String(body.to_kid_id || "");
+        if (toKidId === session.kid_id) return json({ ok: false, error: "cant_trade_with_self" }, 400);
+        const { data: toKid } = await db.from("kids").select("id").eq("id", toKidId).eq("family_id", session.family_id).maybeSingle();
+        if (!toKid) return json({ ok: false, error: "not_found" }, 404);
+
+        const giveCategoryId = String(body.give_category_id || "");
+        const receiveCategoryId = String(body.receive_category_id || "");
+        const wantedIds = [...new Set([giveCategoryId, receiveCategoryId])];
+        const { data: cats } = await db.from("family_reward_categories").select("id").eq("family_id", session.family_id).in("id", wantedIds);
+        if (!cats || cats.length < wantedIds.length) return json({ ok: false, error: "not_found" }, 404);
+
+        const giveQty = Math.max(1, Math.min(20, Math.round(Number(body.give_qty)) || 1));
+        const receiveQty = Math.max(1, Math.min(20, Math.round(Number(body.receive_qty)) || 1));
+
+        const { data: trade, error } = await db
+          .from("kid_reward_trades")
+          .insert({
+            family_id: session.family_id,
+            from_kid_id: session.kid_id,
+            to_kid_id: toKidId,
+            give_category_id: giveCategoryId,
+            give_qty: giveQty,
+            receive_category_id: receiveCategoryId,
+            receive_qty: receiveQty,
+          })
+          .select()
+          .single();
+        if (error || !trade) return json({ ok: false, error: "could_not_add" }, 500);
+        return json({ ok: true, data: { trade } });
+      }
+
+      case "cancel_trade": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: trade } = await db
+          .from("kid_reward_trades")
+          .select("id, from_kid_id, status")
+          .eq("id", String(body.trade_id || ""))
+          .eq("family_id", session.family_id)
+          .maybeSingle();
+        if (!trade || trade.status !== "pending" || trade.from_kid_id !== session.kid_id) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_reward_trades").update({ status: "cancelled", resolved_at: new Date().toISOString() }).eq("id", trade.id);
+        return json({ ok: true });
+      }
+
+      case "respond_to_trade": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+
+        const { data: trade } = await db
+          .from("kid_reward_trades")
+          .select("*")
+          .eq("id", String(body.trade_id || ""))
+          .eq("family_id", session.family_id)
+          .maybeSingle();
+        if (!trade || trade.status !== "pending") return json({ ok: false, error: "not_found" }, 404);
+        if (trade.to_kid_id !== session.kid_id) return json({ ok: false, error: "not_your_trade" }, 403);
+
+        // Named "response", not "action" - the request body's top-level
+        // "action" field is the dispatch key ("respond_to_trade" itself);
+        // reusing that name here would collide with it client-side.
+        const tradeResponse = String(body.response || "");
+        if (tradeResponse === "decline") {
+          await db.from("kid_reward_trades").update({ status: "declined", resolved_at: new Date().toISOString() }).eq("id", trade.id);
+          return json({ ok: true, data: { status: "declined" } });
+        }
+        if (tradeResponse !== "accept") return json({ ok: false, error: "unknown_action" }, 400);
+
+        const { data: me } = await db
+          .from("kids")
+          .select("verify_image, verify_fail_count, verify_locked_until")
+          .eq("id", session.kid_id)
+          .single();
+        if (me?.verify_locked_until && new Date(me.verify_locked_until) > new Date()) {
+          return json({ ok: false, error: "locked", locked_until: me.verify_locked_until }, 403);
+        }
+        if (!me?.verify_image) return json({ ok: false, error: "verify_image_not_set" }, 400);
+
+        const image = String(body.image || "");
+        if (!VERIFY_IMAGE_POOL.includes(image)) return json({ ok: false, error: "bad_image" }, 400);
+
+        if (image !== me.verify_image) {
+          const failCount = (me.verify_fail_count || 0) + 1;
+          if (failCount >= VERIFY_MAX_ATTEMPTS) {
+            const lockedUntil = new Date(Date.now() + VERIFY_LOCKOUT_MINUTES * 60000).toISOString();
+            await db.from("kids").update({ verify_fail_count: 0, verify_locked_until: lockedUntil }).eq("id", session.kid_id);
+            return json({ ok: false, error: "locked", locked_until: lockedUntil }, 403);
+          }
+          await db.from("kids").update({ verify_fail_count: failCount }).eq("id", session.kid_id);
+          return json({ ok: false, error: "wrong_image", attempts_remaining: VERIFY_MAX_ATTEMPTS - failCount }, 403);
+        }
+
+        await db.from("kids").update({ verify_fail_count: 0, verify_locked_until: null }).eq("id", session.kid_id);
+
+        const [{ data: fromKid }, { data: toKid }] = await Promise.all([
+          db.from("kids").select("name").eq("id", trade.from_kid_id).single(),
+          db.from("kids").select("name").eq("id", trade.to_kid_id).single(),
+        ]);
+
+        await db.from("kid_reward_log").insert([
+          { family_id: session.family_id, kid_id: trade.from_kid_id, category_id: trade.give_category_id, delta: -trade.give_qty, note: `🔁 Traded to ${toKid?.name || "sibling"}` },
+          { family_id: session.family_id, kid_id: trade.to_kid_id, category_id: trade.give_category_id, delta: trade.give_qty, note: `🔁 Traded from ${fromKid?.name || "sibling"}` },
+          { family_id: session.family_id, kid_id: trade.to_kid_id, category_id: trade.receive_category_id, delta: -trade.receive_qty, note: `🔁 Traded to ${fromKid?.name || "sibling"}` },
+          { family_id: session.family_id, kid_id: trade.from_kid_id, category_id: trade.receive_category_id, delta: trade.receive_qty, note: `🔁 Traded from ${toKid?.name || "sibling"}` },
+        ]);
+
+        await db.from("kid_reward_trades").update({ status: "accepted", resolved_at: new Date().toISOString() }).eq("id", trade.id);
+        return json({ ok: true, data: { status: "accepted" } });
       }
 
       case "get_leaderboard": {

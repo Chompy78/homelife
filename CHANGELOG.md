@@ -8,6 +8,29 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-19
 
+- Redesigned Reward Tracker's header and Table view for mobile, from a
+  user-supplied UI brief. The large orange header is now a compact
+  sticky app bar (title + context controls only; height cut from a
+  multi-line block to ~57px in Table view, ~106px in Quick Tap/Spin
+  where the kid picker still shows); Settings, dark mode, Kid View, and
+  the two category/reason management screens moved into a new overflow
+  menu (☰). The reward table now behaves like a real spreadsheet on
+  scroll: the child-name header row, the reward/category left column,
+  and their shared top-left corner cell all stay pinned in place while
+  scrolling vertically, horizontally, or both at once
+  (`border-collapse: separate` + per-cell `position: sticky`, since
+  collapsed borders and sticky cells don't reliably mix, especially in
+  Safari). Table view also gained a View Mode (default - just the
+  balance number, no clutter) and Edit Mode (Edit/Done toggle in the
+  header, reveals the existing +/- controls) - Quick Tap/Spin are
+  unchanged, they were never in scope for the toggle. See
+  `D-2026-07-19-reward-tracker-mobile-header-and-table-redesign`.
+  Regression-tested the full existing reward-tracker Playwright suite
+  (spin weighting, kid themes, instant-tap, icon-picker verification)
+  after moving the admin buttons into the menu - caught and fixed one
+  real bug in the process (the sticky header's z-index outranked every
+  modal, silently blocking clicks on modal content underneath it).
+  Bumped reward-tracker's service worker cache to v12.
 - Added a 3-of-9 icon-picker as a family-chosen alternative to the
   4-digit parent PIN, covering every PIN-gated flow that shares
   `families.parent_pin` today: reward-tracker (delete category, Reset,

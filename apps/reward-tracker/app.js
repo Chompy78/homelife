@@ -42,8 +42,14 @@ const codeError = document.getElementById("codeError");
 const appEl = document.getElementById("app");
 const switchFamilyLink = document.getElementById("switchFamilyLink");
 const darkModeBtn = document.getElementById("darkModeBtn");
+const darkModeIcon = document.getElementById("darkModeIcon");
 const settingsBtn = document.getElementById("settingsBtn");
 const kidViewBtn = document.getElementById("kidViewBtn");
+
+const menuBtn = document.getElementById("menuBtn");
+const menuDropdown = document.getElementById("menuDropdown");
+const editModeBtn = document.getElementById("editModeBtn");
+const editingBadge = document.getElementById("editingBadge");
 
 const kidPickerRow = document.getElementById("kidPickerRow");
 const modeSwitch = document.getElementById("modeSwitch");
@@ -117,6 +123,7 @@ let reasonsType = "earn";
 let insights = [];
 let selectedKidId = null;
 let mode = "quick";
+let tableEditMode = false; // View Mode is the default; Table view only
 let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
 let parentAuthMethod = "pin"; // "pin" or "icons" - which the family has chosen, refreshed each loadState()
 let pinSelectedIcons = [];
@@ -271,11 +278,40 @@ pinCancelBtn.addEventListener("click", () => {
   pinSelectedIcons = [];
 });
 
+// --- Table View Mode / Edit Mode ------------------------------------------
+// View Mode (default) hides the +/- controls so the table reads cleanly;
+// Edit Mode brings them back. Purely a display toggle - every tap still
+// saves immediately either way, there's no separate "save" step.
+
+editModeBtn.addEventListener("click", () => {
+  tableEditMode = !tableEditMode;
+  editModeBtn.textContent = tableEditMode ? "Done" : "Edit";
+  editModeBtn.classList.toggle("active", tableEditMode);
+  editingBadge.classList.toggle("hidden", !tableEditMode);
+  renderTable();
+});
+
+// --- Overflow menu ---------------------------------------------------------
+// Everything that isn't Edit/Done or the menu button itself: Kid View,
+// Settings, dark mode, and the two category/reason management screens.
+
+menuBtn.addEventListener("click", () => {
+  menuDropdown.classList.toggle("hidden");
+});
+menuDropdown.addEventListener("click", (e) => {
+  if (e.target.closest("button")) menuDropdown.classList.add("hidden");
+});
+document.addEventListener("click", (e) => {
+  if (!menuDropdown.classList.contains("hidden") && !menuDropdown.contains(e.target) && e.target !== menuBtn) {
+    menuDropdown.classList.add("hidden");
+  }
+});
+
 // --- Dark mode -----------------------------------------------------------
 
 function applyDarkMode(on) {
   document.documentElement.classList.toggle("dark", on);
-  darkModeBtn.textContent = on ? "☀️" : "🌙";
+  darkModeIcon.textContent = on ? "☀️" : "🌙";
 }
 applyDarkMode(localStorage.getItem(DARK_MODE_KEY) === "1");
 darkModeBtn.addEventListener("click", () => {
@@ -364,6 +400,7 @@ function totalFor(kidId) {
 // --- Rendering -----------------------------------------------------
 
 function renderAll() {
+  updateHeaderForMode();
   renderKidPicker();
   renderActiveKidBanner();
   renderRewardRows();
@@ -373,13 +410,16 @@ function renderAll() {
   renderHistory();
 }
 
+// No per-kid total here (deliberately) - it's still visible in Table view's
+// columns and the Insights tab, so the compact picker doesn't need to
+// duplicate it, keeping each chip (and the header row) as small as possible.
 function renderKidPicker() {
   kidPickerRow.innerHTML = "";
   state.kids.forEach((kid) => {
     const btn = document.createElement("button");
     btn.className = "kidChip" + (kid.id === selectedKidId ? " selected" : "");
     btn.style.setProperty("--kid-colour", kidColour(kid.id));
-    btn.innerHTML = `<span class="kidChipAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span><span class="kidChipTotal">${totalFor(kid.id)}</span>`;
+    btn.innerHTML = `<span class="kidChipAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span>`;
     btn.addEventListener("click", () => {
       selectedKidId = kid.id;
       renderAll();
@@ -398,8 +438,17 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
     insightsView.classList.toggle("hidden", mode !== "insights");
     historyView.classList.toggle("hidden", mode !== "history");
     renderActiveKidBanner();
+    updateHeaderForMode();
   });
 });
+
+// The sticky app bar's kid picker only makes sense for Quick Tap/Spin
+// (one active kid at a time); Table view shows every kid as its own
+// column instead, so it gets Edit/Done there rather than a kid picker.
+function updateHeaderForMode() {
+  kidPickerRow.classList.toggle("hidden", mode !== "quick" && mode !== "spin");
+  editModeBtn.classList.toggle("hidden", mode !== "table");
+}
 
 // Shared by Quick Tap and Spin - both act on selectedKidId, so both show
 // "who this affects" the same way. Hidden for Table/Insights/History,
@@ -602,14 +651,17 @@ function renderTable() {
     html += `<tr><td><span class="catSwatch" style="background:${cat.color}"></span>${escapeHtml(cat.label)}</td>`;
     state.kids.forEach((kid) => {
       const cell = state.balances[kid.id]?.[cat.id] || { earned: 0, spent: 0, balance: 0 };
-      html += `<td>
-        <div class="cellButtons">
-          <button type="button" class="cellMinus" data-kid="${kid.id}" data-cat="${cat.id}" data-type="spend">−</button>
-          <span class="cellBalance">${cell.balance}</span>
-          <button type="button" class="cellPlus" data-kid="${kid.id}" data-cat="${cat.id}" data-type="earn">+</button>
-        </div>
-        <div class="cellSub">earned ${cell.earned} · spent ${cell.spent}</div>
-      </td>`;
+      // View Mode (default) shows just the number - Edit Mode adds the
+      // +/- controls back in. Same cell data either way, just less to look
+      // at when the parent's only reading the table, not tapping it.
+      const balanceHtml = tableEditMode
+        ? `<div class="cellButtons">
+            <button type="button" class="cellMinus" data-kid="${kid.id}" data-cat="${cat.id}" data-type="spend">−</button>
+            <span class="cellBalance">${cell.balance}</span>
+            <button type="button" class="cellPlus" data-kid="${kid.id}" data-cat="${cat.id}" data-type="earn">+</button>
+          </div>`
+        : `<div class="cellBalance">${cell.balance}</div>`;
+      html += `<td>${balanceHtml}<div class="cellSub">earned ${cell.earned} · spent ${cell.spent}</div></td>`;
     });
     html += "</tr>";
   });

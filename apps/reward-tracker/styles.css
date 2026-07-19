@@ -29,33 +29,85 @@ body {
 .hidden { display: none !important; }
 .app { max-width: 900px; margin: 0 auto; }
 
+/* Sticky top app bar - deliberately kept short (title + at most one
+   context control + Edit/Done + Menu) so the table starts high on the
+   screen; everything else lives in the overflow menu below. Stays inside
+   body's own padding (doesn't bleed edge-to-edge) so it keeps its rounded
+   corners, but "top: 0" still means nothing scrolls above it once stuck. */
 header {
+  position: sticky;
+  top: 0;
+  /* Must stay below every modal overlay (catModal/settingsModal 60,
+     confirmModal 70, pinModal 80, toastContainer 90) - it only needs to
+     beat the table's own internal sticky cells (max 4) and plain page
+     content. Too high here means the header visually blocks clicks on
+     any modal content that happens to render underneath its screen area. */
+  z-index: 20;
   background: linear-gradient(135deg, #ff8a1f, #ffc21f);
   color: white;
-  border-radius: 24px;
-  padding: 20px;
+  border-radius: 18px;
+  padding: 10px 14px;
   box-shadow: var(--shadow);
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
-.headerTop { display: flex; align-items: center; justify-content: space-between; }
-header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
+.headerTop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+header h1 { margin: 0; font-size: clamp(1.05rem, 3.2vw, 1.35rem); display: flex; align-items: center; gap: 8px; }
+.editingBadge { font-size: 0.65rem; font-weight: 800; background: rgba(0,0,0,0.25); border-radius: 999px; padding: 3px 9px; letter-spacing: 0.03em; }
 .iconBtn { background: rgba(255,255,255,0.25); border: 0; border-radius: 12px; padding: 8px 12px; font-size: 1.1rem; cursor: pointer; }
+.editModeBtn { background: rgba(255,255,255,0.25); border: 0; border-radius: 12px; padding: 8px 14px; font-size: 0.9rem; font-weight: 800; color: white; cursor: pointer; }
+.editModeBtn.active { background: white; color: var(--accent); }
 
-.kidPickerRow { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+/* Single scrollable row rather than wrap, so the header's height stays
+   constant regardless of how many kids a family has (doc calls out 10+
+   kids as a case that must still work). Only shown for Quick Tap/Spin -
+   Table view has no single "active kid", it shows everyone as columns. */
+.kidPickerRow { display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap; margin-top: 10px; padding-bottom: 2px; }
+.kidPickerRow.hidden { display: none; }
 .kidChip {
   --kid-colour: #888;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 6px;
+  flex: 0 0 auto;
   background: rgba(255,255,255,0.25);
   border: 2px solid transparent;
-  border-radius: 16px;
-  padding: 8px 14px;
+  border-radius: 14px;
+  padding: 6px 12px;
   color: white;
   font-weight: 800;
+  font-size: 0.9rem;
   cursor: pointer;
+  white-space: nowrap;
 }
 .kidChip.selected { background: white; color: var(--kid-colour); border-color: var(--kid-colour); }
-.kidChipAvatar { font-size: 1.2rem; }
-.kidChipTotal { font-weight: 900; opacity: 0.85; }
+.kidChipAvatar { font-size: 1.1rem; }
+
+/* Overflow menu - everything that isn't Edit/Done or Menu itself: Kid
+   View, Settings, dark mode, and the two "admin" management screens that
+   used to sit as permanent buttons under the table. */
+.menuDropdown {
+  position: relative;
+  z-index: 20;
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 6px;
+  margin: -6px 0 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menuDropdown.hidden { display: none; }
+.menuItem {
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--ink);
+  cursor: pointer;
+}
+.menuItem:hover { background: var(--bg); }
 
 .modeSwitch { display: flex; gap: 8px; margin-bottom: 16px; }
 .modeBtn {
@@ -183,10 +235,50 @@ header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
 }
 .wheelLegendItem.winning { outline: 2px solid var(--ink); }
 
-.tableWrap { overflow-x: auto; background: var(--card); border-radius: 18px; box-shadow: var(--shadow); padding: 10px; }
-#rewardTable { width: 100%; border-collapse: collapse; }
-#rewardTable th, #rewardTable td { padding: 10px; text-align: center; border-bottom: 1px solid var(--line); white-space: nowrap; }
+/* A bounded height is what makes the header row "stick" to the top of
+   THIS box rather than the whole page - position: sticky always sticks to
+   its nearest scrolling ancestor, so tableWrap needs to actually be that
+   scrolling ancestor (overflow: auto + a max-height) instead of just
+   letting the page itself scroll past a tall table. */
+.tableWrap {
+  overflow: auto;
+  max-height: 65vh;
+  background: var(--card);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  padding: 0;
+}
+/* border-collapse: collapse has known sticky-cell rendering bugs (mainly
+   Safari) where borders vanish or double up on the stuck row/column -
+   border-spacing: 0 with per-cell borders gets the same grid look safely. */
+#rewardTable { width: 100%; border-collapse: separate; border-spacing: 0; }
+#rewardTable th, #rewardTable td { padding: 10px; text-align: center; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); white-space: nowrap; }
+#rewardTable th:last-child, #rewardTable td:last-child { border-right: 0; }
 #rewardTable th:first-child, #rewardTable td:first-child { text-align: left; white-space: normal; }
+
+/* The three sticky layers a spreadsheet needs, in the z-index order the
+   design calls for: corner cell > header row > left column > plain cells.
+   Every sticky cell needs an explicit opaque background or the scrolling
+   content underneath shows through it. */
+#rewardTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--card);
+}
+#rewardTable tbody td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--card);
+}
+#rewardTable thead th:first-child {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 4;
+}
+
 .catSwatch { display: inline-block; width: 12px; height: 12px; border-radius: 4px; margin-right: 8px; }
 .cellButtons { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .cellButtons button { width: 30px; height: 30px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font-weight: 900; cursor: pointer; }
@@ -194,8 +286,6 @@ header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
 .cellButtons .cellMinus { color: var(--red); }
 .cellBalance { font-weight: 900; min-width: 24px; }
 .cellSub { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
-
-.adminBtn { margin-top: 14px; width: 100%; background: var(--card); border: 1px solid var(--line); color: var(--ink); padding: 10px; border-radius: 14px; font-weight: 800; cursor: pointer; }
 
 .historyList { display: flex; flex-direction: column; gap: 8px; }
 .historyRow { background: var(--card); border-radius: 14px; padding: 10px 14px; box-shadow: var(--shadow); display: flex; align-items: center; justify-content: space-between; gap: 10px; }

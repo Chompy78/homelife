@@ -151,17 +151,24 @@
   <div class="toastContainer" id="toastContainer"></div>
 
   <div class="app hidden" id="app">
-    <header>
+    <header id="appHeader">
       <div class="headerTop">
-        <h1>🎡 Reward Tracker</h1>
+        <h1>🎡 Reward Tracker<span class="editingBadge hidden" id="editingBadge">Editing</span></h1>
         <div class="headerBtns">
-          <button id="kidViewBtn" type="button" class="iconBtn" title="Kid View">👶</button>
-          <button id="settingsBtn" type="button" class="iconBtn" title="Settings">⚙️</button>
-          <button id="darkModeBtn" type="button" class="iconBtn" title="Toggle dark mode">🌙</button>
+          <button id="editModeBtn" type="button" class="editModeBtn hidden">Edit</button>
+          <button id="menuBtn" type="button" class="iconBtn" title="Menu">☰</button>
         </div>
       </div>
       <div class="kidPickerRow" id="kidPickerRow"></div>
     </header>
+
+    <div class="menuDropdown hidden" id="menuDropdown">
+      <button id="kidViewBtn" type="button" class="menuItem">👶 Kid View</button>
+      <button id="settingsBtn" type="button" class="menuItem">⚙️ Settings</button>
+      <button id="darkModeBtn" type="button" class="menuItem"><span id="darkModeIcon">🌙</span> Dark mode</button>
+      <button id="manageCatBtn" type="button" class="menuItem">🏷️ Manage reward categories</button>
+      <button id="manageReasonsBtn2" type="button" class="menuItem">📝 Manage reward reasons</button>
+    </div>
 
     <div class="modeSwitch" id="modeSwitch">
       <button data-mode="quick" class="modeBtn active">Quick Tap</button>
@@ -191,8 +198,6 @@
       <div class="tableWrap">
         <table id="rewardTable"></table>
       </div>
-      <button id="manageCatBtn" type="button" class="adminBtn">Manage reward categories</button>
-      <button id="manageReasonsBtn2" type="button" class="adminBtn">Manage reward reasons</button>
     </section>
 
     <section id="insightsView" class="view hidden">

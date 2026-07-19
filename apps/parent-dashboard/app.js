@@ -5,6 +5,23 @@ import { compressImage } from "../shared/image.js";
 const TOKEN_KEY = "homelife_parent_token";
 const REFRESH_INTERVAL_MS = 45000;
 
+// Same fixed 9-icon set the backend validates against - a family picks any
+// 3 as an alternative to the 4-digit PIN for Parent Check (order doesn't
+// matter). Fixed layout here since this is *choosing* the password, not
+// entering it - randomised-position entry only matters in the kid-facing
+// apps that verify it.
+const PARENT_ICON_SET = [
+  { id: "dragon", emoji: "🐉", label: "Dragon" },
+  { id: "castle", emoji: "🏰", label: "Castle" },
+  { id: "crown", emoji: "👑", label: "Crown" },
+  { id: "potion", emoji: "🧪", label: "Potion" },
+  { id: "treasure", emoji: "💰", label: "Treasure" },
+  { id: "ship", emoji: "🏴‍☠️", label: "Pirate Ship" },
+  { id: "owl", emoji: "🦉", label: "Owl" },
+  { id: "crystal", emoji: "💎", label: "Crystal" },
+  { id: "sword", emoji: "⚔️", label: "Sword" },
+];
+
 const gate = document.getElementById("gate");
 const codeForm = document.getElementById("codeForm");
 const codeInput = document.getElementById("codeInput");
@@ -16,6 +33,12 @@ const switchFamilyLink = document.getElementById("switchFamilyLink");
 const displayNameInput = document.getElementById("displayNameInput");
 const pinInput = document.getElementById("pinInput");
 const familyIconInput = document.getElementById("familyIconInput");
+const authMethodPin = document.getElementById("authMethodPin");
+const authMethodIcons = document.getElementById("authMethodIcons");
+const pinMethodFields = document.getElementById("pinMethodFields");
+const iconMethodFields = document.getElementById("iconMethodFields");
+const iconPickerGrid = document.getElementById("iconPickerGrid");
+const iconPickerError = document.getElementById("iconPickerError");
 const publicToggle = document.getElementById("publicToggle");
 const aiScoreModeInput = document.getElementById("aiScoreModeInput");
 const aiScoreThresholdInput = document.getElementById("aiScoreThresholdInput");
@@ -185,15 +208,67 @@ function updateAiScoreThresholdVisibility() {
 }
 aiScoreModeInput.addEventListener("change", updateAiScoreThresholdVisibility);
 
+// --- Parent verification method: PIN or a 3-of-9 icon picker -------------
+
+let selectedAuthIcons = [];
+
+function updateAuthMethodVisibility() {
+  const usingIcons = authMethodIcons.checked;
+  pinMethodFields.classList.toggle("hidden", usingIcons);
+  iconMethodFields.classList.toggle("hidden", !usingIcons);
+}
+authMethodPin.addEventListener("change", updateAuthMethodVisibility);
+authMethodIcons.addEventListener("change", updateAuthMethodVisibility);
+
+function renderIconPicker() {
+  iconPickerGrid.innerHTML = "";
+  PARENT_ICON_SET.forEach((icon) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.id = icon.id;
+    btn.title = icon.label;
+    btn.textContent = icon.emoji;
+    btn.classList.toggle("selected", selectedAuthIcons.includes(icon.id));
+    btn.addEventListener("click", () => {
+      iconPickerError.classList.add("hidden");
+      if (selectedAuthIcons.includes(icon.id)) {
+        selectedAuthIcons = selectedAuthIcons.filter((id) => id !== icon.id);
+      } else if (selectedAuthIcons.length < 3) {
+        selectedAuthIcons = [...selectedAuthIcons, icon.id];
+      } else {
+        iconPickerError.textContent = "Only 3 icons - tap one to deselect it first.";
+        iconPickerError.classList.remove("hidden");
+        return;
+      }
+      renderIconPicker();
+    });
+    iconPickerGrid.appendChild(btn);
+  });
+}
+renderIconPicker();
+
 saveSettingsBtn.addEventListener("click", async () => {
   const patch = {};
   if (displayNameInput.value.trim()) patch.display_name = displayNameInput.value.trim();
-  if (/^\d{4}$/.test(pinInput.value.trim())) patch.parent_pin = pinInput.value.trim();
   patch.icon = familyIconInput.value;
   patch.is_public = publicToggle.checked;
   patch.ai_score_mode = aiScoreModeInput.value;
   const threshold = parseInt(aiScoreThresholdInput.value, 10);
   if (Number.isInteger(threshold) && threshold >= 1 && threshold <= 10) patch.ai_score_auto_threshold = threshold;
+
+  if (authMethodIcons.checked) {
+    if (selectedAuthIcons.length !== 3) {
+      iconPickerError.textContent = "Pick exactly 3 icons before saving.";
+      iconPickerError.classList.remove("hidden");
+      return;
+    }
+    patch.parent_auth_method = "icons";
+    patch.parent_icons = selectedAuthIcons;
+  } else {
+    patch.parent_auth_method = "pin";
+    if (/^\d{4}$/.test(pinInput.value.trim())) patch.parent_pin = pinInput.value.trim();
+  }
+
   saveSettingsBtn.disabled = true;
   const res = await callApi("update_family_settings", { token, ...patch });
   saveSettingsBtn.disabled = false;
@@ -824,7 +899,9 @@ async function render(showLoading) {
   familyHeading.textContent = `${family.icon || "🏠"} ${family.name}`;
   renderBedroomItemsAdmin(bedroom_items || []);
   // Don't clobber the settings fields while someone's mid-edit on an auto-refresh tick.
-  const editingSettings = [displayNameInput, pinInput, familyIconInput, aiScoreModeInput, aiScoreThresholdInput].includes(document.activeElement);
+  const editingSettings =
+    [displayNameInput, pinInput, familyIconInput, aiScoreModeInput, aiScoreThresholdInput, authMethodPin, authMethodIcons].includes(document.activeElement) ||
+    iconPickerGrid.contains(document.activeElement);
   if (!editingSettings) {
     displayNameInput.value = family.display_name;
     pinInput.value = family.parent_pin;
@@ -832,6 +909,12 @@ async function render(showLoading) {
     publicToggle.checked = family.is_public;
     aiScoreModeInput.value = family.ai_score_mode || "off";
     aiScoreThresholdInput.value = family.ai_score_auto_threshold || 8;
+    const usingIcons = family.parent_auth_method === "icons";
+    authMethodPin.checked = !usingIcons;
+    authMethodIcons.checked = usingIcons;
+    selectedAuthIcons = Array.isArray(family.parent_icons) ? family.parent_icons : [];
+    renderIconPicker();
+    updateAuthMethodVisibility();
     updateAiScoreThresholdVisibility();
   }
 

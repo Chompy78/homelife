@@ -269,6 +269,25 @@ header h1 { margin: 0; font-size: clamp(1.5rem, 4vw, 2rem); }
 .pinError { color: var(--red); font-weight: 700; margin-top: 12px; }
 .pinCancel { margin-top: 10px; background: transparent; border: 0; color: var(--muted); font-weight: 700; cursor: pointer; }
 
+.pinIconsGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pinIconsGrid button {
+  font-size: 2rem;
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 0;
+  cursor: pointer;
+}
+.pinIconsGrid button.selected { border-color: var(--accent); background: var(--card); }
+.pinIconsGrid.shake { animation: pinShake 0.4s; }
+@keyframes pinShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+
 /* Settings modal */
 .settingsModal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: grid; place-items: center; z-index: 60; padding: 20px; }
 .settingsModal.hidden { display: none; }

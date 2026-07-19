@@ -251,6 +251,10 @@ footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size
 .pinPad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .pinKey { background: #f7f3ea; color: var(--ink); border: 1px solid var(--line); border-radius: 14px; font-size: 1.2rem; min-height: 54px; box-shadow: none; }
 .pinKeyWide { grid-column: span 1; font-size: 0.85rem; }
+.pinIconsGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 4px; }
+.pinIconsGrid.shake { animation: pinShake 0.4s; }
+.pinIconsGrid button { background: #f7f3ea; border: 2px solid var(--line); border-radius: 14px; font-size: 1.8rem; min-height: 64px; cursor: pointer; }
+.pinIconsGrid button.selected { border-color: var(--blue); background: #fff; }
 .pinError { color: var(--red); font-weight: 800; margin-top: 12px; }
 .pinCancel { background: transparent; color: var(--muted); box-shadow: none; margin-top: 14px; min-height: unset; padding: 8px; }
 

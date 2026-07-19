@@ -18,6 +18,21 @@ const SPIN_DURATION_MAX = 8;
 // it's stable across loads without needing a schema change just for this.
 const KID_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
 
+// Same fixed 9-icon set the backend validates against - a family picks any
+// 3 as an alternative to the 4-digit PIN. A parent sets which 3 in Parent
+// Dashboard; this app only ever verifies a guess, never sees the answer.
+const PARENT_ICON_SET = [
+  { id: "dragon", emoji: "🐉" },
+  { id: "castle", emoji: "🏰" },
+  { id: "crown", emoji: "👑" },
+  { id: "potion", emoji: "🧪" },
+  { id: "treasure", emoji: "💰" },
+  { id: "ship", emoji: "🏴‍☠️" },
+  { id: "owl", emoji: "🦉" },
+  { id: "crystal", emoji: "💎" },
+  { id: "sword", emoji: "⚔️" },
+];
+
 const AVATAR_SUGGESTIONS = ["🌸", "🌟", "🦄", "⭐", "🦁", "🐬", "🚀", "🎨", "🐱", "🐶"];
 
 const gate = document.getElementById("gate");
@@ -74,8 +89,10 @@ const catUnusedSummary = document.getElementById("catUnusedSummary");
 
 const pinModal = document.getElementById("pinModal");
 const pinModalTitle = document.getElementById("pinModalTitle");
+const pinSub = document.getElementById("pinSub");
 const pinForm = document.getElementById("pinForm");
 const pinInput = document.getElementById("pinInput");
+const pinIconsGrid = document.getElementById("pinIconsGrid");
 const pinError = document.getElementById("pinError");
 const pinCancelBtn = document.getElementById("pinCancelBtn");
 
@@ -101,6 +118,8 @@ let insights = [];
 let selectedKidId = null;
 let mode = "quick";
 let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
+let parentAuthMethod = "pin"; // "pin" or "icons" - which the family has chosen, refreshed each loadState()
+let pinSelectedIcons = [];
 
 // --- Confirm modal -----------------------------------------------------
 
@@ -152,12 +171,35 @@ function requirePin(title, run) {
     run();
     return;
   }
+  const usingIcons = parentAuthMethod === "icons";
   pinModalTitle.textContent = title;
+  pinSub.textContent = usingIcons ? "Pick the 3 parent icons (any order)." : "A parent's 4-digit PIN is needed for this.";
   pinError.classList.add("hidden");
-  pinInput.value = "";
+  pinForm.classList.toggle("hidden", usingIcons);
+  pinIconsGrid.classList.toggle("hidden", !usingIcons);
+  if (usingIcons) {
+    pinSelectedIcons = [];
+    renderPinIconsGrid();
+  } else {
+    pinInput.value = "";
+    setTimeout(() => pinInput.focus(), 50);
+  }
   pinModal.classList.remove("hidden");
-  setTimeout(() => pinInput.focus(), 50);
   pinResolve = run;
+}
+
+// Shared by both methods - a successful check unlocks for PIN_UNLOCK_MS and
+// runs whatever action was waiting; a failed one reports the error but
+// leaves the modal open so the parent can try again.
+async function submitParentSecret(payload) {
+  const res = await callApi("verify_pin", { token, ...payload });
+  if (!res.ok) return false;
+  pinUnlockedUntil = Date.now() + PIN_UNLOCK_MS;
+  pinModal.classList.add("hidden");
+  const run = pinResolve;
+  pinResolve = null;
+  if (run) run();
+  return true;
 }
 
 pinForm.addEventListener("submit", async (e) => {
@@ -166,25 +208,67 @@ pinForm.addEventListener("submit", async (e) => {
   if (!pin) return;
   const btn = pinForm.querySelector(".pinSubmit");
   btn.disabled = true;
-  const res = await callApi("verify_pin", { token, pin });
+  const ok = await submitParentSecret({ pin });
   btn.disabled = false;
-  if (!res.ok) {
+  if (!ok) {
     pinError.textContent = "Wrong PIN. Try again.";
     pinError.classList.remove("hidden");
     pinInput.value = "";
     pinInput.focus();
+  }
+});
+
+function shuffledIconSet() {
+  const arr = [...PARENT_ICON_SET];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function renderPinIconsGrid() {
+  pinIconsGrid.innerHTML = "";
+  shuffledIconSet().forEach((icon) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.id = icon.id;
+    btn.textContent = icon.emoji;
+    btn.classList.toggle("selected", pinSelectedIcons.includes(icon.id));
+    btn.addEventListener("click", () => onPinIconTap(icon.id));
+    pinIconsGrid.appendChild(btn);
+  });
+}
+
+async function onPinIconTap(iconId) {
+  pinError.classList.add("hidden");
+  if (pinSelectedIcons.includes(iconId)) {
+    pinSelectedIcons = pinSelectedIcons.filter((id) => id !== iconId);
+    renderPinIconsGrid();
     return;
   }
-  pinUnlockedUntil = Date.now() + PIN_UNLOCK_MS;
-  pinModal.classList.add("hidden");
-  const run = pinResolve;
-  pinResolve = null;
-  if (run) run();
-});
+  if (pinSelectedIcons.length >= 3) return; // ignore a 4th tap rather than replacing one - keeps the gesture simple
+  pinSelectedIcons = [...pinSelectedIcons, iconId];
+  if (pinSelectedIcons.length < 3) {
+    renderPinIconsGrid();
+    return;
+  }
+  // Third icon picked - auto-submit, no separate "unlock" tap needed.
+  const ok = await submitParentSecret({ icons: pinSelectedIcons });
+  if (!ok) {
+    pinError.textContent = "Not quite. Try again.";
+    pinError.classList.remove("hidden");
+    pinSelectedIcons = [];
+    renderPinIconsGrid();
+    pinIconsGrid.classList.remove("shake");
+    requestAnimationFrame(() => pinIconsGrid.classList.add("shake"));
+  }
+}
 
 pinCancelBtn.addEventListener("click", () => {
   pinModal.classList.add("hidden");
   pinResolve = null;
+  pinSelectedIcons = [];
 });
 
 // --- Dark mode -----------------------------------------------------------
@@ -239,9 +323,10 @@ async function enterApp() {
 // --- Data loading -----------------------------------------------------
 
 async function loadState() {
-  const [stateRes, insightsRes] = await Promise.all([
+  const [stateRes, insightsRes, authRes] = await Promise.all([
     callApi("get_reward_state", { token }),
     callApi("get_reward_insights", { token }),
+    callApi("get_family_auth_method", { token }),
   ]);
   if (!stateRes.ok) {
     if (stateRes.error === "session_expired") {
@@ -253,6 +338,7 @@ async function loadState() {
   }
   state = stateRes.data;
   insights = insightsRes.ok ? insightsRes.data.insights : [];
+  if (authRes.ok) parentAuthMethod = authRes.data.method;
   if (!selectedKidId || !state.kids.some((k) => k.id === selectedKidId)) {
     selectedKidId = state.kids[0]?.id || null;
   }

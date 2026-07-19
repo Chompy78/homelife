@@ -8,6 +8,23 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-19
 
+- Added a 3-of-9 icon-picker as a family-chosen alternative to the
+  4-digit parent PIN, covering every PIN-gated flow that shares
+  `families.parent_pin` today: reward-tracker (delete category, Reset,
+  Kid View exit) and Bedroom Reset's Parent Check. A family picks PIN
+  or icon-picker in the parent dashboard's Settings (not a replacement
+  - only one is active at a time); the 9-icon grid reshuffles positions
+  on every open and after every wrong attempt so a kid watching can't
+  learn the picker's *layout*, only which pictures matter, matching
+  order doesn't matter (3-of-9, ~1-in-84 odds). New
+  `families.parent_auth_method`/`parent_icons` columns, one shared
+  `verifyParentSecret` backend helper replacing three previously-
+  duplicated inline PIN comparisons, and a new role-agnostic
+  `get_family_auth_method` action so a kid's own device can pick the
+  right verification UI before a parent authenticates. See
+  `D-2026-07-19-parent-icon-auth-alternative`. Verified live against
+  disposable test families for all three apps. Bumped service worker
+  caches: parent-dashboard v6, reward-tracker v11, bedroom-reset v21.
 - Added spin weighting, sound, and adjustable duration to the reward
   wheel. Each reward category now has a 1-5 spin weight (editable in
   Manage Categories) that controls the wedge's *size* on the wheel -

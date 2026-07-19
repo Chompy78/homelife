@@ -46,6 +46,34 @@ const VERIFY_IMAGE_POOL = ["🐸", "🦄", "🍕", "🚗", "⚽", "🎈", "🐶"
 const VERIFY_MAX_ATTEMPTS = 2;
 const VERIFY_LOCKOUT_MINUTES = 15;
 
+// Parent verification: a family picks one of two methods (never both at
+// once) - the original 4-digit PIN, or picking the same 3 of these 9
+// fantasy icons every time (order doesn't matter). Same "friction, not a
+// real security boundary" posture as everywhere else PIN-style checks
+// happen in this app. The icon set is a fixed public list - there's
+// nothing secret about which 9 icons exist, only which 3 a family picked.
+const PARENT_ICON_IDS = ["dragon", "castle", "crown", "potion", "treasure", "ship", "owl", "crystal", "sword"];
+
+async function verifyParentSecret(familyId: string, body: Record<string, unknown>) {
+  const { data: family } = await db
+    .from("families")
+    .select("parent_auth_method, parent_pin, parent_icons")
+    .eq("id", familyId)
+    .single();
+  if (!family) return false;
+
+  if (family.parent_auth_method === "icons") {
+    const submitted = Array.isArray(body.icons) ? body.icons.map((i: unknown) => String(i)) : [];
+    const correct = family.parent_icons || [];
+    if (submitted.length !== 3 || correct.length !== 3) return false;
+    const submittedSet = new Set(submitted);
+    if (submittedSet.size !== 3) return false; // no repeated taps counted as 3 distinct icons
+    return correct.every((icon: string) => submittedSet.has(icon));
+  }
+
+  return String(body.pin || "") === family.parent_pin;
+}
+
 const PHOTO_BUCKET = "reference-photos";
 const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
@@ -645,8 +673,7 @@ Deno.serve(async (req) => {
         const eventType = String(body.event_type || "");
         if (!["parent_pass", "parent_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
 
-        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
-        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        if (!(await verifyParentSecret(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
 
         const emoji = eventType === "parent_star" ? "⭐" : "✅";
         const label = eventType === "parent_star" ? "Great job from a parent!" : "Passed by a parent!";
@@ -753,6 +780,20 @@ Deno.serve(async (req) => {
         if (typeof body.is_public === "boolean") patch.is_public = body.is_public;
         if (typeof body.parent_pin === "string" && /^\d{4}$/.test(body.parent_pin)) patch.parent_pin = body.parent_pin;
         if (typeof body.icon === "string" && body.icon.trim()) patch.icon = body.icon.trim().slice(0, 8);
+
+        const validIconSet = (arr: unknown): arr is string[] =>
+          Array.isArray(arr) && arr.length === 3 && new Set(arr).size === 3 && arr.every((i) => typeof i === "string" && PARENT_ICON_IDS.includes(i));
+        if (validIconSet(body.parent_icons)) patch.parent_icons = body.parent_icons;
+
+        if (typeof body.parent_auth_method === "string" && ["pin", "icons"].includes(body.parent_auth_method)) {
+          if (body.parent_auth_method === "icons" && !("parent_icons" in patch)) {
+            // Switching to icons without providing 3 in this same call - only
+            // allow it if the family already has 3 saved from before.
+            const { data: existing } = await db.from("families").select("parent_icons").eq("id", session.family_id).maybeSingle();
+            if (!validIconSet(existing?.parent_icons)) return json({ ok: false, error: "icons_not_set" }, 400);
+          }
+          patch.parent_auth_method = body.parent_auth_method;
+        }
         if (typeof body.ai_score_mode === "string" && ["off", "informational", "nudge", "auto_approve"].includes(body.ai_score_mode)) {
           patch.ai_score_mode = body.ai_score_mode;
         }
@@ -1073,9 +1114,18 @@ Deno.serve(async (req) => {
       case "verify_pin": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
-        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
-        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        if (!(await verifyParentSecret(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
         return json({ ok: true });
+      }
+
+      // Lets a kid or parent session find out which method to render
+      // (numeric keypad vs. the 9-icon grid) before attempting a check -
+      // reveals only the method, never the PIN or which 3 icons are correct.
+      case "get_family_auth_method": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const { data: family } = await db.from("families").select("parent_auth_method").eq("id", session.family_id).single();
+        return json({ ok: true, data: { method: family?.parent_auth_method || "pin" } });
       }
 
       // Weekly/monthly earned-per-kid, all-time balance and top category -
@@ -1466,8 +1516,7 @@ Deno.serve(async (req) => {
         const eventType = String(body.event_type || "");
         if (!["parent_pass", "parent_star"].includes(eventType)) return json({ ok: false, error: "bad_event_type" }, 400);
 
-        const { data: family } = await db.from("families").select("parent_pin").eq("id", session.family_id).single();
-        if (String(body.pin || "") !== family?.parent_pin) return json({ ok: false, error: "wrong_pin" }, 403);
+        if (!(await verifyParentSecret(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
 
         const emoji = eventType === "parent_star" ? "⭐" : "✅";
         const label = eventType === "parent_star" ? "Great job from a parent!" : "Passed by a parent!";

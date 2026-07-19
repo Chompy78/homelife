@@ -87,9 +87,6 @@
         <label>Display name on leaderboard
           <input type="text" id="displayNameInput" maxlength="60" />
         </label>
-        <label>Family PIN (for Parent Check)
-          <input type="text" id="pinInput" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" />
-        </label>
         <label>Family icon
           <select id="familyIconInput">
             <option value="🏠">🏠 House</option>
@@ -105,6 +102,27 @@
           </select>
         </label>
       </div>
+
+      <div class="verifyMethodSection">
+        <div class="settingsRowTitle">Parent verification (for Parent Check)</div>
+        <div class="verifyMethodSwitch">
+          <label><input type="radio" name="authMethod" id="authMethodPin" value="pin" /> 4-digit PIN</label>
+          <label><input type="radio" name="authMethod" id="authMethodIcons" value="icons" /> Pick 3 icons</label>
+        </div>
+
+        <div id="pinMethodFields">
+          <label>Family PIN
+            <input type="text" id="pinInput" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" />
+          </label>
+        </div>
+
+        <div id="iconMethodFields" class="hidden">
+          <p class="settingsRowSub">Tap exactly 3 icons - this is what you'll pick (in any order, positions shuffle each time) for Parent Check instead of typing a PIN.</p>
+          <div class="iconPickerGrid" id="iconPickerGrid"></div>
+          <p class="iconPickerError hidden" id="iconPickerError"></p>
+        </div>
+      </div>
+
       <label class="publicToggle">
         <input type="checkbox" id="publicToggle" />
         Share our stats on the public leaderboard

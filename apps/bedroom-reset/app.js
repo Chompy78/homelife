@@ -9,6 +9,21 @@ const CHECKLIST_KEY_PREFIX = "bedroom-reset-checklist-v8:";
 const STREAK_CACHE_KEY_PREFIX = "bedroom-reset-streak-cache-v7:";
 const BEDROOM_ITEMS_CACHE_KEY = "bedroom-reset-items-cache-v1";
 
+// Same fixed 9-icon set the backend validates against - an alternative to
+// the 4-digit PIN a family can choose instead (set up in Parent Dashboard).
+// This app only ever verifies a guess against it, never sees the answer.
+const PARENT_ICON_SET = [
+  { id: "dragon", emoji: "🐉" },
+  { id: "castle", emoji: "🏰" },
+  { id: "crown", emoji: "👑" },
+  { id: "potion", emoji: "🧪" },
+  { id: "treasure", emoji: "💰" },
+  { id: "ship", emoji: "🏴‍☠️" },
+  { id: "owl", emoji: "🦉" },
+  { id: "crystal", emoji: "💎" },
+  { id: "sword", emoji: "⚔️" },
+];
+
 const kidPicker = document.getElementById("kidPicker");
 const codeForm = document.getElementById("codeForm");
 const codeInput = document.getElementById("codeInput");
@@ -43,8 +58,10 @@ const badgeShelfEl = document.getElementById("badgeShelf");
 
 const pinModal = document.getElementById("pinModal");
 const pinTitleEl = document.getElementById("pinTitle");
+const pinSubEl = document.getElementById("pinSub");
 const pinDotsEl = document.getElementById("pinDots");
 const pinPadEl = document.getElementById("pinPad");
+const pinIconsGridEl = document.getElementById("pinIconsGrid");
 const pinErrorEl = document.getElementById("pinError");
 const pinCancelBtn = document.getElementById("pinCancel");
 
@@ -115,10 +132,13 @@ function updateRoomItem(itemId, checked) {
     ? callApi("update_checklist_item", { token, item_id: itemId, checked })
     : callApi("update_family_room_item", { token, room_id: activeRoom.id, item_id: itemId, checked });
 }
-function roomParentCheck(eventType, pin) {
+function roomParentCheck(eventType, secret) {
+  // secret is either a 4-digit PIN string or an array of 3 icon ids,
+  // depending on which method the family has chosen.
+  const secretPayload = Array.isArray(secret) ? { icons: secret } : { pin: secret };
   return activeRoom.type === "bedroom"
-    ? callApi("parent_check", { token, event_type: eventType, pin })
-    : callApi("family_room_parent_check", { token, room_id: activeRoom.id, event_type: eventType, pin });
+    ? callApi("parent_check", { token, event_type: eventType, ...secretPayload })
+    : callApi("family_room_parent_check", { token, room_id: activeRoom.id, event_type: eventType, ...secretPayload });
 }
 function roomTryAgain() {
   return activeRoom.type === "bedroom"
@@ -667,6 +687,8 @@ confirmNoBtn.addEventListener("click", () => {
 let pinEntry = "";
 let pinResolve = null;
 let pinBusy = false;
+let parentAuthMethod = "pin"; // "pin" or "icons" - refreshed each time the modal opens
+let pinSelectedIcons = [];
 
 function buildPinPad() {
   pinPadEl.innerHTML = "";
@@ -694,7 +716,7 @@ function buildPinPad() {
         if (pinEntry.length >= 4 || pinBusy) return;
         pinEntry += key;
         updatePinDots();
-        if (pinEntry.length === 4) submitPin();
+        if (pinEntry.length === 4) submitSecret(pinEntry);
       });
     }
     pinPadEl.appendChild(btn);
@@ -706,32 +728,86 @@ function updatePinDots() {
   dots.forEach((dot, i) => dot.classList.toggle("filled", i < pinEntry.length));
 }
 
-async function submitPin() {
+function shuffledIconSet() {
+  const arr = [...PARENT_ICON_SET];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function buildPinIconsGrid() {
+  pinIconsGridEl.innerHTML = "";
+  shuffledIconSet().forEach((icon) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.id = icon.id;
+    btn.textContent = icon.emoji;
+    btn.classList.toggle("selected", pinSelectedIcons.includes(icon.id));
+    btn.addEventListener("click", () => {
+      if (pinBusy) return;
+      if (pinSelectedIcons.includes(icon.id)) {
+        pinSelectedIcons = pinSelectedIcons.filter((id) => id !== icon.id);
+      } else if (pinSelectedIcons.length < 3) {
+        pinSelectedIcons = [...pinSelectedIcons, icon.id];
+      } else {
+        return; // ignore a 4th tap rather than replacing one - keeps the gesture simple
+      }
+      buildPinIconsGrid();
+      if (pinSelectedIcons.length === 3) submitSecret(pinSelectedIcons);
+    });
+    pinIconsGridEl.appendChild(btn);
+  });
+}
+
+// Shared by both methods - secret is either a 4-digit PIN string or an
+// array of 3 icon ids.
+async function submitSecret(secret) {
   pinBusy = true;
-  const pin = pinEntry;
-  const result = await pinResolve.checkFn(pin);
+  const result = await pinResolve.checkFn(secret);
   pinBusy = false;
   if (result.ok) {
     pinErrorEl.classList.add("hidden");
     setTimeout(() => closePinModal(true), 150);
   } else {
-    pinErrorEl.textContent = result.message || "Wrong PIN - try again.";
+    pinErrorEl.textContent = result.message || (Array.isArray(secret) ? "Not quite - try again." : "Wrong PIN - try again.");
     pinErrorEl.classList.remove("hidden");
-    pinDotsEl.classList.add("shake");
+    const shakeTarget = Array.isArray(secret) ? pinIconsGridEl : pinDotsEl;
+    shakeTarget.classList.add("shake");
     setTimeout(() => {
-      pinDotsEl.classList.remove("shake");
-      pinEntry = "";
-      updatePinDots();
+      shakeTarget.classList.remove("shake");
+      if (Array.isArray(secret)) {
+        pinSelectedIcons = [];
+        buildPinIconsGrid();
+      } else {
+        pinEntry = "";
+        updatePinDots();
+      }
     }, 400);
   }
 }
 
-function requestParentPin(title, checkFn) {
+async function requestParentPin(title, checkFn) {
   pinTitleEl.textContent = title;
-  pinEntry = "";
-  updatePinDots();
   pinErrorEl.classList.add("hidden");
   pinModal.classList.remove("hidden");
+
+  const authRes = await callApi("get_family_auth_method", { token });
+  parentAuthMethod = authRes.ok ? authRes.data.method : "pin";
+  const usingIcons = parentAuthMethod === "icons";
+  pinSubEl.textContent = usingIcons ? "Ask a parent to pick their 3 icons (any order)." : "Ask a parent to enter the family PIN.";
+  pinDotsEl.classList.toggle("hidden", usingIcons);
+  pinPadEl.classList.toggle("hidden", usingIcons);
+  pinIconsGridEl.classList.toggle("hidden", !usingIcons);
+  if (usingIcons) {
+    pinSelectedIcons = [];
+    buildPinIconsGrid();
+  } else {
+    pinEntry = "";
+    updatePinDots();
+  }
+
   return new Promise((resolve) => {
     pinResolve = { resolve, checkFn };
   });

@@ -71,15 +71,18 @@
     </div>
   </div>
 
-  <!-- PIN gate: shown before Spend, category delete, Reset, or leaving Kid View -->
+  <!-- Parent gate: shown before Spend, category delete, Reset, or leaving Kid View.
+       Renders either a PIN form or a 3-of-9 icon grid, depending on the
+       family's chosen verification method. -->
   <div class="pinModal hidden" id="pinModal">
     <div class="pinCard">
       <h2 id="pinModalTitle">Enter PIN</h2>
-      <p class="pinSub">A parent's 4-digit PIN is needed for this.</p>
+      <p class="pinSub" id="pinSub">A parent's 4-digit PIN is needed for this.</p>
       <form id="pinForm">
         <input id="pinInput" class="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" />
         <button type="submit" class="pinSubmit">Unlock</button>
       </form>
+      <div class="pinIconsGrid hidden" id="pinIconsGrid"></div>
       <p class="pinError hidden" id="pinError"></p>
       <button type="button" class="pinCancel" id="pinCancelBtn">Cancel</button>
     </div>

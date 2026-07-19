@@ -304,6 +304,49 @@ guide, then set up this project's governance docs (`AGENTS.md`,
   existing `submit_room_fingerprint` action - `process_job`/
   `llava_score` untouched. Delivered the updated `poller.py`. See
   `D-2026-07-17-poller-fingerprint-generation`.
+- User asked for a summary of the regenerate-now work to hand to
+  another AI helping on the home-server side; wrote one, then
+  corrected it once poller.py's actual code (above) showed the
+  original summary's premise (that fingerprint generation already
+  existed) was wrong.
+- User pasted external reasoning flagging that `poller.py`'s
+  `WORKER_TOKEN` was hardcoded as a plain string literal, with a
+  queued task to push the file to a private GitHub repo - agreed the
+  risk was real (private repo doesn't protect against account
+  compromise or a visibility mistake, and git history is hard to
+  clean after a push) and refactored to read
+  `HOMELIFE_WORKER_TOKEN` from the environment instead, failing
+  closed if unset. Walked the user through setting it in their
+  crontab (cron doesn't inherit `~/.bashrc` exports, so the crontab
+  itself is the only place it can live for a scheduled job) using the
+  dump/edit/reinstall pattern (`crontab -l > file`, edit, `crontab
+  file`) after an interactive `crontab -e` edit failed with a "bad
+  minute" parse error. Confirmed working end to end via the poller's
+  own log: a clean polling stretch followed by a real
+  fingerprint-regeneration request processed successfully. See
+  `D-2026-07-18-poller-token-out-of-source`.
+- User asked to use `Homelife_parents_favicon.png` (already sitting in
+  `assets/images/` from earlier icon-generation work) as the parent
+  dashboard's own favicon/app icon, closing the loop on the very first
+  ask of this session (differentiate the parent app's icon from the
+  other apps' green house glyph). Resized it into the four sizes the
+  app needs and pointed `index.html` and the service worker at its own
+  local `icons/` files instead of sharing `apps/shared/icons/` with
+  every other app. Bumped the parent-dashboard cache to v5.
+- Pushing that change hit a diverged `origin/main` twice in a row (an
+  AI-agent workflow scaffold and a new `my-rewards` kid app landed
+  from another session mid-merge; then, after resolving that, a batch
+  of Reward Tracker UX changes - instant tap, inline +/- buttons,
+  per-kid theme colours, customizable reasons - landed too). Both
+  merges resolved by keeping both sides' `CHANGELOG.md`/`DECISIONS.md`
+  entries (removing only the conflict markers) and let git auto-merge
+  `supabase/functions/family-api/index.ts` cleanly each time. The edge
+  function was redeployed twice more (v23, then v26) to keep the live
+  function in sync with each merge - the second redeploy was delegated
+  to a subagent (read the full 1768-line file, deploy it byte-for-byte,
+  run the same live sanity checks) to keep it out of the main context
+  window. Both redeploys verified live via `get_leaderboard` and a
+  bad-code rejection check.
 
 ## Files touched
 
@@ -317,21 +360,37 @@ guide, then set up this project's governance docs (`AGENTS.md`,
 `apps/parent-dashboard/index.html`, `apps/parent-dashboard/styles.css`,
 `apps/parent-dashboard/service-worker.js`,
 `apps/parent-dashboard/manifest.json`, `apps/parent-dashboard/icons/`,
-`assets/images/homelife_favicon.png`.
+`assets/images/homelife_favicon.png`,
+`assets/images/Homelife_parents_favicon.png`,
+`docs/sessions/2026-07-16-ai-scoring-and-governance-docs.md` (this file).
+`poller.py` also touched twice (WORKER_TOKEN → env var, fingerprint
+generation added) but is never committed to this repo - delivered
+directly to the user each time.
 
 ## Related
 
-- All 15 entries in `DECISIONS.md`, dated 2026-07-13 through
-  2026-07-16.
+- All entries in `DECISIONS.md`, dated 2026-07-13 through 2026-07-18.
 - All entries in `CHANGELOG.md`.
 
 ## Carried forward
 
-- Confirming, on the user's real worker, that the new fingerprint-
-  generation code in `poller.py` actually runs cleanly end to end
-  (`get_pending_fingerprint_regenerations` → `generate_room_fingerprint`
-  → `submit_room_fingerprint`) and that the parent dashboard's pending
-  state clears as expected.
+- The 🔴 NOW task "Confirm the fingerprint-based pipeline on the real
+  worker" in `docs/TASK_BOARD.md` is now stale: its "done when" list
+  (items e/f) describes confirming a fingerprint-based *room-match*
+  step in the scorer, but the real `poller.py` doesn't use a
+  fingerprint for scoring at all - it compares submitted photos
+  directly against raw reference photos (discovered this session, see
+  `D-2026-07-17-poller-fingerprint-generation`). That task's
+  acceptance criteria need rewriting to match the actual architecture,
+  or the fingerprint-based room-match approach needs to actually be
+  (re)implemented if it's still wanted - this needs a human decision,
+  not a silent edit, since it changes what "done" means for that task.
+- Confirming the new `generate_room_fingerprint()` fingerprint
+  generation in `poller.py` keeps working over time (verified once
+  live this session, via a real processed request in the poller's
+  log) - it's a purely additive, parent-facing description feature,
+  not tied to scoring, but worth re-checking after any future
+  `poller.py` edit.
 - Five hardening ideas still sit on 🟢 LATER, deliberately deferred: a
   deterministic scene-classifier gate, reference-photo embedding
   similarity, evaluating newer local VLMs, a daily anti-cheat capture

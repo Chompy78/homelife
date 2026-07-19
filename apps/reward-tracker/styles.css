@@ -24,7 +24,12 @@ body {
   background: var(--bg);
   color: var(--ink);
   min-height: 100vh;
-  padding: 16px;
+  /* No top padding: the sticky header is the first thing in .app, so this
+     keeps it flush with the true viewport top from scroll position zero.
+     A top padding here would make the header visibly travel that distance
+     before its "top: 0" stickiness engages, instead of being pinned
+     immediately. */
+  padding: 0 16px 16px;
 }
 .hidden { display: none !important; }
 .app { max-width: 900px; margin: 0 auto; }
@@ -182,17 +187,52 @@ header h1 { margin: 0; font-size: clamp(1.05rem, 3.2vw, 1.35rem); display: flex;
 .rewardMinus { color: var(--red); }
 .rewardPlus { color: var(--green); }
 
+/* Bonus spins earned from named reasons (see grant_spin_credit) - shown
+   above the wheel, consumed as extra automatic spins the next time SPIN
+   is tapped rather than gating spinning itself. */
+.bonusSpinRow {
+  text-align: center;
+  font-weight: 800;
+  background: color-mix(in srgb, var(--accent) 15%, var(--card));
+  border: 2px solid var(--accent);
+  border-radius: 999px;
+  padding: 8px 14px;
+  margin: 0 auto 12px;
+  max-width: 320px;
+}
+.bonusSpinRow.hidden { display: none; }
+
 /* Spin wheel - a fixed pointer at 12 o'clock, a conic-gradient wheel built
    from the family's own reward categories (same colours as everywhere
-   else), rotated with CSS transform on spin. */
-.wheelWrap { position: relative; width: 220px; height: 220px; margin: 10px auto 16px; }
+   else), rotated with CSS transform on spin. Bigger than the original
+   220px so it reads as the screen's main focal point; wedge labels are
+   absolutely-positioned children of #wheel itself so they rotate together
+   with it during a spin instead of needing separate animation. */
+.wheelWrap { position: relative; width: min(320px, 88vw); height: min(320px, 88vw); margin: 10px auto 16px; }
 .wheel {
+  position: relative;
   width: 100%;
   height: 100%;
   border-radius: 50%;
   border: 6px solid var(--card);
   box-shadow: var(--shadow);
   transition: transform 2.6s cubic-bezier(0.15, 0.85, 0.35, 1);
+}
+.wheelLabel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform-origin: 0 0;
+  max-width: 34%;
+  font-weight: 800;
+  font-size: 0.72rem;
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  pointer-events: none;
 }
 .wheelPointer {
   position: absolute;
@@ -204,21 +244,43 @@ header h1 { margin: 0; font-size: clamp(1.05rem, 3.2vw, 1.35rem); display: flex;
   z-index: 2;
   filter: drop-shadow(0 2px 2px rgba(0,0,0,0.3));
 }
+/* Centered in the wheel's hub rather than below it - hidden entirely while
+   spinning (JS toggles .hidden) instead of just disabled, since there's
+   nothing useful to tap until the current spin finishes. Not a child of
+   #wheel, so it does not rotate along with the wheel during a spin. */
 .spinBtn {
-  display: block;
-  margin: 0 auto 16px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  border: 0;
-  border-radius: 999px;
-  padding: 14px 44px;
+  border: 4px solid var(--card);
   font-weight: 900;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   letter-spacing: 0.05em;
   cursor: pointer;
   box-shadow: var(--shadow);
 }
 .spinBtn:disabled { opacity: 0.6; cursor: default; }
+.spinBtn.hidden { display: none; }
+
+/* Named reasons that grant a bonus spin credit (see grant_spin_credit) -
+   a simple "tick yes" list under the wheel, greyed out per-reason once
+   used up for its own period. */
+.spinReasonsCard { background: var(--card); border-radius: 18px; padding: 14px; box-shadow: var(--shadow); margin-top: 16px; }
+.spinReasonsTitle { margin: 0 0 10px; font-size: 1rem; }
+.spinReasonsList { display: flex; flex-direction: column; gap: 8px; }
+.spinReasonRow { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg); border-radius: 12px; padding: 8px 12px; }
+.spinReasonInfo { display: flex; flex-direction: column; }
+.spinReasonLabel { font-weight: 800; }
+.spinReasonPeriod { font-size: 0.75rem; color: var(--muted); font-weight: 700; }
+.spinReasonGrantBtn { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 8px 14px; font-weight: 800; cursor: pointer; flex: 0 0 auto; }
+.spinReasonGrantBtn:disabled { background: var(--line); color: var(--muted); cursor: default; }
 .spinResult { text-align: center; font-weight: 800; font-size: 1.05rem; margin: 0 0 16px; min-height: 1.3em; }
 .spinResult.hidden { visibility: hidden; }
 .wheelLegend { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
@@ -289,8 +351,14 @@ header h1 { margin: 0; font-size: clamp(1.05rem, 3.2vw, 1.35rem); display: flex;
 
 .historyList { display: flex; flex-direction: column; gap: 8px; }
 .historyRow { background: var(--card); border-radius: 14px; padding: 10px 14px; box-shadow: var(--shadow); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+/* min-width: 0 lets this flex item actually shrink - without it, a row
+   with a long custom note refuses to shrink below its content's natural
+   width, overflowing the row (and the page) instead of wrapping, which
+   pushes the Undo button outside the visible/tappable screen area rather
+   than just hiding text behind it. */
+.historyMain { min-width: 0; }
 .historyLine1 { font-weight: 900; }
-.historyLine2 { font-size: 0.85rem; color: var(--muted); font-weight: 700; }
+.historyLine2 { font-size: 0.85rem; color: var(--muted); font-weight: 700; overflow-wrap: break-word; }
 .undoBtn { background: transparent; border: 1px solid var(--line); color: var(--muted); border-radius: 10px; padding: 6px 12px; font-weight: 800; cursor: pointer; flex: 0 0 auto; }
 .empty { color: var(--muted); font-weight: 700; text-align: center; }
 

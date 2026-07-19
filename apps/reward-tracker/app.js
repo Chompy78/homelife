@@ -8,7 +8,7 @@ const DARK_MODE_KEY = "homelife_reward_dark_mode";
 const PIN_PROTECTION_KEY = "homelife_reward_pin_protection";
 const PIN_UNLOCK_MS = 5 * 60 * 1000;
 const UNDO_TOAST_MS = 5000;
-const SPIN_SOUND_KEY = "homelife_spin_sound";
+const SPIN_SOUND_KEY = "homelife_spin_sound"; // stores a preset name now, not "0"/"1" - see spinSoundPreset()
 const SPIN_DURATION_KEY = "homelife_spin_duration";
 const SPIN_DURATION_DEFAULT = 2.6;
 const SPIN_DURATION_MIN = 2;
@@ -17,6 +17,35 @@ const SPIN_DURATION_MAX = 8;
 // kids has no colour column - assigned client-side by position instead, so
 // it's stable across loads without needing a schema change just for this.
 const KID_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
+
+// Spin sound presets - "off" is handled separately (no config needed), the
+// rest are named tick-tone + landing-tone configs for playTone(). "chimes"
+// is the original sound, kept as the default so nobody's existing
+// preference silently changes.
+const SPIN_SOUND_PRESETS = {
+  chimes: {
+    tick: { freq: 500, type: "square", gain: 0.05 },
+    landing: [
+      { freq: 660, type: "sine", dur: 0.18, gain: 0.16, delay: 0 },
+      { freq: 880, type: "sine", dur: 0.25, gain: 0.16, delay: 0.08 },
+    ],
+  },
+  arcade: {
+    tick: { freq: 720, type: "sawtooth", gain: 0.045 },
+    landing: [
+      { freq: 523, type: "square", dur: 0.12, gain: 0.14, delay: 0 },
+      { freq: 659, type: "square", dur: 0.12, gain: 0.14, delay: 0.1 },
+      { freq: 784, type: "square", dur: 0.2, gain: 0.15, delay: 0.2 },
+    ],
+  },
+  retro: {
+    tick: { freq: 380, type: "square", gain: 0.05 },
+    landing: [
+      { freq: 440, type: "square", dur: 0.1, gain: 0.14, delay: 0 },
+      { freq: 440, type: "square", dur: 0.1, gain: 0.14, delay: 0.14 },
+    ],
+  },
+};
 
 // Same fixed 9-icon set the backend validates against - a family picks any
 // 3 as an alternative to the 4-digit PIN. A parent sets which 3 in Parent
@@ -64,6 +93,8 @@ const wheel = document.getElementById("wheel");
 const wheelLegend = document.getElementById("wheelLegend");
 const spinBtn = document.getElementById("spinBtn");
 const spinResult = document.getElementById("spinResult");
+const bonusSpinRow = document.getElementById("bonusSpinRow");
+const bonusSpinText = document.getElementById("bonusSpinText");
 const rewardTable = document.getElementById("rewardTable");
 const insightsContent = document.getElementById("insightsContent");
 const historyList = document.getElementById("historyList");
@@ -93,6 +124,16 @@ const addCatBtn = document.getElementById("addCatBtn");
 const catError = document.getElementById("catError");
 const catUnusedSummary = document.getElementById("catUnusedSummary");
 
+const spinReasonsList = document.getElementById("spinReasonsList");
+const manageSpinReasonsBtn = document.getElementById("manageSpinReasonsBtn");
+const spinReasonsModal = document.getElementById("spinReasonsModal");
+const spinReasonsModalClose = document.getElementById("spinReasonsModalClose");
+const spinReasonsManageList = document.getElementById("spinReasonsManageList");
+const newSpinReasonLabel = document.getElementById("newSpinReasonLabel");
+const newSpinReasonPeriod = document.getElementById("newSpinReasonPeriod");
+const addSpinReasonBtn = document.getElementById("addSpinReasonBtn");
+const spinReasonsError = document.getElementById("spinReasonsError");
+
 const pinModal = document.getElementById("pinModal");
 const pinModalTitle = document.getElementById("pinModalTitle");
 const pinSub = document.getElementById("pinSub");
@@ -105,7 +146,7 @@ const pinCancelBtn = document.getElementById("pinCancelBtn");
 const settingsModal = document.getElementById("settingsModal");
 const settingsModalClose = document.getElementById("settingsModalClose");
 const pinProtectionToggle = document.getElementById("pinProtectionToggle");
-const spinSoundToggle = document.getElementById("spinSoundToggle");
+const spinSoundPresetSelect = document.getElementById("spinSoundPresetSelect");
 const spinDurationSlider = document.getElementById("spinDurationSlider");
 const spinDurationValue = document.getElementById("spinDurationValue");
 const avatarList = document.getElementById("avatarList");
@@ -161,8 +202,14 @@ function pinProtectionOn() {
   return localStorage.getItem(PIN_PROTECTION_KEY) !== "0"; // on by default
 }
 
-function spinSoundOn() {
-  return localStorage.getItem(SPIN_SOUND_KEY) !== "0"; // on by default
+// Migrates the old on/off boolean ("0"/"1") to a preset name - anything
+// already stored as "0" becomes "off", "1" or unset becomes the default
+// "chimes" preset (the original sound), any valid preset name (including
+// "off" itself) passes through unchanged.
+function spinSoundPreset() {
+  const raw = localStorage.getItem(SPIN_SOUND_KEY);
+  if (raw === "off" || raw in SPIN_SOUND_PRESETS) return raw;
+  return raw === "0" ? "off" : "chimes";
 }
 
 function getSpinDurationSeconds() {
@@ -405,6 +452,8 @@ function renderAll() {
   renderActiveKidBanner();
   renderRewardRows();
   renderWheel();
+  renderBonusSpinRow();
+  renderSpinReasonsList();
   renderTable();
   renderInsights();
   renderHistory();
@@ -521,23 +570,24 @@ function playTone(ctx, freq, startTime, duration, type, peakGain) {
 }
 
 function playSpinTicks(durationSeconds) {
-  if (!spinSoundOn()) return;
+  const preset = SPIN_SOUND_PRESETS[spinSoundPreset()];
+  if (!preset) return; // "off"
   const ctx = getAudioCtx();
   const now = ctx.currentTime;
   const tickCount = Math.round(10 + durationSeconds * 4); // more ticks for a longer spin
   for (let i = 0; i < tickCount; i++) {
     const t = i / tickCount;
     const eased = 1 - (1 - t) * (1 - t); // spreads ticks out near the end, matching the wheel's own deceleration
-    playTone(ctx, 500, now + eased * durationSeconds, 0.04, "square", 0.05);
+    playTone(ctx, preset.tick.freq, now + eased * durationSeconds, 0.04, preset.tick.type, preset.tick.gain);
   }
 }
 
 function playLandingChime() {
-  if (!spinSoundOn()) return;
+  const preset = SPIN_SOUND_PRESETS[spinSoundPreset()];
+  if (!preset) return; // "off"
   const ctx = getAudioCtx();
   const now = ctx.currentTime;
-  playTone(ctx, 660, now, 0.18, "sine", 0.16);
-  playTone(ctx, 880, now + 0.08, 0.25, "sine", 0.16);
+  preset.landing.forEach((tone) => playTone(ctx, tone.freq, now + tone.delay, tone.dur, tone.type, tone.gain));
 }
 
 // Wedge width is proportional to spin_weight, so a plain uniform-random
@@ -546,6 +596,7 @@ function playLandingChime() {
 function renderWheel() {
   const cats = state.categories;
   wheelLegend.innerHTML = "";
+  wheel.querySelectorAll(".wheelLabel").forEach((el) => el.remove());
   wheelWedges = [];
   if (!cats.length) {
     wheel.style.background = "var(--line)";
@@ -562,6 +613,25 @@ function renderWheel() {
     angle += span;
   });
   wheel.style.background = `conic-gradient(${stops.join(", ")})`;
+
+  // Labels are children of #wheel itself, so they rotate together with it
+  // during a spin (no separate animation to keep in sync) - positioned
+  // radially at each wedge's middle angle, at ~62% of the wheel's radius.
+  // Computed in JS (not a CSS percentage) since translate() on a
+  // top:50%/left:50% element is relative to the label's own box, not the
+  // wheel's - and .wheelWrap's size is itself responsive (min(320px, 88vw)).
+  const wheelRadiusPx = (wheel.clientWidth || 300) / 2;
+  const labelRadiusPx = wheelRadiusPx * 0.62;
+  cats.forEach((cat, i) => {
+    const wedge = wheelWedges[i];
+    const midAngle = (wedge.start + wedge.end) / 2;
+    const label = document.createElement("span");
+    label.className = "wheelLabel";
+    label.textContent = cat.label;
+    label.style.transform = `rotate(${midAngle}deg) translateY(-${labelRadiusPx}px) rotate(${-midAngle}deg) translate(-50%, -50%)`;
+    wheel.appendChild(label);
+  });
+
   cats.forEach((cat) => {
     const item = document.createElement("span");
     item.className = "wheelLegendItem" + (cat.id === winningCategoryId ? " winning" : "");
@@ -570,19 +640,77 @@ function renderWheel() {
     wheelLegend.appendChild(item);
   });
   spinBtn.disabled = !selectedKidId || spinning;
+  spinBtn.classList.toggle("hidden", spinning);
 }
 
 spinBtn.addEventListener("click", () => spin());
+
+function renderBonusSpinRow() {
+  const kid = state.kids.find((k) => k.id === selectedKidId);
+  const count = kid?.bonus_spins || 0;
+  bonusSpinRow.classList.toggle("hidden", count === 0);
+  bonusSpinText.textContent = `${count} bonus spin${count === 1 ? "" : "s"} available`;
+}
+
+const SPIN_REASON_PERIOD_LABEL = { daily: "once a day", weekly: "once a week", monthly: "once a month" };
+
+// The "tick yes" list for the currently selected kid - a reason already
+// used this period is greyed out rather than hidden, so a parent can still
+// see it's configured and when it'll next be available.
+function renderSpinReasonsList() {
+  spinReasonsList.innerHTML = "";
+  const reasons = state.spin_reasons || [];
+  if (!reasons.length || !selectedKidId) return;
+  const availability = state.spin_credit_availability?.[selectedKidId] || {};
+  reasons.forEach((reason) => {
+    const available = availability[reason.id] !== false;
+    const row = document.createElement("div");
+    row.className = "spinReasonRow";
+    row.innerHTML = `
+      <div class="spinReasonInfo">
+        <span class="spinReasonLabel">${escapeHtml(reason.label)}</span>
+        <span class="spinReasonPeriod">${SPIN_REASON_PERIOD_LABEL[reason.period] || "once a week"}</span>
+      </div>
+      <button type="button" class="spinReasonGrantBtn" data-id="${reason.id}" ${available ? "" : "disabled"}>${available ? "Yes!" : "Used"}</button>
+    `;
+    spinReasonsList.appendChild(row);
+  });
+  spinReasonsList.querySelectorAll(".spinReasonGrantBtn:not(:disabled)").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      const res = await callApi("grant_spin_credit", { token, kid_id: selectedKidId, reason_id: btn.dataset.id });
+      if (!res.ok) {
+        showErrorToast("Couldn't grant that spin - try again.");
+        btn.disabled = false;
+        return;
+      }
+      await loadState();
+    });
+  });
+}
 
 async function spin() {
   if (spinning || !selectedKidId) return;
   const kidId = selectedKidId;
   spinning = true;
   spinBtn.disabled = true;
+  spinBtn.classList.add("hidden");
   winningCategoryId = null;
   spinResult.classList.add("hidden");
 
-  let spinsLeft = 1;
+  // Bonus spins earned from named reasons (grant_spin_credit) are
+  // consumed as extra automatic spins chained onto this one - same
+  // mechanic the "Spin twice" category already uses, just seeded from a
+  // server-tracked count instead of a wheel result.
+  const consumeRes = await callApi("consume_bonus_spins", { token, kid_id: kidId });
+  const bonusSpins = consumeRes.ok ? consumeRes.data.consumed : 0;
+  if (bonusSpins > 0) {
+    const kid = state.kids.find((k) => k.id === kidId);
+    if (kid) kid.bonus_spins = 0;
+    renderBonusSpinRow();
+  }
+
+  let spinsLeft = 1 + bonusSpins;
   let spinsDone = 0;
   while (spinsLeft > 0 && spinsDone < MAX_SPINS_PER_ROUND) {
     spinsLeft -= 1;
@@ -595,7 +723,7 @@ async function spin() {
       spinsLeft += 2;
       await new Promise((r) => setTimeout(r, 700));
     } else {
-      spinResult.textContent = `🎉 ${kidName(kidId)} won ${escapeHtml(cat.label)}!`;
+      spinResult.textContent = `🎉 ${kidName(kidId)} won ${cat.label}!`;
       spinResult.classList.remove("hidden");
       await tapReward(kidId, cat.id, "earn", `🎡 Spinner: ${cat.label}`);
       if (spinsLeft > 0) await new Promise((r) => setTimeout(r, 900)); // let the result be read before the next bonus spin
@@ -604,6 +732,7 @@ async function spin() {
 
   spinning = false;
   spinBtn.disabled = !selectedKidId;
+  spinBtn.classList.remove("hidden");
 }
 
 // One physical wheel rotation - always spins forward from wherever it
@@ -772,7 +901,15 @@ function renderHistory() {
       const ok = await askConfirm("Undo this entry?");
       if (!ok) return;
       btn.disabled = true;
-      await callApi("undo_reward_log", { token, log_id: Number(btn.dataset.log) });
+      const res = await callApi("undo_reward_log", { token, log_id: Number(btn.dataset.log) });
+      if (!res.ok) {
+        // Previously silent on failure - the button just stayed disabled
+        // forever with no feedback, which looks identical to "the button
+        // doesn't work" no matter what the actual server-side cause was.
+        btn.disabled = false;
+        showErrorToast("Couldn't undo that entry - try again.");
+        return;
+      }
       await loadState();
     });
   });
@@ -883,9 +1020,24 @@ function showUndoToast(entry, kidId, categoryId, type) {
   toast.querySelector(".toastUndoBtn").addEventListener("click", async () => {
     clearTimeout(timer);
     remove();
-    await callApi("undo_reward_log", { token, log_id: entry.id });
+    const res = await callApi("undo_reward_log", { token, log_id: entry.id });
+    if (!res.ok) {
+      showErrorToast("Couldn't undo that entry - try again.");
+      return;
+    }
     await loadState();
   });
+  toastContainer.appendChild(toast);
+}
+
+// Same visual family as the undo toast, minus the undo button and countdown
+// bar - a short-lived, self-dismissing way to surface a failure instead of
+// letting an action silently do nothing.
+function showErrorToast(message) {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.innerHTML = `<div>${escapeHtml(message)}</div>`;
+  setTimeout(() => toast.remove(), UNDO_TOAST_MS);
   toastContainer.appendChild(toast);
 }
 
@@ -978,11 +1130,77 @@ addCatBtn.addEventListener("click", async () => {
   renderCatList();
 });
 
+// --- Manage bonus spin reasons ------------------------------------------
+
+manageSpinReasonsBtn.addEventListener("click", () => {
+  spinReasonsError.classList.add("hidden");
+  renderSpinReasonsManageList();
+  spinReasonsModal.classList.remove("hidden");
+});
+spinReasonsModalClose.addEventListener("click", () => spinReasonsModal.classList.add("hidden"));
+
+function renderSpinReasonsManageList() {
+  spinReasonsManageList.innerHTML = "";
+  (state.spin_reasons || []).forEach((reason) => {
+    const row = document.createElement("div");
+    row.className = "catRow";
+    row.innerHTML = `
+      <input type="text" value="${escapeAttr(reason.label)}" data-id="${reason.id}" class="catLabelInput" maxlength="60" />
+      <select class="catWeightSelect" data-id="${reason.id}" title="How often this reason can grant a bonus spin">
+        ${["daily", "weekly", "monthly"]
+          .map((p) => `<option value="${p}"${p === reason.period ? " selected" : ""}>${p[0].toUpperCase() + p.slice(1)}</option>`)
+          .join("")}
+      </select>
+      <button type="button" class="catDeleteBtn" data-id="${reason.id}">🗑</button>
+    `;
+    spinReasonsManageList.appendChild(row);
+  });
+
+  spinReasonsManageList.querySelectorAll(".catLabelInput").forEach((input) => {
+    input.addEventListener("change", () => {
+      const label = input.value.trim();
+      if (label) updateSpinReason(input.dataset.id, { label });
+    });
+  });
+  spinReasonsManageList.querySelectorAll(".catWeightSelect").forEach((select) => {
+    select.addEventListener("change", () => updateSpinReason(select.dataset.id, { period: select.value }));
+  });
+  spinReasonsManageList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const ok = await askConfirm("Delete this bonus spin reason?");
+      if (!ok) return;
+      await callApi("manage_spin_reasons", { token, itemAction: "delete", item_id: btn.dataset.id });
+      await loadState();
+      renderSpinReasonsManageList();
+    });
+  });
+}
+
+async function updateSpinReason(id, patch) {
+  await callApi("manage_spin_reasons", { token, itemAction: "update", item_id: id, ...patch });
+  await loadState();
+  renderSpinReasonsManageList();
+}
+
+addSpinReasonBtn.addEventListener("click", async () => {
+  const label = newSpinReasonLabel.value.trim();
+  spinReasonsError.classList.add("hidden");
+  if (!label) {
+    spinReasonsError.textContent = "Enter a reason first.";
+    spinReasonsError.classList.remove("hidden");
+    return;
+  }
+  await callApi("manage_spin_reasons", { token, itemAction: "add", label, period: newSpinReasonPeriod.value });
+  newSpinReasonLabel.value = "";
+  await loadState();
+  renderSpinReasonsManageList();
+});
+
 // --- Settings (PIN protection toggle, kid avatars, reset history) ---------
 
 settingsBtn.addEventListener("click", () => {
   pinProtectionToggle.checked = pinProtectionOn();
-  spinSoundToggle.checked = spinSoundOn();
+  spinSoundPresetSelect.value = spinSoundPreset();
   spinDurationSlider.value = String(getSpinDurationSeconds());
   spinDurationValue.textContent = getSpinDurationSeconds();
   renderAvatarList();
@@ -994,8 +1212,8 @@ pinProtectionToggle.addEventListener("change", () => {
   localStorage.setItem(PIN_PROTECTION_KEY, pinProtectionToggle.checked ? "1" : "0");
 });
 
-spinSoundToggle.addEventListener("change", () => {
-  localStorage.setItem(SPIN_SOUND_KEY, spinSoundToggle.checked ? "1" : "0");
+spinSoundPresetSelect.addEventListener("change", () => {
+  localStorage.setItem(SPIN_SOUND_KEY, spinSoundPresetSelect.value);
 });
 
 spinDurationSlider.addEventListener("input", () => {

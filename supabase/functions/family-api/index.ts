@@ -415,6 +415,72 @@ async function getRewardBalances(familyId: string) {
   return balances;
 }
 
+// Named reasons that grant a bonus spin credit - see D-2026-07-19-spin-credit-system.
+// Same rolling-window convention as get_reward_insights's weekly/monthly
+// figures (last N days from now, not calendar-aligned).
+const SPIN_REASON_PERIOD_MS: Record<string, number> = {
+  daily: 86400000,
+  weekly: 7 * 86400000,
+  monthly: 30 * 86400000,
+};
+
+async function getSpinReasons(familyId: string) {
+  const { data } = await db
+    .from("family_spin_reasons")
+    .select("id, label, period, trigger_key")
+    .eq("family_id", familyId)
+    .order("sort_order");
+  return data || [];
+}
+
+// Per kid+reason, whether a grant is still available this period - computed
+// here rather than shipping every grant row to the client. Absence of a
+// (kid_id, reason_id) entry in the returned map means "available".
+async function getSpinCreditAvailability(familyId: string, reasons: { id: string; period: string }[]) {
+  const availability: Record<string, Record<string, boolean>> = {};
+  if (!reasons.length) return availability;
+  const periodById: Record<string, string> = Object.fromEntries(reasons.map((r) => [r.id, r.period]));
+  const { data: grants } = await db
+    .from("kid_spin_credit_grants")
+    .select("kid_id, reason_id, granted_at")
+    .eq("family_id", familyId);
+  const now = Date.now();
+  for (const grant of grants || []) {
+    const windowMs = SPIN_REASON_PERIOD_MS[periodById[grant.reason_id]] || SPIN_REASON_PERIOD_MS.weekly;
+    if (now - new Date(grant.granted_at).getTime() < windowMs) {
+      (availability[grant.kid_id] ??= {})[grant.reason_id] = false;
+    }
+  }
+  return availability;
+}
+
+// Shared by grant_spin_credit (manual, from Reward Tracker, or automated,
+// from another app like Bedroom Reset) and the auto-approve path in
+// submit_photo_score - one code path enforces the per-period cap
+// regardless of who's asking, so it can't be bypassed by calling from a
+// different place. Returns null on success, or an error string.
+async function grantSpinCredit(familyId: string, kidId: string, reasonId: string): Promise<string | null> {
+  const { data: kid } = await db.from("kids").select("id, bonus_spins").eq("id", kidId).eq("family_id", familyId).maybeSingle();
+  if (!kid) return "not_found";
+  const { data: reason } = await db.from("family_spin_reasons").select("id, period").eq("id", reasonId).eq("family_id", familyId).maybeSingle();
+  if (!reason) return "not_found";
+
+  const windowMs = SPIN_REASON_PERIOD_MS[reason.period] || SPIN_REASON_PERIOD_MS.weekly;
+  const since = new Date(Date.now() - windowMs).toISOString();
+  const { data: recent } = await db
+    .from("kid_spin_credit_grants")
+    .select("id")
+    .eq("kid_id", kidId)
+    .eq("reason_id", reason.id)
+    .gte("granted_at", since)
+    .limit(1);
+  if (recent && recent.length > 0) return "already_granted_this_period";
+
+  await db.from("kid_spin_credit_grants").insert({ family_id: familyId, kid_id: kidId, reason_id: reason.id });
+  await db.from("kids").update({ bonus_spins: kid.bonus_spins + 1 }).eq("id", kidId);
+  return null;
+}
+
 async function getPhotosWithUrls(kidId: string) {
   const { data: rows } = await db
     .from("kid_reference_photos")
@@ -921,8 +987,8 @@ Deno.serve(async (req) => {
       case "get_reward_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: kids }, categories, balances, { data: historyRows }, notes] = await Promise.all([
-          db.from("kids").select("id, name, avatar_emoji, theme_color").eq("family_id", session.family_id).order("sort_order"),
+        const [{ data: kids }, categories, balances, { data: historyRows }, notes, spinReasons] = await Promise.all([
+          db.from("kids").select("id, name, avatar_emoji, theme_color, bonus_spins").eq("family_id", session.family_id).order("sort_order"),
           getRewardCategories(session.family_id),
           getRewardBalances(session.family_id),
           db
@@ -932,10 +998,12 @@ Deno.serve(async (req) => {
             .order("created_at", { ascending: false })
             .limit(100),
           getRewardNotes(session.family_id),
+          getSpinReasons(session.family_id),
         ]);
+        const spinCreditAvailability = await getSpinCreditAvailability(session.family_id, spinReasons);
         return json({
           ok: true,
-          data: { kids: kids || [], categories, balances, history: historyRows || [], notes },
+          data: { kids: kids || [], categories, balances, history: historyRows || [], notes, spin_reasons: spinReasons, spin_credit_availability: spinCreditAvailability },
         });
       }
 
@@ -1097,6 +1165,93 @@ Deno.serve(async (req) => {
         }
 
         return json({ ok: false, error: "unknown_item_action" }, 400);
+      }
+
+      // A family's own customizable list of named reasons that grant a
+      // bonus spin credit (once per reason's period, enforced by
+      // grantSpinCredit regardless of who calls it). Parent-only to
+      // configure - matches manage_reward_notes/manage_reward_categories.
+      case "manage_spin_reasons": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const itemAction = String(body.itemAction || "");
+        const validPeriod = (p: unknown) => typeof p === "string" && ["daily", "weekly", "monthly"].includes(p);
+
+        if (itemAction === "add") {
+          const label = String(body.label || "").trim().slice(0, 60);
+          if (!label) return json({ ok: false, error: "label_required" }, 400);
+          const period = validPeriod(body.period) ? (body.period as string) : "weekly";
+          const { data: existing } = await db.from("family_spin_reasons").select("id").eq("family_id", session.family_id);
+          const { data: item, error } = await db
+            .from("family_spin_reasons")
+            .insert({ family_id: session.family_id, label, period, sort_order: (existing?.length || 0) + 1 })
+            .select()
+            .single();
+          if (error || !item) return json({ ok: false, error: "could_not_add" }, 500);
+          return json({ ok: true, data: { item } });
+        }
+
+        if (itemAction === "update") {
+          const { data: item } = await db
+            .from("family_spin_reasons")
+            .select("id")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          const patch: Record<string, unknown> = {};
+          if (typeof body.label === "string" && body.label.trim()) patch.label = body.label.trim().slice(0, 60);
+          if (validPeriod(body.period)) patch.period = body.period;
+          if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
+          await db.from("family_spin_reasons").update(patch).eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        if (itemAction === "delete") {
+          const { data: item } = await db
+            .from("family_spin_reasons")
+            .select("id")
+            .eq("id", body.item_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!item) return json({ ok: false, error: "not_found" }, 404);
+          await db.from("family_spin_reasons").delete().eq("id", item.id);
+          return json({ ok: true });
+        }
+
+        return json({ ok: false, error: "unknown_item_action" }, 400);
+      }
+
+      // Generic - callable by a parent session (any kid in their family,
+      // e.g. ticking a reason "yes" in Reward Tracker) or a kid session
+      // (self only, e.g. Bedroom Reset's own kid device automatically
+      // granting one on an AI score success). Both paths share the same
+      // grantSpinCredit helper, so the per-period cap applies identically
+      // regardless of who's calling.
+      case "grant_spin_credit": {
+        const session = await getSession(body.token);
+        if (!session) return json({ ok: false, error: "session_expired" }, 401);
+        const kidId = String(body.kid_id || "");
+        if (session.role === "kid" && kidId !== session.kid_id) return json({ ok: false, error: "forbidden" }, 403);
+        const error = await grantSpinCredit(session.family_id, kidId, String(body.reason_id || ""));
+        if (error) return json({ ok: false, error }, error === "not_found" ? 404 : 409);
+        return json({ ok: true });
+      }
+
+      // Called right as a spin sequence starts - zeroes the kid's bonus
+      // count and reports how many there were, so the client can chain
+      // that many extra automatic spins onto the one just requested (same
+      // mechanic as landing on the "Spin twice" category, just a
+      // server-tracked count instead of a wheel result).
+      case "consume_bonus_spins": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const kidId = String(body.kid_id || "");
+        const { data: kid } = await db.from("kids").select("id, bonus_spins").eq("id", kidId).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        const consumed = kid.bonus_spins;
+        if (consumed > 0) await db.from("kids").update({ bonus_spins: 0 }).eq("id", kidId);
+        return json({ ok: true, data: { consumed } });
       }
 
       // Wipes the family's whole reward ledger (categories are kept) - the
@@ -1973,6 +2128,17 @@ Deno.serve(async (req) => {
           const opts = { eventType: "ai_auto_pass", emoji: "🤖", label: "Auto-approved by AI!", points: POINTS.PARENT_PASS };
           if (updated.kid_id) {
             await awardBedroomPass(updated.kid_id, updated.family_id, opts);
+            // Cross-app spin-credit trigger (see D-2026-07-19-spin-credit-system):
+            // only for an individual kid's own room, not a shared room's
+            // collective score, since bonus_spins is a per-kid column with
+            // no natural single kid to credit for a shared-room event.
+            const { data: aiScoreReason } = await db
+              .from("family_spin_reasons")
+              .select("id")
+              .eq("family_id", updated.family_id)
+              .eq("trigger_key", "bedroom_ai_score")
+              .maybeSingle();
+            if (aiScoreReason) await grantSpinCredit(updated.family_id, updated.kid_id, aiScoreReason.id);
           } else if (updated.room_id) {
             await awardRoomPass(updated.room_id, null, opts);
           }

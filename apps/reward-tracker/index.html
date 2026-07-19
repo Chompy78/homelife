@@ -71,6 +71,29 @@
     </div>
   </div>
 
+  <!-- Bonus-spin reasons: named achievements a parent can tick as done for
+       a kid (or another app can grant automatically, e.g. Bedroom Reset's
+       AI room score) - each capped to once per its own period. -->
+  <div class="catModal hidden" id="spinReasonsModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>Bonus Spin Reasons</h2>
+        <button id="spinReasonsModalClose" type="button" class="catModalClose">✕</button>
+      </div>
+      <div class="catList" id="spinReasonsManageList"></div>
+      <div class="addCatRow">
+        <input id="newSpinReasonLabel" type="text" placeholder="New reason (e.g. Weekly Mathletics Award)" maxlength="60" />
+        <select id="newSpinReasonPeriod" class="catWeightSelect">
+          <option value="daily">Daily</option>
+          <option value="weekly" selected>Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <button id="addSpinReasonBtn" type="button">+ Add</button>
+      </div>
+      <p class="catError hidden" id="spinReasonsError"></p>
+    </div>
+  </div>
+
   <!-- Parent gate: shown before Spend, category delete, Reset, or leaving Kid View.
        Renders either a PIN form or a 3-of-9 icon grid, depending on the
        family's chosen verification method. -->
@@ -114,10 +137,12 @@
             <div class="settingsRowTitle">🔊 Spin sound</div>
             <div class="settingsRowSub">Ticking while the wheel spins, a chime when it lands.</div>
           </div>
-          <label class="toggleSwitch">
-            <input type="checkbox" id="spinSoundToggle" />
-            <span class="toggleSlider"></span>
-          </label>
+          <select id="spinSoundPresetSelect" class="catWeightSelect">
+            <option value="off">Off</option>
+            <option value="chimes">Chimes</option>
+            <option value="arcade">Arcade</option>
+            <option value="retro">Retro</option>
+          </select>
         </div>
         <div class="settingsRow" style="margin-top: 14px;">
           <div>
@@ -168,6 +193,7 @@
       <button id="darkModeBtn" type="button" class="menuItem"><span id="darkModeIcon">🌙</span> Dark mode</button>
       <button id="manageCatBtn" type="button" class="menuItem">🏷️ Manage reward categories</button>
       <button id="manageReasonsBtn2" type="button" class="menuItem">📝 Manage reward reasons</button>
+      <button id="manageSpinReasonsBtn" type="button" class="menuItem">🎁 Manage bonus spin reasons</button>
     </div>
 
     <div class="modeSwitch" id="modeSwitch">
@@ -185,13 +211,19 @@
     </section>
 
     <section id="spinView" class="view hidden">
+      <div class="bonusSpinRow hidden" id="bonusSpinRow">🎁 <span id="bonusSpinText"></span></div>
       <div class="wheelWrap">
         <div class="wheelPointer">▼</div>
         <div class="wheel" id="wheel"></div>
+        <button id="spinBtn" type="button" class="spinBtn">SPIN</button>
       </div>
-      <button id="spinBtn" type="button" class="spinBtn">SPIN</button>
       <p class="spinResult hidden" id="spinResult"></p>
       <div class="wheelLegend" id="wheelLegend"></div>
+
+      <div class="spinReasonsCard">
+        <h3 class="spinReasonsTitle">Earn a bonus spin</h3>
+        <div class="spinReasonsList" id="spinReasonsList"></div>
+      </div>
     </section>
 
     <section id="tableView" class="view hidden">

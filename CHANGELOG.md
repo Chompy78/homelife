@@ -8,6 +8,34 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-19
 
+- Fixed two Reward Tracker bugs and added a bonus-spin system plus wheel/
+  sound upgrades, from six items the user reported after trying the mobile
+  redesign. Fixes: the sticky header no longer travels ~16px before locking
+  to the top on scroll (removed `body`'s top padding, which was the actual
+  gap); History's Undo button now works on entries with a long note (the
+  row had no `min-width: 0`, so it silently overflowed the viewport and
+  pushed the button off-screen) and any future undo failure shows a visible
+  error instead of leaving the button stuck disabled with no feedback.
+  New: a bonus-spin system - named reasons (e.g. "Weekly Mathletics Award")
+  grant a kid a bonus spin, each capped to once per its own daily/weekly/
+  monthly period, tickable manually in Reward Tracker's Spin tab or granted
+  automatically by another app (Bedroom Reset's AI room-score auto-approve
+  is the first caller) through one shared, generic `grant_spin_credit`
+  action - not a gate on spinning, a bonus spin just chains an extra
+  automatic spin onto the next SPIN tap, same mechanic as the existing
+  "Spin twice" category. New "Manage Bonus Spin Reasons" screen in the
+  overflow menu. The wheel itself is bigger, shows each category's label
+  directly on its wedge, and the SPIN button now sits in the wheel's hub,
+  hidden while spinning instead of just disabled. Spin sound is now a
+  preset picker (Chimes/Arcade/Retro/Off) instead of an on/off toggle,
+  migrating anyone's existing on/off preference automatically. New
+  `kids.bonus_spins` column, `family_spin_reasons`/`kid_spin_credit_grants`
+  tables, `manage_spin_reasons`/`grant_spin_credit`/`consume_bonus_spins`
+  actions. See `D-2026-07-19-spin-credit-system` (including a noted
+  verification gap: the Bedroom Reset trigger itself couldn't be tested
+  live, since it's gated by a worker-only secret this session can't reach -
+  every other new action was verified against a disposable test family).
+  Bumped reward-tracker's service worker cache to v13.
 - Redesigned Reward Tracker's header and Table view for mobile, from a
   user-supplied UI brief. The large orange header is now a compact
   sticky app bar (title + context controls only; height cut from a

@@ -379,7 +379,7 @@ async function bedroomProgressCounts(familyId: string, kidId: string) {
 async function getRewardCategories(familyId: string) {
   const { data } = await db
     .from("family_reward_categories")
-    .select("id, label, color, spin_weight")
+    .select("id, label, color, spin_weight, is_bonus_spin")
     .eq("family_id", familyId)
     .order("sort_order");
   return data || [];
@@ -893,7 +893,7 @@ Deno.serve(async (req) => {
             .insert({
               family_id: session.family_id,
               name,
-              avatar_emoji: String(body.avatar || "⭐"),
+              avatar_emoji: String(body.avatar || "⭐").slice(0, 16),
               kid_code,
               sort_order: (existingKids?.length || 0) + 1,
               theme_color,
@@ -910,7 +910,7 @@ Deno.serve(async (req) => {
           if (!kid) return json({ ok: false, error: "not_found" }, 404);
           const patch: Record<string, unknown> = {};
           if (typeof body.name === "string" && body.name.trim()) patch.name = body.name.trim().slice(0, 40);
-          if (typeof body.avatar === "string" && body.avatar) patch.avatar_emoji = body.avatar;
+          if (typeof body.avatar === "string" && body.avatar) patch.avatar_emoji = body.avatar.slice(0, 16);
           if (typeof body.color === "string" && /^#[0-9a-fA-F]{6}$/.test(body.color)) patch.theme_color = body.color;
           if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
           await db.from("kids").update(patch).eq("id", kid.id);
@@ -1115,11 +1115,15 @@ Deno.serve(async (req) => {
         if (itemAction === "delete") {
           const { data: item } = await db
             .from("family_reward_categories")
-            .select("id")
+            .select("id, is_bonus_spin")
             .eq("id", body.item_id)
             .eq("family_id", session.family_id)
             .maybeSingle();
           if (!item) return json({ ok: false, error: "not_found" }, 404);
+          // The double-spin bonus mechanic is keyed off this flag, not the
+          // label - deleting the category out from under it would silently
+          // break the mechanic with no warning.
+          if (item.is_bonus_spin) return json({ ok: false, error: "category_linked_to_spin_mechanic" }, 400);
           await db.from("family_reward_categories").delete().eq("id", item.id);
           return json({ ok: true });
         }
@@ -2007,7 +2011,13 @@ Deno.serve(async (req) => {
           return json({ ok: false, error: "could_not_submit" }, 500);
         }
 
-        return json({ ok: true, data: { request } });
+        // Enrich with a signed photo_url the same way getLatestPhotoScore()
+        // does for get_kid_state/get_family_room_state, so the thumbnail
+        // shows immediately instead of only after the next poll re-fetches
+        // state via that enriched path.
+        const { storage_path: _storagePath, ...requestWithoutPath } = request;
+        const { data: signed } = await db.storage.from(PHOTO_BUCKET).createSignedUrl(request.storage_path, SIGNED_URL_TTL_SECONDS);
+        return json({ ok: true, data: { request: { ...requestWithoutPath, photo_url: signed?.signedUrl || null } } });
       }
 
       case "get_pending_photo_scores": {

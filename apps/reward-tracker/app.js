@@ -385,18 +385,27 @@ async function enterApp() {
 
 // --- Data loading -----------------------------------------------------
 
+// Guards against two overlapping loadState() calls resolving out of order
+// (e.g. two rapid taps/spins) - only the response from the most recently
+// started call is ever applied, so a slower-but-older one can't silently
+// overwrite newer state.
+let loadStateSeq = 0;
+
 async function loadState() {
+  const seq = ++loadStateSeq;
   const [stateRes, insightsRes, authRes] = await Promise.all([
     callApi("get_reward_state", { token }),
     callApi("get_reward_insights", { token }),
     callApi("get_family_auth_method", { token }),
   ]);
+  if (seq !== loadStateSeq) return; // a newer loadState() has since started - drop this stale response
   if (!stateRes.ok) {
     if (stateRes.error === "session_expired") {
       localStorage.removeItem(TOKEN_KEY);
       location.reload();
       return;
     }
+    showErrorToast("Couldn't refresh - check your connection and try again.");
     return;
   }
   state = stateRes.data;
@@ -526,14 +535,15 @@ function renderRewardRows() {
 
 // --- Spin wheel: one wedge per reward category, coloured the same as
 // everywhere else. Landing logs a real earn exactly like tapping + does -
-// except landing on "Spin twice" (the seeded default category, meaning
-// "spin the wheel two more times") triggers two bonus spins instead of a
+// except landing on the category flagged is_bonus_spin (seeded as "Spin
+// twice", but identified by the flag, not the label, so renaming it doesn't
+// silently break the mechanic) triggers two bonus spins instead of a
 // literal +1 tally entry for it, since that's what it actually represents.
 let wheelRotation = 0;
 let spinning = false;
 let winningCategoryId = null;
 let wheelWedges = []; // [{ cat, start, end }] in degrees - kept in sync with the rendered wheel for weighted landing
-const MAX_SPINS_PER_ROUND = 25; // safety cap against a runaway chain (e.g. every category renamed to "Spin twice")
+const MAX_SPINS_PER_ROUND = 25; // safety cap against a runaway chain (e.g. a data issue flagging multiple categories is_bonus_spin)
 
 // --- Spin sound - synthesized with Web Audio, no sound files needed. A
 // series of ticks that spread out over the spin (like a wheel clicking
@@ -699,7 +709,7 @@ async function spin() {
 
   // Bonus spins earned from named reasons (grant_spin_credit) are
   // consumed as extra automatic spins chained onto this one - same
-  // mechanic the "Spin twice" category already uses, just seeded from a
+  // mechanic the is_bonus_spin category already uses, just seeded from a
   // server-tracked count instead of a wheel result.
   const consumeRes = await callApi("consume_bonus_spins", { token, kid_id: kidId });
   const bonusSpins = consumeRes.ok ? consumeRes.data.consumed : 0;
@@ -716,7 +726,7 @@ async function spin() {
     spinsDone += 1;
     const cat = await runOneSpin();
     if (!cat) break;
-    if (cat.label.trim().toLowerCase() === "spin twice") {
+    if (cat.is_bonus_spin) {
       spinResult.textContent = `🎡 ${cat.label} - two more spins coming up!`;
       spinResult.classList.remove("hidden");
       spinsLeft += 2;
@@ -752,11 +762,20 @@ async function runOneSpin() {
   playSpinTicks(duration);
 
   await new Promise((resolve) => {
-    const onEnd = () => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
       wheel.removeEventListener("transitionend", onEnd);
+      clearTimeout(fallback);
       resolve();
     };
+    const onEnd = () => finish();
     wheel.addEventListener("transitionend", onEnd);
+    // Switching away from Spin mid-animation sets #spinView to display:none,
+    // which cancels the CSS transition without ever firing transitionend -
+    // without this fallback the spin (and spinBtn) would be stuck forever.
+    const fallback = setTimeout(finish, duration * 1000 + 500);
   });
 
   winningCategoryId = cat.id;
@@ -941,8 +960,22 @@ async function tapReward(kidId, categoryId, type, note = "") {
   }
   renderAll();
   const res = await callApi("adjust_reward", { token, kid_id: kidId, category_id: categoryId, type, note });
-  if (res.ok && res.data?.entry) showUndoToast(res.data.entry, kidId, categoryId, type);
-  loadState();
+  if (!res.ok) {
+    // The optimistic change above was never actually saved - undo it rather
+    // than leave the tile showing a balance the server doesn't have.
+    if (type === "earn") {
+      cell.earned -= 1;
+      cell.balance -= 1;
+    } else {
+      cell.spent -= 1;
+      cell.balance += 1;
+    }
+    renderAll();
+    showErrorToast("Couldn't save that - check your connection and try again.");
+    return;
+  }
+  if (res.data?.entry) showUndoToast(res.data.entry, kidId, categoryId, type);
+  await loadState();
 }
 
 // --- Reward reasons - a family's own customizable preset list. No longer
@@ -982,7 +1015,11 @@ function renderReasonsList() {
 
   reasonsList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      await callApi("manage_reward_notes", { token, itemAction: "delete", item_id: btn.dataset.id });
+      const res = await callApi("manage_reward_notes", { token, itemAction: "delete", item_id: btn.dataset.id });
+      if (!res.ok) {
+        showErrorToast("Couldn't delete that reason - try again.");
+        return;
+      }
       await loadState();
       renderReasonsList();
     });
@@ -997,7 +1034,12 @@ addReasonBtn.addEventListener("click", async () => {
     reasonsError.classList.remove("hidden");
     return;
   }
-  await callApi("manage_reward_notes", { token, itemAction: "add", type: reasonsType, label });
+  const res = await callApi("manage_reward_notes", { token, itemAction: "add", type: reasonsType, label });
+  if (!res.ok) {
+    reasonsError.textContent = "Couldn't add that reason - try again.";
+    reasonsError.classList.remove("hidden");
+    return;
+  }
   newReasonLabel.value = "";
   await loadState();
   renderReasonsList();
@@ -1078,6 +1120,13 @@ function renderCatList() {
     const row = document.createElement("div");
     row.className = "catRow";
     const weight = cat.spin_weight || 1;
+    // The double-spin bonus mechanic is keyed off is_bonus_spin, not the
+    // label - deleting this category would silently break that mechanic
+    // with no warning, so its delete button is replaced the same way a
+    // trigger_key-linked spin reason's is (see renderSpinReasonsManageList).
+    const deleteControl = cat.is_bonus_spin
+      ? `<span class="catUnusedBadge" title="Landing on this category triggers the double-spin bonus - can't be deleted">🔒 Spin mechanic</span>`
+      : `<button type="button" class="catDeleteBtn" data-id="${cat.id}">🗑</button>`;
     row.innerHTML = `
       <input type="color" value="${cat.color}" data-id="${cat.id}" class="catColorInput" />
       <input type="text" value="${escapeHtml(cat.label)}" data-id="${cat.id}" class="catLabelInput" maxlength="60" />
@@ -1085,7 +1134,7 @@ function renderCatList() {
         ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}"${n === weight ? " selected" : ""}>${n}× spin odds</option>`).join("")}
       </select>
       ${unused ? '<span class="catUnusedBadge" title="No kid has earned or spent this reward yet">Unused</span>' : ""}
-      <button type="button" class="catDeleteBtn" data-id="${cat.id}">🗑</button>
+      ${deleteControl}
     `;
     catList.appendChild(row);
   });
@@ -1107,7 +1156,11 @@ function renderCatList() {
       requirePin("PIN needed to delete a category", async () => {
         const ok = await askConfirm("Delete this category? Its history will also be removed.");
         if (!ok) return;
-        await callApi("manage_reward_categories", { token, itemAction: "delete", item_id: btn.dataset.id });
+        const res = await callApi("manage_reward_categories", { token, itemAction: "delete", item_id: btn.dataset.id });
+        if (!res.ok) {
+          showErrorToast("Couldn't delete that category - try again.");
+          return;
+        }
         await loadState();
         renderCatList();
       });
@@ -1116,7 +1169,12 @@ function renderCatList() {
 }
 
 async function updateCategory(id, patch) {
-  await callApi("manage_reward_categories", { token, itemAction: "update", item_id: id, ...patch });
+  const res = await callApi("manage_reward_categories", { token, itemAction: "update", item_id: id, ...patch });
+  if (!res.ok) {
+    showErrorToast("Couldn't save that change - try again.");
+    renderCatList(); // revert the input back to the saved value
+    return;
+  }
   await loadState();
   renderCatList();
 }
@@ -1129,7 +1187,12 @@ addCatBtn.addEventListener("click", async () => {
     catError.classList.remove("hidden");
     return;
   }
-  await callApi("manage_reward_categories", { token, itemAction: "add", label, color: newCatColor.value });
+  const res = await callApi("manage_reward_categories", { token, itemAction: "add", label, color: newCatColor.value });
+  if (!res.ok) {
+    catError.textContent = "Couldn't add that category - try again.";
+    catError.classList.remove("hidden");
+    return;
+  }
   newCatLabel.value = "";
   await loadState();
   renderCatList();

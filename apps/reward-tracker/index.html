@@ -94,9 +94,10 @@
     </div>
   </div>
 
-  <!-- Parent gate: shown before Spend, category delete, Reset, or leaving Kid View.
-       Renders either a PIN form or a 3-of-9 icon grid, depending on the
-       family's chosen verification method. -->
+  <!-- Parent gate: shown before deleting a category, deleting a spin reason,
+       Reset, or leaving Kid View. Spend/Earn taps are instant (undo toast
+       instead) since the 2026-07-18 redesign. Renders either a PIN form or a
+       3-of-9 icon grid, depending on the family's chosen verification method. -->
   <div class="pinModal hidden" id="pinModal">
     <div class="pinCard">
       <h2 id="pinModalTitle">Enter PIN</h2>
@@ -122,7 +123,7 @@
         <div class="settingsRow">
           <div>
             <div class="settingsRowTitle">🔒 PIN protection</div>
-            <div class="settingsRowSub">Require the family PIN for Spend, deleting a category, and Reset. An unlock lasts 5 minutes.</div>
+            <div class="settingsRowSub">Require the family PIN for deleting a category, deleting a spin reason, and Reset. An unlock lasts 5 minutes.</div>
           </div>
           <label class="toggleSwitch">
             <input type="checkbox" id="pinProtectionToggle" />

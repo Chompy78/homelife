@@ -8,6 +8,60 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-19
 
+- Fixed all 20 correctness findings from today's two code-review passes
+  (`bedroom-reset`, then `reward-tracker`/`my-rewards`) that had been
+  reported but deliberately left unfixed at the time. Highlights:
+  - **bedroom-reset:** localStorage checklist/streak caches are now scoped
+    by the active kid's token (fixes a cross-kid data leak on shared
+    tablets); `session_expired` is now caught centrally in `callRoomApi()`
+    and clears the tablet back to the code-entry screen instead of looking
+    like an offline failure forever; room-switch races in
+    `fetchAndReconcile()`/`syncItem()`/the AI photo-submit handler/the AI
+    poll now capture the room a request was for and drop a stale response
+    instead of misapplying it to whatever room is now showing; an offline
+    checklist edit that fails to sync is now tracked per-room in a
+    persisted "dirty" set so a later reconcile retries it instead of
+    silently reverting it back to the server's stale value; "Start a new
+    day" no longer clears the checklist if `reset_day` actually failed; a
+    deleted shared room now auto-recovers the kid back to their own
+    bedroom with a toast instead of dead-ending; `bootRoom()`'s shared-room
+    branch now updates Focus Mode UI; the AI-score submit error map now
+    covers all 12 possible codes instead of 4. Also fixed server-side:
+    `submit_photo_for_scoring` now returns an enriched `photo_url` (was
+    returning the raw un-enriched row, so no thumbnail showed until the
+    next poll).
+  - **reward-tracker:** `tapReward()` now rolls back its optimistic balance
+    change and shows an error toast if `adjust_reward` fails, instead of
+    leaving an unsaved balance on screen forever; category/reward-note
+    add/update/delete (5 call sites) now check `res.ok` and surface errors
+    instead of silently no-op'ing; `loadState()` now has a sequence-number
+    guard so an out-of-order response from a rapid double-tap/spin can't
+    overwrite newer state, and surfaces a toast for any failure beyond
+    `session_expired` instead of going silent; the spin wheel's completion
+    logic now has a timeout fallback, so switching tabs mid-animation (which
+    cancels the CSS transition) no longer hangs the Spin button forever;
+    Settings' PIN-protection description no longer claims it gates Spend
+    (removed by the 2026-07-18 instant-tap redesign, but the copy was never
+    corrected). The "Spin twice" double-spin mechanic is now identified by a
+    new `is_bonus_spin` flag (migration, backfilled for all 6 existing
+    families with the category) instead of a case-insensitive label match,
+    with deletion blocked server-side and a lock icon client-side, mirroring
+    how a `trigger_key`-linked spin reason is already protected - renaming
+    the category no longer silently breaks or hijacks the mechanic. See
+    `D-2026-07-19-bonus-spin-category-flag`.
+  - **my-rewards:** a sibling's `avatar_emoji` is now escaped before
+    rendering (was a genuine stored-HTML-injection gap - the edge function
+    had no server-side length cap either, now added, `.slice(0, 16)`,
+    matching how `name` is already capped); a stale trade-accept response
+    can no longer hijack or dismiss a different, currently-open trade's
+    verify modal (session-tagged, checked before acting); the verify-picture
+    grid now disables itself while a request is in flight (matching
+    Decline/Cancel) to stop a double-tap from firing two concurrent accepts.
+  All fixes verified: bedroom-reset and reward-tracker/my-rewards via
+  Playwright against mocked API responses reproducing each original bug
+  scenario; the two edge-function fixes (photo_url enrichment, avatar_emoji
+  cap) and the is_bonus_spin migration/delete-block verified live against
+  disposable test families, then cleaned up.
 - Ran a `/code-review` + `/simplify` pass over `reward-tracker` and
   `my-rewards`. Code-review surfaced 10 confirmed/plausible findings,
   notably more serious than the earlier bedroom-reset pass: a genuine

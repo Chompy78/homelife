@@ -247,7 +247,7 @@ function openProposeView() {
 
   selectedSiblingId = tradeState.siblings[0]?.id || null;
   siblingPicker.innerHTML = tradeState.siblings
-    .map((s) => `<button type="button" class="siblingChip${s.id === selectedSiblingId ? " selected" : ""}" data-id="${s.id}">${s.avatar_emoji || "⭐"} ${escapeHtml(s.name)}</button>`)
+    .map((s) => `<button type="button" class="siblingChip${s.id === selectedSiblingId ? " selected" : ""}" data-id="${s.id}">${escapeHtml(s.avatar_emoji || "⭐")} ${escapeHtml(s.name)}</button>`)
     .join("");
   siblingPicker.querySelectorAll(".siblingChip").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -299,13 +299,23 @@ function shuffledImagePool() {
   return arr;
 }
 
+// Shared across setup/accept - only one verify modal is ever open at a
+// time, and this blocks a second pick from firing a concurrent request
+// while an earlier one (from this session or an already-cancelled one) is
+// still in flight.
+let verifyBusy = false;
+
 function renderVerifyGrid(onPick) {
   verifyGrid.innerHTML = "";
   shuffledImagePool().forEach((img) => {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = img;
-    b.addEventListener("click", () => onPick(img));
+    b.disabled = verifyBusy;
+    b.addEventListener("click", () => {
+      if (verifyBusy) return;
+      onPick(img);
+    });
     verifyGrid.appendChild(b);
   });
 }
@@ -327,13 +337,23 @@ function openVerifySetup(thenAcceptTradeId) {
   verifyError.classList.add("hidden");
   verifyTitle.textContent = "Pick your secret picture";
   verifySub.textContent = "Remember it! You'll need to pick it again to accept a trade.";
-  renderVerifyGrid(async (img) => {
+  async function trySetImage(img) {
+    verifyBusy = true;
+    const session = pendingVerify;
     const res = await callApi("set_kid_verify_image", { token, image: img });
-    if (!res.ok) return;
+    verifyBusy = false;
+    if (pendingVerify !== session) return; // cancelled, or a different verify flow has since opened
+    if (!res.ok) {
+      verifyError.textContent = "Couldn't save that - try again.";
+      verifyError.classList.remove("hidden");
+      renderVerifyGrid(trySetImage); // reshuffle and re-enable so the kid isn't stuck
+      return;
+    }
     tradeState.verify_image_set = true;
     if (thenAcceptTradeId) openVerifyAccept(thenAcceptTradeId);
     else verifyModal.classList.add("hidden");
-  });
+  }
+  renderVerifyGrid(trySetImage);
   verifyModal.classList.remove("hidden");
 }
 
@@ -344,7 +364,11 @@ function openVerifyAccept(tradeId) {
   verifySub.textContent = "Pick it to accept this trade.";
 
   const onPick = async (img) => {
+    verifyBusy = true;
+    const session = pendingVerify;
     const res = await callApi("respond_to_trade", { token, trade_id: tradeId, response: "accept", image: img });
+    verifyBusy = false;
+    if (pendingVerify !== session) return; // cancelled, or a different trade's verify flow has since opened
     if (res.ok) {
       verifyModal.classList.add("hidden");
       await loadState(); // a trade just moved real balance - refresh the main card too, not just the trade list
@@ -379,6 +403,10 @@ function showLockoutMessage(lockedUntil) {
 verifyCancelBtn.addEventListener("click", () => {
   verifyModal.classList.add("hidden");
   pendingVerify = null;
+  // An in-flight request from the cancelled flow (if any) is still safely a
+  // no-op once it resolves (the pendingVerify check above), so there's no
+  // need to keep the *next* flow's grid blocked on it too.
+  verifyBusy = false;
 });
 
 token = localStorage.getItem(TOKEN_KEY);

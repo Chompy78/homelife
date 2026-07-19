@@ -109,9 +109,15 @@ const RANDOM_CELEBRATION_CHANCE = 0.08;
 let sharedRoomsList = [];
 let activeRoom = { type: "bedroom", id: null, name: "Bedroom Reset", icon: "🛏️", items: null };
 
-function roomStorageKey(prefix) {
-  const key = activeRoom.type === "bedroom" ? "bedroom" : activeRoom.id;
-  return `${prefix}${key}`;
+// Scoped by the active kid's own token, not just room, so switching kids on
+// a shared tablet ("switch kid" -> a new code redeemed) can never render a
+// previous kid's cached checklist/streak before the network reconcile runs.
+// Takes an explicit `room` (defaulting to whatever's active right now) so a
+// response handler can still address the room a request was actually made
+// for even after the kid has since switched to a different one.
+function roomStorageKey(prefix, room = activeRoom) {
+  const key = room.type === "bedroom" ? "bedroom" : room.id;
+  return `${prefix}${token}:${key}`;
 }
 
 // --- Room-aware API calls --------------------------------------------------
@@ -135,7 +141,14 @@ function callRoomApi(key, extraArgs = {}) {
   const action = isBedroom ? ROOM_ACTIONS[key].bedroom : ROOM_ACTIONS[key].shared;
   const args = { token, ...extraArgs };
   if (!isBedroom) args.room_id = activeRoom.id;
-  return callApi(action, args);
+  return callApi(action, args).then((res) => {
+    // Every room-scoped action funnels through here, so this is the one
+    // place that needs to catch a revoked/invalid session (e.g. a parent
+    // regenerated this kid's code) instead of it looking like an ordinary
+    // offline failure forever.
+    if (!res.ok && res.error === "session_expired") handleSessionExpired();
+    return res;
+  });
 }
 
 function getRoomState() {
@@ -293,6 +306,17 @@ switchKidLink.addEventListener("click", async (e) => {
   location.reload();
 });
 
+// A revoked/invalid session token (e.g. a parent regenerated this kid's
+// code) looks exactly like this kid choosing to switch devices - clear the
+// stored identity and reload back to the code-entry screen, rather than
+// leaving the tablet stuck showing stale data with a generic offline message.
+function handleSessionExpired() {
+  localStorage.removeItem(DEVICE_TOKEN_KEY);
+  localStorage.removeItem(DEVICE_NAME_KEY);
+  localStorage.removeItem(DEVICE_AVATAR_KEY);
+  location.reload();
+}
+
 // --- Local cache + server sync -------------------------------------------
 
 function loadLocalChecklist() {
@@ -319,11 +343,48 @@ function saveLocalStreakCache() {
   localStorage.setItem(roomStorageKey(STREAK_CACHE_KEY_PREFIX), JSON.stringify(streakState));
 }
 
+// Item ids whose latest local change hasn't been confirmed synced yet (in
+// flight, or failed) - fetchAndReconcile() must trust these over whatever
+// the server currently has and keep retrying them, instead of letting a
+// stale server value silently overwrite a kid's offline edit. Persisted per
+// room (survives a reload, e.g. reopening the PWA once back online) and
+// kept in a Map keyed by room so a switch mid-sync can't cross-contaminate
+// one room's dirty set with another's.
+const DIRTY_ITEMS_KEY_PREFIX = "bedroom-reset-dirty-items-v1:";
+let dirtyItemsByRoom = new Map();
+
+function roomKeyOf(room) {
+  return room.type === "bedroom" ? "bedroom" : room.id;
+}
+
+function dirtyItemsFor(room) {
+  const key = roomKeyOf(room);
+  if (!dirtyItemsByRoom.has(key)) {
+    const persisted = JSON.parse(localStorage.getItem(roomStorageKey(DIRTY_ITEMS_KEY_PREFIX, room)) || "[]");
+    dirtyItemsByRoom.set(key, new Set(persisted));
+  }
+  return dirtyItemsByRoom.get(key);
+}
+
+function saveDirtyItemsFor(room) {
+  localStorage.setItem(roomStorageKey(DIRTY_ITEMS_KEY_PREFIX, room), JSON.stringify([...dirtyItemsFor(room)]));
+}
+
 async function fetchAndReconcile() {
+  const requestRoom = activeRoom;
   const res = await getRoomState();
+  if (requestRoom !== activeRoom) return; // switched rooms while this was in flight
   if (!res.ok) {
     lastSyncOk = false;
     renderSyncStatus();
+    if (res.error === "not_found" && activeRoom.type === "shared") {
+      // The room itself was removed (a parent deleted it) while a kid was
+      // on it - the room-switcher pill would otherwise dead-end here
+      // forever, so recover to the one room that always exists.
+      const roomName = activeRoom.name;
+      showToast("👋", `${roomName} was removed - back to your room.`);
+      switchRoom({ type: "bedroom", id: null, name: "Bedroom Reset", icon: localStorage.getItem(DEVICE_AVATAR_KEY) || "🛏️" });
+    }
     return;
   }
   lastSyncOk = true;
@@ -336,9 +397,16 @@ async function fetchAndReconcile() {
   renderChecklist();
   loadLocalChecklist();
   const stateMap = Object.fromEntries(((isBedroom ? res.data.items : res.data.state) || []).map((s) => [s.item_id, s.checked]));
+  const dirty = dirtyItemsFor(activeRoom);
   const toReconcile = [];
   boxes.forEach((box) => {
     const id = box.dataset.id;
+    if (dirty.has(id)) {
+      // A local edit here hasn't been confirmed synced - keep it and retry,
+      // rather than letting a possibly-stale server value clobber it.
+      toReconcile.push(id);
+      return;
+    }
     if (id in stateMap) {
       box.checked = stateMap[id];
       updateItem(box);
@@ -361,12 +429,18 @@ async function fetchAndReconcile() {
 }
 
 async function syncItem(itemId, checked) {
+  const requestRoom = activeRoom;
+  dirtyItemsFor(requestRoom).add(itemId);
+  saveDirtyItemsFor(requestRoom);
   const res = await updateRoomItem(itemId, checked);
   if (!res.ok) {
     lastSyncOk = false;
-    renderSyncStatus();
-    return;
+    if (requestRoom === activeRoom) renderSyncStatus();
+    return; // stays dirty (and persisted) - the next reconcile for this room retries it
   }
+  dirtyItemsFor(requestRoom).delete(itemId);
+  saveDirtyItemsFor(requestRoom);
+  if (requestRoom !== activeRoom) return; // don't apply another room's result to whatever's now showing
   lastSyncOk = true;
   renderSyncStatus();
   const pts = (res.data.points_awarded || 0) + (res.data.completion_bonus || 0);
@@ -517,7 +591,9 @@ function applyAiScore(score, mode, threshold, avgSeconds) {
 // fetchAndReconcile(), which would tear down and rebuild the whole checklist
 // (and re-run photo/room-switcher/streak sync) just to refresh this one card.
 async function pollAiScoreStatus() {
+  const requestRoom = activeRoom;
   const res = await getRoomState();
+  if (requestRoom !== activeRoom) return; // stale poll for a room we've since left
   if (!res.ok) return;
   applyAiScore(res.data.ai_score, res.data.ai_score_mode, res.data.ai_score_auto_threshold, res.data.ai_score_avg_seconds);
 }
@@ -595,6 +671,7 @@ if (aiScoreInput) {
     aiScoreInput.value = "";
     if (!file) return;
     aiScoreError.classList.add("hidden");
+    const requestRoom = activeRoom;
     try {
       // Captured from the source file before compression re-encodes it (which
       // strips this along with any other EXIF data) - lets the server check
@@ -602,12 +679,20 @@ if (aiScoreInput) {
       const photoTakenAt = new Date(file.lastModified || Date.now()).toISOString();
       const { base64, contentType } = await compressImage(file, { maxDim: 900, quality: 0.6 });
       const res = await submitRoomPhotoForScoring(base64, contentType, photoTakenAt);
+      if (requestRoom !== activeRoom) return; // switched rooms mid-upload; this result is for a room we've left
       if (!res.ok) {
         const messages = {
           already_pending: "You already have a photo waiting to be scored.",
           photo_too_old: "That photo looks old - take a fresh one of your room right now.",
           photo_timestamp_required: "Couldn't tell when that photo was taken. Try taking a new one.",
           photo_timestamp_invalid: "That photo's timestamp looks wrong. Try taking a new one.",
+          ai_scoring_disabled: "AI scoring isn't turned on for your family right now.",
+          not_found: "This room isn't available anymore.",
+          image_required: "No photo was received - try again.",
+          bad_image_data: "That photo couldn't be read - try a different one.",
+          image_too_large: "That photo is too large - try taking a new one.",
+          upload_failed: "Couldn't upload that photo - check your connection and try again.",
+          could_not_submit: "Couldn't submit that photo right now. Try again in a moment.",
         };
         aiScoreError.textContent = messages[res.error] || "Couldn't submit that photo. Try again.";
         aiScoreError.classList.remove("hidden");
@@ -764,6 +849,10 @@ async function requestParentPin(title, checkFn) {
   pinModal.classList.remove("hidden");
 
   const authRes = await callApi("get_family_auth_method", { token });
+  if (!authRes.ok && authRes.error === "session_expired") {
+    handleSessionExpired();
+    return;
+  }
   parentAuthMethod = authRes.ok ? authRes.data.method : "pin";
   const usingIcons = parentAuthMethod === "icons";
   pinSubEl.textContent = usingIcons ? "Ask a parent to pick their 3 icons (any order)." : "Ask a parent to enter the family PIN.";
@@ -869,13 +958,19 @@ focusDoneBtn.addEventListener("click", () => {
 resetBtn.addEventListener("click", async () => {
   const ok = await askConfirm("Start a new day? This clears today's checklist. Streaks, points and badges are kept.");
   if (!ok) return;
+  const requestRoom = activeRoom;
   const res = await roomResetDay();
+  if (requestRoom !== activeRoom) return; // switched rooms while waiting on this
+  if (!res.ok) {
+    showToast("⚠️", "Couldn't start a new day - check your connection and try again.");
+    return;
+  }
   boxes.forEach((box) => {
     box.checked = false;
     updateItem(box);
   });
   saveLocalChecklist();
-  if (res.ok) applyStreak(progressOf(res.data), { celebrate: false });
+  applyStreak(progressOf(res.data), { celebrate: false });
   updateEverything();
   window.scrollTo({ top: 0, behavior: "smooth" });
 });
@@ -944,6 +1039,7 @@ function bootRoom() {
     checklistEl.innerHTML = "";
     boxes = [];
     updateProgress();
+    updateFocus();
     updateLevelUI();
     updateBadgesUI();
   }

@@ -10,7 +10,7 @@ disallowed-tools: Edit, Write, NotebookEdit, Bash(git push *), Bash(git commit *
 Help pick the next task from `docs/TASK_BOARD.md` and pre-flight it. This command only reads and reports
 — it never edits a file. This repo has no branches/worktrees to set up (see `AGENTS.md`: commit straight
 to `main`), so there's no worktree hand-off step like a branch-based workflow would have; Step 3's hand-off
-goes straight to `/run-task`.
+goes straight to `/run-code-task`.
 
 ## Step 1 — get the latest information
 
@@ -38,7 +38,7 @@ means it's waiting on something external. Skip either and say so rather than pic
 
 ## Step 3 — engine calibration
 
-`/run-task` inherits whatever model this session is already running. Suggest a tier and say why:
+`/run-code-task` inherits whatever model this session is already running. Suggest a tier and say why:
 - **Haiku** — only for a genuinely mechanical pick: a copy/config tweak, a single isolated bug fix with an
   obvious cause, a docs-only change.
 - **Sonnet** — the default: a normal feature/fix task, multi-file but non-architectural.
@@ -54,7 +54,7 @@ Tell the user which task you picked and why, the Status check result, and the su
 differs from what's running, say so and suggest `/model <engine>` first.
 
 Then ask with `AskUserQuestion` (one question): "Start work now?" with options:
-1. **"Run `/run-task <task title>` now"** (Recommended, if nothing blocked it) — invoke `run-task`
+1. **"Run `/run-code-task <task title>` now"** (Recommended, if nothing blocked it) — invoke `run-code-task`
    immediately with the task's title/identifier.
 2. **"Not yet"** — stop here.
 3. **"Choose a different task"** — list remaining candidates, go back to Step 2 for the new pick.

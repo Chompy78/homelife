@@ -32,7 +32,7 @@ for a family," "redeployed the edge function"). Add or update the current sessio
 today already exists, re-read and update it rather than assuming it's still accurate.
 
 **4. Roadmap graduation** — if a `docs/TASK_BOARD.md` task finished this session, remove its entry now and
-confirm the matching `CHANGELOG.md` line exists. For any newly-discovered task, format it in `/add-task`'s
+confirm the matching `CHANGELOG.md` line exists. For any newly-discovered task, format it in `/add-code-task`'s
 house format and surface it in Part 3's report rather than writing it into the board yourself mid-close.
 
 ## Part 2 — Verify (report only — write nothing, change nothing)

@@ -8,7 +8,7 @@ allowed-tools: Read, Grep, Glob, Agent, Bash(git clone *), Edit
 
 Read a session, session file, or transcript and draft candidate entries for the separate, private
 `chompy78/ai-lessons-learned` repo. This is a **report-only** pass for the drafting step — never write to
-`inbox/`, commit, or push without approval, same convention as `/close-session`'s item 7 (which this
+`inbox/`, commit, or push without approval, same convention as `/close-code-session`'s item 7 (which this
 command supersedes as the reusable, standalone version).
 
 ## Step 1 — figure out the source

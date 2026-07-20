@@ -122,8 +122,11 @@ session's entry as you go, same as the other three.
 ## AI agent workflow shortcuts
 
 `.claude/commands/` has slash-command skills for working `docs/TASK_BOARD.md`:
-`/add-task`, `/pick-task`, `/run-task`, `/sweep-tasks`, `/cleanup-branches`,
-`/close-session`, `/log-ai-lessons`, `/plan-for-review`. These commit and push
-straight to `main` like everything else in this repo (see
-`D-2026-07-17-agent-workflow-scaffold`) — no branches or PRs. See each
-command's own file for details.
+`/add-code-task`, `/pick-code-task`, `/run-code-task`, `/sweep-code-tasks`,
+`/cleanup-code-branches`, `/close-code-session`, `/log-code-lesson`,
+`/make-code-cold-plan-review`. These commit and push straight to `main` like
+everything else in this repo (see `D-2026-07-17-agent-workflow-scaffold`) —
+no branches or PRs. See each command's own file for details. (Renamed from
+their original `-task`/`-session`/etc. names in `D-2026-07-20-rename-code-commands`
+to carry `-code-`, distinguishing them from a separate family of lighter
+"-chat-" Claude.ai Skills used outside this repo.)

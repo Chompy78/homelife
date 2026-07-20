@@ -6,6 +6,17 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-20
+
+- Renamed all 8 `.claude/commands/*.md` slash commands to carry `-code-`, distinguishing them from a
+  separate family of lighter "-chat-" Claude.ai Skills used outside this repo (see
+  `D-2026-07-20-rename-code-commands`): `add-task`→`add-code-task`, `pick-task`→`pick-code-task`,
+  `run-task`→`run-code-task`, `sweep-tasks`→`sweep-code-tasks`,
+  `cleanup-branches`→`cleanup-code-branches`, `close-session`→`close-code-session`,
+  `log-ai-lessons`→`log-code-lesson`, `plan-for-review`→`make-code-cold-plan-review`. Updated every
+  cross-reference between the command files and in `AGENTS.md`; left `CHANGELOG.md`/`DECISIONS.md`/
+  `docs/sessions/*.md` using the old names since they're a historical record of what happened at the time.
+
 ## 2026-07-19
 
 - Fixed all 20 correctness findings from today's two code-review passes

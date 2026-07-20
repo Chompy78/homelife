@@ -1,15 +1,15 @@
 ---
-description: Do the work for one roadmap task picked by /pick-task — edit, verify, commit, push straight to main
+description: Do the work for one roadmap task picked by /pick-code-task — edit, verify, commit, push straight to main
 argument-hint: <task title>
 ---
 
 # Homelife — work the roadmap task
 
-`$ARGUMENTS` identifies one task from `docs/TASK_BOARD.md`, handed off from `/pick-task`. This repo
+`$ARGUMENTS` identifies one task from `docs/TASK_BOARD.md`, handed off from `/pick-code-task`. This repo
 **commits and pushes straight to `main`** — no branch, no worktree, no PR (see `AGENTS.md`'s "Project
-conventions"). If `/pick-task` hasn't been run yet this session, ask for its output first.
+conventions"). If `/pick-code-task` hasn't been run yet this session, ask for its output first.
 
-**Engine check.** Restate `/pick-task`'s suggested engine tier before starting Step 1. This command
+**Engine check.** Restate `/pick-code-task`'s suggested engine tier before starting Step 1. This command
 inherits whatever model the session is already running and cannot switch it — if it doesn't match, stop
 and tell the user to run `/model <engine>` first.
 
@@ -38,7 +38,7 @@ Update `CHANGELOG.md` (add the entry) and remove the task's entry from `docs/TAS
 commit as the edit — don't defer either. Add a `DECISIONS.md` entry (format: `D-<YYYY-MM-DD>-<slug>`) if
 the change involved a non-obvious *why*.
 
-If the task turns out to be bigger than `/pick-task` assumed, stop and flag it rather than forcing it
+If the task turns out to be bigger than `/pick-code-task` assumed, stop and flag it rather than forcing it
 through — leave its `Status` as `open` (not `in-progress`) and say clearly why you're dropping it.
 
 ## Step 3 — verify

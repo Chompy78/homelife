@@ -9,8 +9,8 @@ block with the technical detail (schema, files, endpoints) needed to
 actually build them.
 
 **Tags in use:** `ai-vision`, `prompt`, `validation`, `feature`, `ux`,
-`infra`, `refactor`. Reuse these rather than inventing near-duplicates,
-so the list stays scannable by tag.
+`infra`, `refactor`, `migration`. Reuse these rather than inventing
+near-duplicates, so the list stays scannable by tag.
 
 **Status values:** `open` (not started) · `in-progress` · `blocked`
 (needs something external, e.g. a person/service) · `done`.
@@ -134,6 +134,124 @@ parent's still in the loop); worth being cautious about before relying
 on `auto_approve` for a family.
 </details>
 
+### Migration M2 - Vite/React/TS hello-world scaffold
+- **Tags:** infra, migration
+- **Status:** open
+- Scaffold a minimal Vite + React + TypeScript app at `migration/hello-world/`,
+  wired into the existing GH Pages deploy workflow
+  (`.github/workflows/deploy-pages.yml`). Purely additive - no existing
+  `apps/*` file is touched. This is the reusable base both for the Family
+  Link proof-of-concept (M2b/M2c below) and, if that passes, the first real
+  port (M3). See `D-2026-07-20-pwa-to-capacitor-migration-assessment` for
+  the full option comparison behind this plan.
+- **Done when:** `npm run build` in `migration/hello-world/` produces a
+  working `dist/`, the GH Pages workflow publishes it at its own subpath,
+  it loads correctly in a browser at that URL, and all 5 existing apps
+  still deploy and load correctly after the workflow change.
+
+<details>
+<summary>Design notes</summary>
+
+**Why this folder, not a separate repo:** isolation (the actual reason a
+separate repo would help) is already free here - a new folder is trivially
+`git rm -rf`-able if the Family Link test (M2c) fails, without touching any
+real app. A separate repo would cost real coordination overhead (a second
+`AGENTS.md`, a second deploy workflow) for a project that's ultimately
+meant to live here once/if it graduates past proof-of-concept.
+
+**The one shared-file risk:** `.github/workflows/deploy-pages.yml` currently
+just uploads the whole repo (`path: ".""`) with no build step. Adding a
+build step for `migration/hello-world/` is the only change here that
+touches infrastructure the 5 live apps also depend on - verify all 5 still
+deploy correctly, don't just check the new scaffold works.
+
+**Vite `base` config:** must match the actual GH Pages subpath this will be
+served at (e.g. `/homelife/migration/hello-world/`) or the deployed build
+loads a blank page (a classic first-time Vite-on-GH-Pages mistake).
+</details>
+
+---
+
+## 🟡 NEXT
+
+### Migration M2b - Wrap the scaffold in Capacitor, build a debug APK
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration M2 done)
+- Add Capacitor (`@capacitor/core`, `@capacitor/android`) to the M2
+  scaffold, `npx cap add android`, produce a debug APK. First real contact
+  with Android Studio/SDK setup on this machine - budget real time if it's
+  never had either installed.
+- **Done when:** a debug APK builds and installs via `adb install` on an
+  emulator or spare device, showing the scaffold's trivial screen.
+
+### Migration M2c - Sideload on the child's tablet, verify Family Link independence (decision gate)
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration M2b done)
+- Install the M2b APK directly on the actual child tablet used day-to-day.
+  Check Android Settings > Apps for its own entry, then the real test: mark
+  it "Unlimited" in Family Link, exhaust the daily screen-time limit, and
+  confirm it stays open while Chrome/browsing gets blocked.
+- **Done when:** confirmed independently-controllable in Family Link on the
+  real tablet. **If this fails,** stop here and re-evaluate the whole
+  migration direction rather than continuing to Migration M3 - see the
+  "when I would NOT choose this" section of
+  `D-2026-07-20-pwa-to-capacitor-migration-assessment`.
+
+### Migration M3 - Port first real app to React/Vite
+- **Tags:** feature, migration
+- **Status:** blocked (needs Migration M2c passing)
+- Pick the smallest real app (`my-rewards` or `leaderboard`) and rebuild it
+  as React components calling the same `callApi()`/`family-api` edge
+  function, unchanged backend. Keep the vanilla version live and deployed
+  until the port has been used for real for a few days.
+- **Done when:** every current feature of the chosen app works identically
+  to the live vanilla version, verified against a disposable Supabase
+  family.
+
+### Migration M4 - Add PWA support to the ported app
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration M3 done)
+- Replace the hand-rolled `manifest.json`/`service-worker.js` with
+  `vite-plugin-pwa`, eliminating the manual `CACHE_NAME`-bump convention
+  (see `AGENTS.md`'s "Project conventions") for this app going forward.
+- **Done when:** install-to-homescreen and offline reload both work, and a
+  rebuild auto-invalidates the old cache with no manual version bump.
+
+### Migration M5 - Add Capacitor Android wrapper to the ported app
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration M4 done)
+- Repeat Migration M2b's Capacitor wrap, this time on the real ported app,
+  reusing whatever setup/config pattern M2b established.
+- **Done when:** `npx cap open android` gives a buildable project for this
+  app.
+
+### Migration M6 - Build/test a release-quality APK for the ported app
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration M5 done)
+- Produce a signed release APK - first time generating and safely backing
+  up the signing keystore. Treat the keystore file with the same care as a
+  production secret: never commit it, document *where* it's stored (not
+  its contents) once a location is chosen.
+- **Done when:** a signed APK installs and runs correctly on a real device.
+
+### Migration M7 - Confirm the ported app on the tablet with Family Link
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration M6 done)
+- Production confirmation of what Migration M2c already proved on the
+  throwaway scaffold - now on the actual real app the kid will use daily.
+- **Done when:** the real app is independently controllable in Family Link
+  on the child's tablet.
+
+### Migration M8 - Extract reusable template + document the convention
+- **Tags:** infra, migration, refactor
+- **Status:** blocked (needs Migration M7 done)
+- Generalize whatever's hardcoded to the first ported app into a
+  copy-and-rename template; update `AGENTS.md`/`README.md` with the new
+  build/deploy/Capacitor conventions, the way they currently document the
+  existing no-build conventions.
+- **Done when:** a second app built from the template takes noticeably less
+  time than the first.
+
 ---
 
 ## 🟢 LATER
@@ -242,3 +360,12 @@ on `auto_approve` for a family.
   surface (not just a prompt change), deliberately deferred.
 - **Done when:** a low-confidence AI result shows up somewhere a parent
   can review and manually resolve it, distinct from a normal score.
+
+### Port remaining apps (bedroom-reset, parent-dashboard, reward-tracker, leaderboard) using the migration template
+- **Tags:** feature, migration
+- **Status:** blocked (needs Migration M8 done)
+- Break this into one task per app once the Migration M8 template exists -
+  not detailed further yet since it depends entirely on what that template
+  produces.
+- **Done when:** all 4 remaining apps are ported, PWA-enabled, and
+  Capacitor-wrapped using the M8 template.

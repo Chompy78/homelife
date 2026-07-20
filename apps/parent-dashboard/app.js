@@ -1,6 +1,7 @@
 import { BADGES, levelForPoints, earnedBadges } from "../shared/config.js";
 import { callApi } from "../shared/api.js";
 import { compressImage } from "../shared/image.js";
+import { showAppVersion } from "../shared/version.js";
 
 const TOKEN_KEY = "homelife_parent_token";
 const REFRESH_INTERVAL_MS = 45000;
@@ -947,6 +948,8 @@ function scheduleAutoRefresh() {
 }
 
 refreshBtn.addEventListener("click", () => render(true));
+
+showAppVersion("appVersion");
 
 token = localStorage.getItem(TOKEN_KEY);
 if (token) {

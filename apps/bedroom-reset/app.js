@@ -3,6 +3,7 @@ import { callApi } from "../shared/api.js";
 import { compressImage } from "../shared/image.js";
 import { askConfirm } from "../shared/confirm.js";
 import { openLightbox } from "../shared/lightbox.js";
+import { showAppVersion } from "../shared/version.js";
 
 const DEVICE_TOKEN_KEY = "homelife_kid_token";
 const DEVICE_NAME_KEY = "homelife_kid_name";
@@ -1050,6 +1051,8 @@ function boot() {
   activeRoom = { type: "bedroom", id: null, name: "Bedroom Reset", icon: localStorage.getItem(DEVICE_AVATAR_KEY) || "🛏️", items: null };
   bootRoom();
 }
+
+showAppVersion("appVersion");
 
 token = localStorage.getItem(DEVICE_TOKEN_KEY);
 if (token) {

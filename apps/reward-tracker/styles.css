@@ -455,6 +455,7 @@ header h1 { margin: 0; font-size: clamp(1.05rem, 3.2vw, 1.35rem); display: flex;
 .settingsRow { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .settingsRowTitle { font-weight: 800; }
 .settingsRowSub { color: var(--muted); font-size: 0.8rem; font-weight: 600; margin-top: 2px; }
+.appVersionTag { text-align: center; color: var(--muted); font-size: 0.75rem; opacity: 0.6; margin: 18px 0 0; }
 
 .toggleSwitch { position: relative; display: inline-block; width: 46px; height: 26px; flex: 0 0 auto; }
 .toggleSwitch input { opacity: 0; width: 0; height: 0; }

@@ -8,6 +8,16 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-20
 
+- Added a visible cache-version indicator to all four PWAs (bedroom-reset, reward-tracker, my-rewards,
+  parent-dashboard), so a device can actually be checked against what was just deployed instead of it
+  being invisible whether a service worker picked up the latest release. New `apps/shared/version.js`
+  reads each app's own `service-worker.js` `CACHE_NAME` at runtime (a `fetch` + regex, since a service
+  worker runs in a separate script context from the page and there's no direct import between them) and
+  writes it into a small muted `#appVersion` tag - inside reward-tracker's existing Settings modal, in a
+  small footer for the other three, which didn't have an equivalent screen. Deliberately not a second
+  hand-typed version string anywhere, so there's still only the one place (`CACHE_NAME`) to bump per app.
+  Verified live via Playwright across all four apps. Bumped service worker caches: bedroom-reset v22,
+  reward-tracker v16, my-rewards v4, parent-dashboard v7.
 - Renamed all 8 `.claude/commands/*.md` slash commands to carry `-code-`, distinguishing them from a
   separate family of lighter "-chat-" Claude.ai Skills used outside this repo (see
   `D-2026-07-20-rename-code-commands`): `add-task`→`add-code-task`, `pick-task`→`pick-code-task`,

@@ -1,4 +1,4 @@
-const CACHE_NAME = "parent-dashboard-pwa-v6";
+const CACHE_NAME = "parent-dashboard-pwa-v7";
 const ASSETS = [
   "./",
   "./index.html",
@@ -12,6 +12,7 @@ const ASSETS = [
   "../shared/config.js",
   "../shared/api.js",
   "../shared/image.js",
+  "../shared/version.js",
 ];
 
 self.addEventListener("install", (event) => {

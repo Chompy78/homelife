@@ -1,4 +1,4 @@
-const CACHE_NAME = "my-rewards-pwa-v3";
+const CACHE_NAME = "my-rewards-pwa-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const ASSETS = [
   "./icons/icon-512.png",
   "../shared/api.js",
   "../shared/escape.js",
+  "../shared/version.js",
   "../shared/icons/favicon-32.png",
   "../shared/icons/favicon-16.png",
 ];

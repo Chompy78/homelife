@@ -68,6 +68,7 @@ body {
 
 .switchKid { text-align: center; margin-top: 20px; }
 .switchKid a { color: var(--muted); font-weight: 700; }
+.appVersionTag { text-align: center; color: var(--muted); font-size: 0.75rem; opacity: 0.6; margin-top: 8px; }
 
 /* Trade entry point on the main card */
 .tradeOpenBtn {

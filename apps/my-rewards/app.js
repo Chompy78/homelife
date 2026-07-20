@@ -1,5 +1,6 @@
 import { callApi } from "../shared/api.js";
 import { escapeHtml } from "../shared/escape.js";
+import { showAppVersion } from "../shared/version.js";
 
 // Same key bedroom-reset uses - a kid already logged into bedroom-reset on
 // this device is automatically logged in here too, since both apps share
@@ -408,6 +409,8 @@ verifyCancelBtn.addEventListener("click", () => {
   // need to keep the *next* flow's grid blocked on it too.
   verifyBusy = false;
 });
+
+showAppVersion("appVersion");
 
 token = localStorage.getItem(TOKEN_KEY);
 if (token) enterApp();

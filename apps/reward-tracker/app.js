@@ -1,6 +1,7 @@
 import { callApi } from "../shared/api.js";
 import { askConfirm } from "../shared/confirm.js";
 import { escapeHtml } from "../shared/escape.js";
+import { showAppVersion } from "../shared/version.js";
 
 // Same key Parent Dashboard uses - a parent already logged in there on this
 // device is automatically logged in here too, since both apps share an
@@ -1408,6 +1409,8 @@ function maybeOpenKidViewFromUrl() {
 // --- Utilities -----------------------------------------------------
 
 // --- Boot -----------------------------------------------------
+
+showAppVersion("appVersion");
 
 token = localStorage.getItem(TOKEN_KEY);
 if (token) enterApp();

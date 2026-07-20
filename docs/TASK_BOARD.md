@@ -248,9 +248,51 @@ loads a blank page (a classic first-time Vite-on-GH-Pages mistake).
 - Generalize whatever's hardcoded to the first ported app into a
   copy-and-rename template; update `AGENTS.md`/`README.md` with the new
   build/deploy/Capacitor conventions, the way they currently document the
-  existing no-build conventions.
+  existing no-build conventions. Android-only for now - fold in iOS once
+  Migration iOS-3 below has passed.
 - **Done when:** a second app built from the template takes noticeably less
   time than the first.
+
+### Migration iOS-1 - Cloud Mac CI setup + wrap the scaffold in Capacitor iOS
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration M7 done)
+- No local Mac is available, so iOS builds need a cloud Mac CI service
+  (Codemagic / GitHub Actions macOS runner / MacStadium - pick one). Add
+  `@capacitor/ios` to the `migration/hello-world/` scaffold from Migration
+  M2 (still around, reused here rather than rebuilt), `npx cap add ios`,
+  and produce a build via that CI service. Deliberately sequenced after
+  Android is fully proven (Migration M7), not alongside it - see
+  `D-2026-07-20-ios-support-sequencing`.
+- **Done when:** an iOS build artifact is produced via the chosen cloud Mac
+  CI, without needing a physically owned Mac.
+
+### Migration iOS-2 - Free-tier device install, verify Apple Screen Time independence (decision gate)
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration iOS-1 done)
+- Register the 1-2 known family Apple device UDIDs using a free Apple ID
+  (no paid account yet) and install directly. The free-tier signing
+  certificate expires after 7 days - that's fine, this task only needs to
+  answer the Screen Time question, not ship a daily-use build. Within that
+  window, check iOS Settings > Screen Time > App Limits / Always Allowed
+  for an independent entry, and test whether marking it "Always Allowed"
+  keeps it usable once Safari/other apps are Downtime-restricted.
+- **Done when:** confirmed (or refuted) whether Apple Screen Time treats
+  the Capacitor-wrapped app independently of Safari on a real device.
+  **If this fails,** the iOS side needs its own re-evaluation - the
+  Android result (Migration M2c) does not transfer.
+
+### Migration iOS-3 - Apple Developer account + TestFlight, if iOS-2 passes
+- **Tags:** infra, migration
+- **Status:** blocked (needs Migration iOS-2 passing)
+- Only worth doing once iOS-2 confirms the mechanism works - the free-tier
+  7-day certificate expiry is unworkable for a kid's daily-use app, so
+  ongoing real use needs either the $99/year Apple Developer Program
+  account + TestFlight (recommended - builds stay valid ~90 days, no
+  manual reinstall chore) or continued weekly manual Mac-side reinstalls
+  (not recommended).
+- **Done when:** a build is distributed via TestFlight (or an equivalent
+  ongoing mechanism) to the known family devices with no weekly manual
+  reinstall required.
 
 ---
 
@@ -366,6 +408,7 @@ loads a blank page (a classic first-time Vite-on-GH-Pages mistake).
 - **Status:** blocked (needs Migration M8 done)
 - Break this into one task per app once the Migration M8 template exists -
   not detailed further yet since it depends entirely on what that template
-  produces.
+  produces. Android-only until Migration iOS-3 passes; add an iOS build
+  per app once it does.
 - **Done when:** all 4 remaining apps are ported, PWA-enabled, and
-  Capacitor-wrapped using the M8 template.
+  Capacitor-wrapped (Android, and iOS once cleared) using the M8 template.

@@ -294,6 +294,46 @@ loads a blank page (a classic first-time Vite-on-GH-Pages mistake).
   ongoing mechanism) to the known family devices with no weekly manual
   reinstall required.
 
+### Per-kid reward weighting overrides for the spin wheel
+- **Tags:** feature, ux
+- **Status:** open
+- `family_reward_categories.spin_weight` (see
+  `D-2026-07-19-reward-tracker-spin-weighting`) is currently one
+  family-wide value per reward, applied identically on every kid's spin
+  wheel. Let a parent override that weight per kid instead - e.g. "make
+  dessert land more often for Kid A but not Kid B" - with an explicit way
+  to reset a kid back to the shared/family default rather than every kid
+  needing its own value forever. A per-kid weight of `0` means that
+  reward is excluded from that kid's wheel entirely (not just rare -
+  absent), same principle as an angular wedge width of zero.
+
+<details>
+<summary>Design notes</summary>
+
+**Schema:** a new table (e.g. `family_reward_category_kid_weights`,
+columns `category_id`, `kid_id`, `spin_weight`) holding only the
+*overrides* - no row means "use the family default," so "reset to
+shared" is just deleting the override row rather than needing a separate
+sentinel value. Enforce in the `family-api` edge function, never rely on
+a client-side UI restriction alone.
+
+**Wheel math:** `runOneSpin()`/wedge-sizing (`apps/reward-tracker/app.js`
+around the `totalWeight`/`span` calculation, ~line 594-611) needs to
+resolve weight per-kid (override if present, else `spin_weight`) before
+computing wedge angles, and must handle a kid whose *every* reward
+resolves to 0 (empty wheel) without dividing by zero.
+
+**UI:** Manage Categories currently edits one `spin_weight` `<select>`
+per category (`apps/reward-tracker/app.js` ~line 1123-1147); this needs a
+per-kid view/editor (e.g. select a kid, see/edit that kid's effective
+weight per reward, with a visible "reset to default" action per row).
+</details>
+
+- **Done when:** a parent can set a reward's weight differently for two
+  different kids, reset one kid back to the family default weight, and
+  set a kid's weight to 0 for a reward and confirm it never appears on
+  that kid's wheel - verified against a disposable Supabase family.
+
 ---
 
 ## 🟢 LATER

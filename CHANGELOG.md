@@ -18,6 +18,15 @@ on `TASK_BOARD.md`.
   re-checks both sides' balances at the moment of acceptance (balances can shift between propose and
   accept) and auto-cancels a trade that no longer checks out instead of moving balances negative. Bumped
   `my-rewards` service worker to v5.
+- Added a real "Install App" button to the bottom of bedroom-reset, using the `beforeinstallprompt` /
+  `prompt()` flow (Chrome/Edge/Android) instead of only the text hint telling people to find the browser's
+  install menu themselves. The text hint stays for browsers (iOS Safari) that never fire
+  `beforeinstallprompt`, where there's no programmatic install to trigger. Bumped `CACHE_NAME` to
+  `bedroom-reset-pwa-v23`.
+- Fixed bedroom-reset's install hint text, which told people to use "Chrome or Edge" even though Firefox
+  and Safari both support installing via their own browser menu (they just don't support the
+  `beforeinstallprompt` API our button uses, so they need the manual path). Bumped `CACHE_NAME` to
+  `bedroom-reset-pwa-v24`.
 
 ## 2026-07-20
 

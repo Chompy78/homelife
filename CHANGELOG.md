@@ -6,6 +6,14 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-26
+
+- Added a real "Install App" button to the bottom of bedroom-reset, using the `beforeinstallprompt` /
+  `prompt()` flow (Chrome/Edge/Android) instead of only the text hint telling people to find the browser's
+  install menu themselves. The text hint stays for browsers (iOS Safari) that never fire
+  `beforeinstallprompt`, where there's no programmatic install to trigger. Bumped `CACHE_NAME` to
+  `bedroom-reset-pwa-v23`.
+
 ## 2026-07-20
 
 - Added a visible cache-version indicator to all four PWAs (bedroom-reset, reward-tracker, my-rewards,

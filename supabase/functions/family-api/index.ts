@@ -415,6 +415,15 @@ async function getRewardBalances(familyId: string) {
   return balances;
 }
 
+// Single kid/category balance - used to enforce that a kid can only trade
+// away a category they actually hold a positive balance in (both when a
+// trade is proposed and, authoritatively, when one is accepted - balances can
+// shift between those two points).
+async function getKidCategoryBalance(kidId: string, categoryId: string) {
+  const { data } = await db.from("kid_reward_log").select("delta").eq("kid_id", kidId).eq("category_id", categoryId);
+  return (data || []).reduce((sum, row) => sum + row.delta, 0);
+}
+
 // Named reasons that grant a bonus spin credit - see D-2026-07-19-spin-credit-system.
 // Same rolling-window convention as get_reward_insights's weekly/monthly
 // figures (last N days from now, not calendar-aligned).
@@ -1436,6 +1445,9 @@ Deno.serve(async (req) => {
         const giveQty = Math.max(1, Math.min(20, Math.round(Number(body.give_qty)) || 1));
         const receiveQty = Math.max(1, Math.min(20, Math.round(Number(body.receive_qty)) || 1));
 
+        const giveBalance = await getKidCategoryBalance(session.kid_id, giveCategoryId);
+        if (giveBalance < giveQty) return json({ ok: false, error: "insufficient_balance" }, 400);
+
         const { data: trade, error } = await db
           .from("kid_reward_trades")
           .insert({
@@ -1489,6 +1501,20 @@ Deno.serve(async (req) => {
           return json({ ok: true, data: { status: "declined" } });
         }
         if (tradeResponse !== "accept") return json({ ok: false, error: "unknown_action" }, 400);
+
+        // Authoritative re-check: balances can shift between propose and accept
+        // (either kid earning/spending/trading elsewhere in the meantime), so
+        // this is the actual boundary that must hold, not just the propose-time
+        // check. A trade that no longer checks out is cancelled rather than left
+        // pending forever.
+        const [fromBalance, toBalance] = await Promise.all([
+          getKidCategoryBalance(trade.from_kid_id, trade.give_category_id),
+          getKidCategoryBalance(trade.to_kid_id, trade.receive_category_id),
+        ]);
+        if (fromBalance < trade.give_qty || toBalance < trade.receive_qty) {
+          await db.from("kid_reward_trades").update({ status: "cancelled", resolved_at: new Date().toISOString() }).eq("id", trade.id);
+          return json({ ok: false, error: "insufficient_balance" }, 400);
+        }
 
         const { data: me } = await db
           .from("kids")

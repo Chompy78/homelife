@@ -237,12 +237,26 @@ changeSecretLink.addEventListener("click", (e) => {
 });
 tradeProposeBack.addEventListener("click", () => showTradeList());
 
-function categoryOptionsHtml() {
-  return tradeState.categories.map((c) => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join("");
+function categoryOptionsHtml(cats) {
+  return cats.map((c) => `<option value="${c.id}">${escapeHtml(c.label)}</option>`).join("");
+}
+
+// Only categories the kid actually has a positive balance in can be offered
+// away - otherwise the picker lets them propose trading something they don't
+// have. Mirrored server-side in propose_trade, since a client-side restriction
+// alone isn't a real boundary (AGENTS.md).
+function myGiveableCategories() {
+  return tradeState.categories.filter((c) => (tradeState.my_balances[c.id]?.balance || 0) > 0);
+}
+
+function updateGiveQtyMax() {
+  const balance = tradeState.my_balances[giveCategorySelect.value]?.balance || 0;
+  const max = Math.max(1, Math.min(20, balance));
+  giveQtyInput.max = String(max);
+  if (Number(giveQtyInput.value) > max) giveQtyInput.value = String(max);
 }
 
 function openProposeView() {
-  tradeError.classList.add("hidden");
   tradeListView.classList.add("hidden");
   tradeProposeView.classList.remove("hidden");
 
@@ -257,11 +271,26 @@ function openProposeView() {
     });
   });
 
-  giveCategorySelect.innerHTML = categoryOptionsHtml();
-  receiveCategorySelect.innerHTML = categoryOptionsHtml();
+  const giveable = myGiveableCategories();
+  giveCategorySelect.innerHTML = categoryOptionsHtml(giveable);
+  receiveCategorySelect.innerHTML = categoryOptionsHtml(tradeState.categories);
   giveQtyInput.value = "1";
   receiveQtyInput.value = "1";
+
+  const canPropose = giveable.length > 0;
+  sendTradeBtn.disabled = !canPropose;
+  giveCategorySelect.disabled = !canPropose;
+  giveQtyInput.disabled = !canPropose;
+  if (canPropose) {
+    tradeError.classList.add("hidden");
+    updateGiveQtyMax();
+  } else {
+    tradeError.textContent = "You don't have any rewards to trade yet.";
+    tradeError.classList.remove("hidden");
+  }
 }
+
+giveCategorySelect.addEventListener("change", updateGiveQtyMax);
 
 sendTradeBtn.addEventListener("click", async () => {
   tradeError.classList.add("hidden");
@@ -379,6 +408,14 @@ function openVerifyAccept(tradeId) {
     if (res.error === "locked") {
       tradeState.verify_locked_until = res.locked_until; // so the next accept attempt (even before the next refresh) sees the lockout
       showLockoutMessage(res.locked_until);
+      return;
+    }
+    if (res.error === "insufficient_balance") {
+      // Balances shifted since this trade was proposed (server already
+      // cancelled it) - just refresh so it drops off the pending list.
+      verifyModal.classList.add("hidden");
+      await refreshTradeState();
+      renderTradeList();
       return;
     }
     verifyError.textContent =

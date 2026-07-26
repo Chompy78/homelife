@@ -8,6 +8,10 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-26
 
+- Fixed bedroom-reset's install hint text, which told people to use "Chrome or Edge" even though Firefox
+  and Safari both support installing via their own browser menu (they just don't support the
+  `beforeinstallprompt` API our button uses, so they need the manual path). Bumped `CACHE_NAME` to
+  `bedroom-reset-pwa-v24`.
 - Added a real "Install App" button to the bottom of bedroom-reset, using the `beforeinstallprompt` /
   `prompt()` flow (Chrome/Edge/Android) instead of only the text hint telling people to find the browser's
   install menu themselves. The text hint stays for browsers (iOS Safari) that never fire

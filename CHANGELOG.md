@@ -8,15 +8,25 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-26
 
-- Fixed bedroom-reset's install hint text, which told people to use "Chrome or Edge" even though Firefox
-  and Safari both support installing via their own browser menu (they just don't support the
-  `beforeinstallprompt` API our button uses, so they need the manual path). Bumped `CACHE_NAME` to
-  `bedroom-reset-pwa-v24`.
+- Fixed a kid-to-kid trade bug in `my-rewards`: a kid could propose trading away a reward category they
+  had zero (or fewer than the offered quantity of) balance in - the "you give" picker listed every family
+  reward category regardless of what the kid actually held. `openProposeView()` now restricts that picker
+  to categories with a positive balance (`myGiveableCategories()`), clamps the quantity input to the
+  available balance, and shows "You don't have any rewards to trade yet" with the propose flow disabled
+  if none qualify. Enforced server-side too, per the usual boundary: `propose_trade` now checks the
+  proposing kid's actual balance before inserting the trade, and `respond_to_trade`'s accept path
+  re-checks both sides' balances at the moment of acceptance (balances can shift between propose and
+  accept) and auto-cancels a trade that no longer checks out instead of moving balances negative. Bumped
+  `my-rewards` service worker to v5.
 - Added a real "Install App" button to the bottom of bedroom-reset, using the `beforeinstallprompt` /
   `prompt()` flow (Chrome/Edge/Android) instead of only the text hint telling people to find the browser's
   install menu themselves. The text hint stays for browsers (iOS Safari) that never fire
   `beforeinstallprompt`, where there's no programmatic install to trigger. Bumped `CACHE_NAME` to
   `bedroom-reset-pwa-v23`.
+- Fixed bedroom-reset's install hint text, which told people to use "Chrome or Edge" even though Firefox
+  and Safari both support installing via their own browser menu (they just don't support the
+  `beforeinstallprompt` API our button uses, so they need the manual path). Bumped `CACHE_NAME` to
+  `bedroom-reset-pwa-v24`.
 
 ## 2026-07-20
 

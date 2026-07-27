@@ -6,6 +6,17 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-27
+
+- Added a "🎁 Big" tab to `reward-tracker` for ad-hoc "big" rewards (1-2/month/kid) that are bigger and
+  rarer than a category tap: a reason + earned date when logged, then what it was spent on + a spent date
+  recorded later via a "💰 Spend" button. New `kid_big_rewards` table (RLS enabled, zero policies, same
+  posture as every other family table) with `add_big_reward`, `spend_big_reward`, `undo_big_reward_spend`
+  and `delete_big_reward` edge function actions - no PIN gate, no dollar/point amount, free text only.
+  `my-rewards` gained a matching read-only section so a kid can see their own pending and spent big
+  rewards on their card (`get_kid_big_rewards`, no write path). Bumped `reward-tracker` service worker to
+  v17 and `my-rewards` to v6. See `D-2026-07-27-reward-tracker-big-rewards`.
+
 ## 2026-07-26
 
 - Fixed a kid-to-kid trade bug in `my-rewards`: a kid could propose trading away a reward category they

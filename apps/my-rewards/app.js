@@ -24,6 +24,8 @@ const avatarEl = document.getElementById("avatar");
 const nameEl = document.getElementById("name");
 const totalEl = document.getElementById("total");
 const categoryListEl = document.getElementById("categoryList");
+const bigRewardsSection = document.getElementById("bigRewardsSection");
+const bigRewardsListEl = document.getElementById("bigRewardsList");
 const refreshBtn = document.getElementById("refreshBtn");
 const switchKidLink = document.getElementById("switchKidLink");
 const openTradeBtn = document.getElementById("openTradeBtn");
@@ -113,7 +115,11 @@ document.addEventListener("visibilitychange", () => {
 });
 
 async function loadState() {
-  const [res, tradeRes] = await Promise.all([callApi("get_kid_reward_state", { token }), refreshTradeState()]);
+  const [res, tradeRes, bigRewardsRes] = await Promise.all([
+    callApi("get_kid_reward_state", { token }),
+    refreshTradeState(),
+    callApi("get_kid_big_rewards", { token }),
+  ]);
   if (!res.ok) {
     if (res.error === "session_expired") {
       localStorage.removeItem(TOKEN_KEY);
@@ -125,6 +131,35 @@ async function loadState() {
   render(res.data);
   // No siblings means nothing to trade with - don't show the entry point at all.
   openTradeBtn.classList.toggle("hidden", !tradeRes.ok || !tradeState.siblings.length);
+  renderBigRewards(bigRewardsRes.ok ? bigRewardsRes.data.big_rewards : []);
+}
+
+// Read-only - a parent records these in the Reward Tracker app; a kid just
+// sees what's pending (earned, not yet spent) and what's already been spent.
+function formatDateStr(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function renderBigRewards(bigRewards) {
+  bigRewardsSection.classList.toggle("hidden", !bigRewards.length);
+  if (!bigRewards.length) return;
+  bigRewardsListEl.innerHTML = bigRewards
+    .map((r) => {
+      if (r.status === "pending") {
+        return `
+          <div class="bigRewardItem">
+            <div class="bigRewardReason">${escapeHtml(r.reason)}<span class="bigRewardPendingBadge">Pending</span></div>
+            <div class="bigRewardMeta">Earned ${formatDateStr(r.earned_date)}</div>
+          </div>`;
+      }
+      return `
+        <div class="bigRewardItem">
+          <div class="bigRewardReason">${escapeHtml(r.reason)}</div>
+          <div class="bigRewardMeta">Earned ${formatDateStr(r.earned_date)} · Spent on ${escapeHtml(r.spent_on)} (${formatDateStr(r.spent_date)})</div>
+        </div>`;
+    })
+    .join("");
 }
 
 function render({ kid, categories, balances }) {

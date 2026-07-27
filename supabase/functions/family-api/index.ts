@@ -1082,6 +1082,91 @@ Deno.serve(async (req) => {
         return json({ ok: true });
       }
 
+      // Ad-hoc "big" rewards - a small append-ish ledger alongside the tap
+      // tally above, for the occasional (1-2/month/kid) reward that's worth
+      // its own reason and spend record rather than a tap on a category:
+      // things like "aced the spelling test" -> earned, then later
+      // "new Lego set" -> spent, each with its own date. A row starts
+      // "pending" (earned, not yet spent) and moves to "spent" once a
+      // parent records what it went on - unlike kid_reward_log this row is
+      // updated in place rather than only ever inserted/deleted, since
+      // "still waiting to be spent" is itself something worth showing.
+      case "get_big_rewards": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data } = await db
+          .from("kid_big_rewards")
+          .select("*")
+          .eq("family_id", session.family_id)
+          .order("created_at", { ascending: false });
+        return json({ ok: true, data: { big_rewards: data || [] } });
+      }
+
+      // Read-only, for the kid-facing "My Rewards" PWA - same posture as
+      // get_kid_reward_state (no write path here for a kid to game).
+      case "get_kid_big_rewards": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        const { data } = await db
+          .from("kid_big_rewards")
+          .select("*")
+          .eq("kid_id", session.kid_id)
+          .order("created_at", { ascending: false });
+        return json({ ok: true, data: { big_rewards: data || [] } });
+      }
+
+      case "add_big_reward": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: kid } = await db.from("kids").select("id").eq("id", body.kid_id).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        const reason = String(body.reason || "").trim().slice(0, 140);
+        if (!reason) return json({ ok: false, error: "reason_required" }, 400);
+        const earnedDate = String(body.earned_date || "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(earnedDate)) return json({ ok: false, error: "bad_date" }, 400);
+        const { data: entry, error } = await db
+          .from("kid_big_rewards")
+          .insert({ family_id: session.family_id, kid_id: kid.id, reason, earned_date: earnedDate, status: "pending" })
+          .select()
+          .single();
+        if (error || !entry) return json({ ok: false, error: "could_not_add" }, 500);
+        return json({ ok: true, data: { entry } });
+      }
+
+      case "spend_big_reward": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: entry } = await db.from("kid_big_rewards").select("id").eq("id", body.id).eq("family_id", session.family_id).maybeSingle();
+        if (!entry) return json({ ok: false, error: "not_found" }, 404);
+        const spentOn = String(body.spent_on || "").trim().slice(0, 140);
+        if (!spentOn) return json({ ok: false, error: "spent_on_required" }, 400);
+        const spentDate = String(body.spent_date || "").trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(spentDate)) return json({ ok: false, error: "bad_date" }, 400);
+        await db.from("kid_big_rewards").update({ status: "spent", spent_on: spentOn, spent_date: spentDate }).eq("id", entry.id);
+        return json({ ok: true });
+      }
+
+      // Reverts a spend back to "pending" and clears the spend fields -
+      // the correction path for "picked the wrong entry" or "spent details
+      // were wrong", without losing the original earn (reason/earned_date).
+      case "undo_big_reward_spend": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: entry } = await db.from("kid_big_rewards").select("id").eq("id", body.id).eq("family_id", session.family_id).maybeSingle();
+        if (!entry) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_big_rewards").update({ status: "pending", spent_on: null, spent_date: null }).eq("id", entry.id);
+        return json({ ok: true });
+      }
+
+      case "delete_big_reward": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: entry } = await db.from("kid_big_rewards").select("id").eq("id", body.id).eq("family_id", session.family_id).maybeSingle();
+        if (!entry) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_big_rewards").delete().eq("id", entry.id);
+        return json({ ok: true });
+      }
+
       case "manage_reward_categories": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);

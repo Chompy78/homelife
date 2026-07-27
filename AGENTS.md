@@ -18,12 +18,19 @@ cleanup step done later or only when asked.
 
 ### DECISIONS.md
 
-Any time a real decision gets made — choosing between options, a design
-direction, a fix for a non-obvious problem — add an entry. Look at the
-existing entries first and match the format exactly:
+As of 2026-07-28, `DECISIONS.md` is a **thin index**, not the full record — restructured to keep it cheap
+to read every session (see `decisions/2026/D-2026-07-16-task-board-restructure.md`'s sibling reasoning,
+and AI_home_server's `RESTRUCTURE-SPEC-2026-07-27.md`, the origin of this pattern). Any time a real
+decision gets made — choosing between options, a design direction, a fix for a non-obvious problem — do
+two things:
+
+1. Write the **full record** to `decisions/2026/D-YYYY-MM-DD-slug.md`, matching the existing format exactly:
 
 ```
-## D-YYYY-MM-DD-slug
+# D-YYYY-MM-DD-slug
+
+Date: YYYY-MM-DD
+Status: Done | Open | Superseded
 
 **Context:** what problem or question prompted this.
 **Options:** what was actually considered (even if only two).
@@ -33,26 +40,38 @@ what lets a later reader tell whether the decision still holds.
 **Status:** Done / Superseded by D-.../ Open (revisit later).
 ```
 
-Newest entry on top. Don't invent a different format or skip sections
-even if one feels thin for a given decision.
+2. Add a **one-line index entry** to `DECISIONS.md` itself, newest on top:
+
+```
+## D-YYYY-MM-DD-slug
+
+**Status:** Done | Open | Superseded
+
+**Summary:** one or two sentences.
+
+**Record:** decisions/2026/D-YYYY-MM-DD-slug.md
+```
+
+Never write full decision detail directly into `DECISIONS.md` again — it's index-only from this point
+forward. Don't invent a different format or skip sections even if one feels thin for a given decision.
 
 ### CHANGELOG.md
 
 Any time something real gets finished — a task completed, a feature
 working, a fix applied — add a one-line dated entry, newest date on
 top. This is the permanent record of what shipped. Once something's
-in the changelog, it comes out of `TASK_BOARD.md` — nothing finished
-stays on the task board.
+in the changelog, it comes out of the task board — nothing finished
+stays there.
 
-### TASK_BOARD.md
+### TASK_BOARD_NOW.md / TASK_BOARD_NEXT.md / TASK_BOARD_LATER.md
 
-Open work only: what's next (🔴 NOW), what's after that (🟡 NEXT), and
-longer-term ideas (🟢 LATER). Every task has tags, a status, and a
-concrete "done when" condition. When a task finishes: write its
-CHANGELOG.md line, remove it from the board (don't leave a "done"
-section sitting there — that's what the changelog is for), and if the
-task represented a real decision along the way, log that in
-DECISIONS.md too.
+As of 2026-07-28, split from a single `TASK_BOARD.md` into three files by band, same reasoning as
+`DECISIONS.md` above: `TASK_BOARD_NOW.md` (🔴 NOW — always read), `TASK_BOARD_NEXT.md` (🟡 NEXT — read when
+picking up new work), `TASK_BOARD_LATER.md` (🟢 LATER — longer-term ideas, never pruned). Every task has
+tags, a status, and a concrete "done when" condition. When a task finishes: write its CHANGELOG.md line,
+remove it from whichever band file it's on (don't leave a "done" section sitting there — that's what the
+changelog is for), and if the task represented a real decision along the way, log that in DECISIONS.md too
+(record + index entry, per above).
 
 ### docs/sessions/
 
@@ -74,7 +93,7 @@ session's entry as you go, same as the other three.
 - When a change affects multiple files (a rename, a renamed field, a
   moved doc), grep the whole repo for references before considering
   the change finished — a stale reference is worse than no change.
-- Don't regenerate DECISIONS.md, CHANGELOG.md, or TASK_BOARD.md from
+- Don't regenerate DECISIONS.md, CHANGELOG.md, or the TASK_BOARD_*.md files from
   scratch to make an edit. Load the current file, make the specific
   addition or change, leave everything else untouched.
 
@@ -121,7 +140,7 @@ session's entry as you go, same as the other three.
 
 ## AI agent workflow shortcuts
 
-`.claude/commands/` has slash-command skills for working `docs/TASK_BOARD.md`:
+`.claude/commands/` has slash-command skills for working `docs/TASK_BOARD_NOW.md`/`_NEXT.md`/`_LATER.md`:
 `/add-code-task`, `/pick-code-task`, `/run-code-task`, `/sweep-code-tasks`,
 `/cleanup-code-branches`, `/close-code-session`, `/log-code-lesson`,
 `/make-code-cold-plan-review`. These commit and push straight to `main` like

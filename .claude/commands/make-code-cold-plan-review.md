@@ -34,8 +34,8 @@ Look in `docs/plans/` for a prior overlapping plan. If found, ask whether this i
 
 ## Step 3 — do the actual planning
 
-Research whatever the plan touches (read the relevant code; check `AGENTS.md`/`docs/TASK_BOARD.md`/
-`DECISIONS.md` for constraints) and work out a real plan:
+Research whatever the plan touches (read the relevant code; check `AGENTS.md`/`docs/TASK_BOARD_NOW.md`
+(and `_NEXT.md`/`_LATER.md` if relevant)/`DECISIONS.md` for constraints) and work out a real plan:
 - the concrete goal, and how you'd know it's done
 - the proposed approach, ordered steps, naming concrete files/functions/endpoints (they don't rot like
   line numbers)

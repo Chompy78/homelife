@@ -12,9 +12,9 @@ commit, or push anything yourself. Other sessions may have uncommitted work in t
 touch that.
 
 **Before writing anything**, run `git status`/`git diff` and classify every touched path — log only this
-session's real work. Re-read `AGENTS.md`, `CHANGELOG.md`, `DECISIONS.md`, and `docs/TASK_BOARD.md` in full
-immediately before editing any of them, even if you read them earlier this session — another session may
-have pushed since.
+session's real work. Re-read `AGENTS.md`, `CHANGELOG.md`, `DECISIONS.md`, and `docs/TASK_BOARD_NOW.md`/
+`_NEXT.md`/`_LATER.md` (whichever band(s) you're about to touch) in full immediately before editing any of
+them, even if you read them earlier this session — another session may have pushed since.
 
 ## Part 1 — Log the session's work (you WRITE these directly)
 
@@ -23,17 +23,20 @@ format exactly. Always required for real, finished work.
 
 **2. `DECISIONS.md`** — only if a change involved a non-obvious *why* (a design direction, a fix for a
 non-obvious problem, a choice between real options). Write the full `Context → Options → Decision → Why →
-Status` entry using `D-<YYYY-MM-DD>-<slug>`, matching the existing format exactly. If not warranted, say
-so and skip it.
+Status` record to `decisions/2026/D-<YYYY-MM-DD>-<slug>.md`, then add a one-line index entry to
+`DECISIONS.md` itself, both matching the existing format exactly (see `AGENTS.md`'s "DECISIONS.md"
+section) — never write full decision detail directly into `DECISIONS.md`. If not warranted, say so and
+skip it.
 
 **3. `docs/sessions/<date>-<topic>.md`** — per `docs/sessions/README.md`'s convention: a chronological
 narrative including anything operational that doesn't fit the other two docs (e.g. "created a parent code
 for a family," "redeployed the edge function"). Add or update the current session's entry — if one for
 today already exists, re-read and update it rather than assuming it's still accurate.
 
-**4. Roadmap graduation** — if a `docs/TASK_BOARD.md` task finished this session, remove its entry now and
-confirm the matching `CHANGELOG.md` line exists. For any newly-discovered task, format it in `/add-code-task`'s
-house format and surface it in Part 3's report rather than writing it into the board yourself mid-close.
+**4. Roadmap graduation** — if a task on `docs/TASK_BOARD_NOW.md`/`_NEXT.md`/`_LATER.md` finished this
+session, remove its entry from whichever band file it's on and confirm the matching `CHANGELOG.md` line
+exists. For any newly-discovered task, format it in `/add-code-task`'s house format and surface it in Part
+3's report rather than writing it into a board file yourself mid-close.
 
 ## Part 2 — Verify (report only — write nothing, change nothing)
 

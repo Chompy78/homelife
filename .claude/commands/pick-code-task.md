@@ -7,7 +7,7 @@ disallowed-tools: Edit, Write, NotebookEdit, Bash(git push *), Bash(git commit *
 
 # Homelife — pick the next roadmap task
 
-Help pick the next task from `docs/TASK_BOARD.md` and pre-flight it. This command only reads and reports
+Help pick the next task from `docs/TASK_BOARD_NOW.md`/`_NEXT.md`/`_LATER.md` and pre-flight it. This command only reads and reports
 — it never edits a file. This repo has no branches/worktrees to set up (see `AGENTS.md`: commit straight
 to `main`), so there's no worktree hand-off step like a branch-based workflow would have; Step 3's hand-off
 goes straight to `/run-code-task`.
@@ -19,7 +19,9 @@ session may have pushed to `main` since you last looked:
 ```
 git fetch origin
 git show origin/main:AGENTS.md
-git show origin/main:docs/TASK_BOARD.md
+git show origin/main:docs/TASK_BOARD_NOW.md
+git show origin/main:docs/TASK_BOARD_NEXT.md
+git show origin/main:docs/TASK_BOARD_LATER.md
 ```
 Have it return compact text: every task in NOW/NEXT/LATER verbatim, with its Tags/Status line.
 

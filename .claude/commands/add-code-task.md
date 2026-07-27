@@ -6,14 +6,16 @@ allowed-tools: Read, Edit, Bash(git *)
 
 # Homelife — add task
 
-Format a feature/change into `docs/TASK_BOARD.md`'s existing house format and commit it directly to
-`main` (no branch, no PR — this repo doesn't use either; see `AGENTS.md`'s "Project conventions").
+Format a feature/change into the house task format used across `docs/TASK_BOARD_NOW.md`/`_NEXT.md`/
+`_LATER.md` and commit it directly to `main` (no branch, no PR — this repo doesn't use either; see
+`AGENTS.md`'s "Project conventions").
 
 **Do not** write a design essay. Format correctly and execute.
 
 ## Step 1 — read live context
 
-Read `AGENTS.md`, `docs/TASK_BOARD.md`, and `DECISIONS.md` first (pull latest on `main` before reading —
+Read `AGENTS.md`, `docs/TASK_BOARD_NOW.md`, `docs/TASK_BOARD_NEXT.md`, `docs/TASK_BOARD_LATER.md`, and
+`DECISIONS.md` first (pull latest on `main` before reading —
 another session may have pushed since you last looked). Reuse the board's existing tags (`ai-vision`,
 `prompt`, `validation`, `feature`, `ux`, `infra`, `refactor`) rather than inventing near-duplicates.
 
@@ -49,9 +51,12 @@ when", if the task needs schema/file/endpoint-level detail to be picked up cold.
 - **Test data.** If it needs live verification: *"test against a disposable Supabase family, not a real
   one — clean up afterward (note: `storage.objects` rows need the Storage API/dashboard, not raw SQL, to
   delete)."*
-- **Decision ID.** If it warrants a `DECISIONS.md` entry: `D-<YYYY-MM-DD>-<slug>` (today's date + a short
-  topic slug), matching the existing format exactly.
-- **Bucket:** 🔴 NOW = urgent/in-progress · 🟡 NEXT = build work / default · 🟢 LATER = idea / low priority.
+- **Decision ID.** If it warrants a decision record: write the full record to
+  `decisions/2026/D-<YYYY-MM-DD>-<slug>.md` and add a one-line index entry to `DECISIONS.md`, matching the
+  existing format exactly (see `AGENTS.md`'s "DECISIONS.md" section) — never write full decision detail
+  directly into `DECISIONS.md`.
+- **Bucket:** 🔴 NOW = urgent/in-progress (`docs/TASK_BOARD_NOW.md`) · 🟡 NEXT = build work / default
+  (`docs/TASK_BOARD_NEXT.md`) · 🟢 LATER = idea / low priority (`docs/TASK_BOARD_LATER.md`).
 
 After formatting, **show the task block and ask for approval before doing anything else.** Wait for
 confirmation. If changes are requested, revise and show again.
@@ -60,8 +65,8 @@ confirmation. If changes are requested, revise and show again.
 
 Only after approval:
 1. Pull latest on `main`.
-2. Append the formatted task to the correct bucket in `docs/TASK_BOARD.md`, matching the surrounding
-   format exactly. Don't change anything else in the file.
+2. Append the formatted task to the correct bucket file (`docs/TASK_BOARD_NOW.md` / `_NEXT.md` / `_LATER.md`),
+   matching the surrounding format exactly. Don't change anything else in the file.
 3. Commit as `docs(roadmap): add <title> task` and push to `main`.
 
 ---

@@ -103,6 +103,24 @@ const insightsContent = document.getElementById("insightsContent");
 const historyList = document.getElementById("historyList");
 const manageCatBtn = document.getElementById("manageCatBtn");
 
+const bigRewardsView = document.getElementById("bigRewardsView");
+const bigRewardsList = document.getElementById("bigRewardsList");
+const openAddBigRewardBtn = document.getElementById("openAddBigRewardBtn");
+const addBigRewardModal = document.getElementById("addBigRewardModal");
+const addBigRewardModalClose = document.getElementById("addBigRewardModalClose");
+const bigRewardKidSelect = document.getElementById("bigRewardKidSelect");
+const bigRewardReasonInput = document.getElementById("bigRewardReasonInput");
+const bigRewardEarnedDateInput = document.getElementById("bigRewardEarnedDateInput");
+const saveBigRewardBtn = document.getElementById("saveBigRewardBtn");
+const addBigRewardError = document.getElementById("addBigRewardError");
+const spendBigRewardModal = document.getElementById("spendBigRewardModal");
+const spendBigRewardModalClose = document.getElementById("spendBigRewardModalClose");
+const spendBigRewardSummary = document.getElementById("spendBigRewardSummary");
+const spendOnInput = document.getElementById("spendOnInput");
+const spendDateInput = document.getElementById("spendDateInput");
+const confirmSpendBtn = document.getElementById("confirmSpendBtn");
+const spendBigRewardError = document.getElementById("spendBigRewardError");
+
 const manageReasonsBtn2 = document.getElementById("manageReasonsBtn2");
 
 const reasonsModal = document.getElementById("reasonsModal");
@@ -158,10 +176,12 @@ const toastContainer = document.getElementById("toastContainer");
 
 let token = null;
 let state = { kids: [], categories: [], balances: {}, history: [], notes: [] };
+let bigRewards = [];
 let reasonsType = "earn";
 let insights = [];
 let selectedKidId = null;
 let mode = "quick";
+let spendingBigRewardId = null; // which entry the spend modal is currently for
 let tableEditMode = false; // View Mode is the default; Table view only
 let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
 let parentAuthMethod = "pin"; // "pin" or "icons" - which the family has chosen, refreshed each loadState()
@@ -394,10 +414,11 @@ let loadStateSeq = 0;
 
 async function loadState() {
   const seq = ++loadStateSeq;
-  const [stateRes, insightsRes, authRes] = await Promise.all([
+  const [stateRes, insightsRes, authRes, bigRewardsRes] = await Promise.all([
     callApi("get_reward_state", { token }),
     callApi("get_reward_insights", { token }),
     callApi("get_family_auth_method", { token }),
+    callApi("get_big_rewards", { token }),
   ]);
   if (seq !== loadStateSeq) return; // a newer loadState() has since started - drop this stale response
   if (!stateRes.ok) {
@@ -412,6 +433,7 @@ async function loadState() {
   state = stateRes.data;
   insights = insightsRes.ok ? insightsRes.data.insights : [];
   if (authRes.ok) parentAuthMethod = authRes.data.method;
+  bigRewards = bigRewardsRes.ok ? bigRewardsRes.data.big_rewards : [];
   if (!selectedKidId || !state.kids.some((k) => k.id === selectedKidId)) {
     selectedKidId = state.kids[0]?.id || null;
   }
@@ -450,6 +472,7 @@ function renderAll() {
   if (mode === "table") renderTable();
   renderInsights();
   renderHistory();
+  renderBigRewards();
 }
 
 // No per-kid total here (deliberately) - it's still visible in Table view's
@@ -479,6 +502,7 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
     tableView.classList.toggle("hidden", mode !== "table");
     insightsView.classList.toggle("hidden", mode !== "insights");
     historyView.classList.toggle("hidden", mode !== "history");
+    bigRewardsView.classList.toggle("hidden", mode !== "big");
     renderActiveKidBanner();
     updateHeaderForMode();
     // renderAll() only rebuilds the wheel/table while their tab is active
@@ -939,6 +963,172 @@ function renderHistory() {
     });
   });
 }
+
+// --- Big Rewards - ad-hoc, occasional (1-2/month/kid) rewards worth their
+// own reason and spend record, separate from the category tap tally above.
+// A row starts "pending" (earned, not yet spent) and moves to "spent" once
+// a parent records what it went on.
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatDateStr(dateStr) {
+  // Parsed as local, not UTC midnight, so it can't display a day early/late
+  // depending on the browser's timezone offset from UTC.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function renderBigRewards() {
+  bigRewardsList.innerHTML = "";
+  if (!state.kids.length) return;
+  state.kids.forEach((kid) => {
+    const kidRewards = bigRewards.filter((r) => r.kid_id === kid.id);
+    const card = document.createElement("div");
+    card.className = "bigRewardKidCard";
+    const itemsHtml = kidRewards.length
+      ? kidRewards
+          .map((r) => {
+            if (r.status === "pending") {
+              return `
+                <div class="bigRewardItem">
+                  <div class="bigRewardItemMain">
+                    <div class="bigRewardReason">${escapeHtml(r.reason)}<span class="bigRewardPendingBadge">Pending</span></div>
+                    <div class="bigRewardMeta">Earned ${formatDateStr(r.earned_date)}</div>
+                  </div>
+                  <div class="bigRewardBtns">
+                    <button type="button" class="bigRewardSpendBtn" data-id="${r.id}">💰 Spend</button>
+                    <button type="button" class="bigRewardDeleteBtn" data-id="${r.id}" data-action="delete" title="Delete">🗑</button>
+                  </div>
+                </div>`;
+            }
+            return `
+              <div class="bigRewardItem">
+                <div class="bigRewardItemMain">
+                  <div class="bigRewardReason">${escapeHtml(r.reason)}</div>
+                  <div class="bigRewardMeta">Earned ${formatDateStr(r.earned_date)} · Spent on ${escapeHtml(r.spent_on)} (${formatDateStr(r.spent_date)})</div>
+                </div>
+                <div class="bigRewardBtns">
+                  <button type="button" class="bigRewardUndoBtn" data-id="${r.id}" data-action="unspend" title="Undo spend">↩</button>
+                  <button type="button" class="bigRewardDeleteBtn" data-id="${r.id}" data-action="delete" title="Delete">🗑</button>
+                </div>
+              </div>`;
+          })
+          .join("")
+      : `<p class="empty">No big rewards yet.</p>`;
+    card.innerHTML = `
+      <div class="bigRewardKidHeader" style="color:${kidColour(kid.id)}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</div>
+      ${itemsHtml}
+    `;
+    bigRewardsList.appendChild(card);
+  });
+
+  bigRewardsList.querySelectorAll(".bigRewardSpendBtn").forEach((btn) => {
+    btn.addEventListener("click", () => openSpendBigRewardModal(btn.dataset.id));
+  });
+  bigRewardsList.querySelectorAll(".bigRewardUndoBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const res = await callApi("undo_big_reward_spend", { token, id: btn.dataset.id });
+      if (!res.ok) {
+        showErrorToast("Couldn't undo that - try again.");
+        return;
+      }
+      await loadState();
+    });
+  });
+  bigRewardsList.querySelectorAll(".bigRewardDeleteBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const ok = await askConfirm("Delete this big reward?");
+      if (!ok) return;
+      const res = await callApi("delete_big_reward", { token, id: btn.dataset.id });
+      if (!res.ok) {
+        showErrorToast("Couldn't delete that - try again.");
+        return;
+      }
+      await loadState();
+    });
+  });
+}
+
+openAddBigRewardBtn.addEventListener("click", () => {
+  addBigRewardError.classList.add("hidden");
+  bigRewardKidSelect.innerHTML = state.kids
+    .map((k) => `<option value="${k.id}">${escapeHtml(k.avatar_emoji || "⭐")} ${escapeHtml(k.name)}</option>`)
+    .join("");
+  if (selectedKidId) bigRewardKidSelect.value = selectedKidId;
+  bigRewardReasonInput.value = "";
+  bigRewardEarnedDateInput.value = todayStr();
+  addBigRewardModal.classList.remove("hidden");
+});
+addBigRewardModalClose.addEventListener("click", () => addBigRewardModal.classList.add("hidden"));
+
+saveBigRewardBtn.addEventListener("click", async () => {
+  addBigRewardError.classList.add("hidden");
+  const reason = bigRewardReasonInput.value.trim();
+  if (!reason) {
+    addBigRewardError.textContent = "Enter a reason first.";
+    addBigRewardError.classList.remove("hidden");
+    return;
+  }
+  if (!bigRewardKidSelect.value || !bigRewardEarnedDateInput.value) {
+    addBigRewardError.textContent = "Pick who it's for and a date.";
+    addBigRewardError.classList.remove("hidden");
+    return;
+  }
+  saveBigRewardBtn.disabled = true;
+  const res = await callApi("add_big_reward", {
+    token,
+    kid_id: bigRewardKidSelect.value,
+    reason,
+    earned_date: bigRewardEarnedDateInput.value,
+  });
+  saveBigRewardBtn.disabled = false;
+  if (!res.ok) {
+    addBigRewardError.textContent = "Couldn't save that - try again.";
+    addBigRewardError.classList.remove("hidden");
+    return;
+  }
+  addBigRewardModal.classList.add("hidden");
+  await loadState();
+});
+
+function openSpendBigRewardModal(id) {
+  const entry = bigRewards.find((r) => r.id === id);
+  if (!entry) return;
+  spendingBigRewardId = id;
+  spendBigRewardError.classList.add("hidden");
+  spendBigRewardSummary.textContent = `${kidAvatar(entry.kid_id)} ${kidName(entry.kid_id)} - ${entry.reason}`;
+  spendOnInput.value = "";
+  spendDateInput.value = todayStr();
+  spendBigRewardModal.classList.remove("hidden");
+}
+spendBigRewardModalClose.addEventListener("click", () => spendBigRewardModal.classList.add("hidden"));
+
+confirmSpendBtn.addEventListener("click", async () => {
+  spendBigRewardError.classList.add("hidden");
+  const spentOn = spendOnInput.value.trim();
+  if (!spentOn || !spendDateInput.value) {
+    spendBigRewardError.textContent = "Enter what it was spent on and a date.";
+    spendBigRewardError.classList.remove("hidden");
+    return;
+  }
+  confirmSpendBtn.disabled = true;
+  const res = await callApi("spend_big_reward", {
+    token,
+    id: spendingBigRewardId,
+    spent_on: spentOn,
+    spent_date: spendDateInput.value,
+  });
+  confirmSpendBtn.disabled = false;
+  if (!res.ok) {
+    spendBigRewardError.textContent = "Couldn't save that - try again.";
+    spendBigRewardError.classList.remove("hidden");
+    return;
+  }
+  spendBigRewardModal.classList.add("hidden");
+  await loadState();
+});
 
 // --- Note modal (earn/spend confirmation with a preset or custom reason) --
 

@@ -6,6 +6,13 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-28
+
+- Added a "Technical access ≠ scope" section to `AGENTS.md`, retrofitted from a new standard-level rule in
+  AI_templates (`AGENTS_TEMPLATE.md`/`AI_RULES.md` Rule 10), after direct testing on Home AI Server
+  confirmed a session with broad, non-enforced access would cross into a different project's files if
+  asked. See `DECISIONS.md` D-2026-07-28-technical-access-not-scope.
+
 ## 2026-07-27
 
 - Added a "🎁 Big" tab to `reward-tracker` for ad-hoc "big" rewards (1-2/month/kid) that are bigger and

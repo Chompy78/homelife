@@ -110,6 +110,15 @@ session's entry as you go, same as the other three.
 - If a merge conflict or an unexpected diff shows up, stop and
   investigate rather than overwriting either side.
 
+## Technical access ≠ scope
+
+Any AI session without real technical permission-scoping (i.e. most sessions — Claude Code with enforced
+deny-rules is the exception) should not read or edit files belonging to a different project than this one,
+unless explicitly asked. Checking another project's rules or adding something there on request is fine;
+doing it unprompted isn't. Confirmed via direct testing (28 July 2026, Home AI Server) that a session with
+broad, non-enforced access will cross into another project's files if asked, seeing no rule against it —
+see AI_templates' `D-2026-07-28-technical-access-not-scope`.
+
 ## Project conventions (established, keep following unless told otherwise)
 
 - **Commit and push straight to `main`.** No feature-branch workflow is

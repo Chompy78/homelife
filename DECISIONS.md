@@ -6,6 +6,16 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-07-28-technical-access-not-scope
+
+**Status:** Done
+
+**Summary:** Added a "Technical access ≠ scope" section to AGENTS.md, after direct testing on Home AI
+  Server confirmed a session with broad, non-enforced access would cross into a different project's files
+  if asked.
+
+**Record:** decisions/2026/D-2026-07-28-technical-access-not-scope.md
+
 ## D-2026-07-27-reward-tracker-big-rewards
 
 **Status:** Done

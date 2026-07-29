@@ -52,9 +52,9 @@ function equal(a, b) {
   const frontendPoints = frontendSrc ? parsePoints(frontendSrc) : null;
 
   if (!frontendPoints) {
-    console.log('No POINTS object found in apps/shared/config.js. Consider adding a POINTS object there to keep frontend in sync with backend.');
-    console.log('Backend POINTS:', JSON.stringify(backendPoints, null, 2));
-    process.exit(0);
+    console.error('No POINTS object found in apps/shared/config.js. Failing CI to force an explicit decision.');
+    console.error('Backend POINTS:', JSON.stringify(backendPoints, null, 2));
+    process.exit(2);
   }
 
   if (!equal(backendPoints, frontendPoints)) {

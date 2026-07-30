@@ -34,6 +34,12 @@ on `TASK_BOARD.md`.
   `kid_reading_holidays`'s `family_id`/`kid_id` foreign keys to cascade on delete, matching every other
   family/kid table's convention (missed in the original migration; surfaced by the disposable-test-family
   cleanup step failing with a foreign-key violation).
+- Fixed the reading tracker's ahead/behind banner silently never activating for a kid whose Setup had a
+  pages-per-night goal saved but no goal start date - the date field had no default, so saving the goal
+  alone (without also touching that field) left it null and the banner permanently hidden with no
+  indication why. `goalStartDateInput` now defaults to today (same convention as the log-date input)
+  whenever a kid has no saved start date, so hitting Save alone now activates tracking from today. Bumped
+  `reading-tracker` service worker to v3. See `DECISIONS.md` D-2026-07-30-reading-tracker-goal-start-date-default.
 
 ## 2026-07-28
 

@@ -262,7 +262,12 @@ function renderSettings() {
   const kid = state.kids.find((k) => k.id === selectedKidId);
   if (!kid) return;
   goalPagesInput.value = kid.reading_daily_goal_pages ?? "";
-  goalStartDateInput.value = kid.reading_goal_start_date ?? "";
+  // Defaults to today rather than blank (same convention as the log-date
+  // input) - a goal pages value with no start date can never activate the
+  // ahead/behind banner, and that's an easy field to skip since it isn't
+  // required to save the goal at all. Showing today ready-to-confirm means
+  // just hitting Save (without touching this field) still turns tracking on.
+  goalStartDateInput.value = kid.reading_goal_start_date || todayStr();
   spinThresholdInput.value = kid.reading_spin_threshold_pages ?? "";
   settingsSaved.classList.add("hidden");
 

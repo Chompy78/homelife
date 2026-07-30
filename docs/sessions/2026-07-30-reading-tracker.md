@@ -84,13 +84,39 @@ per-kid book/page tracking, nightly goals, and a bonus-spin trigger.
   workflow - confirmed the merge commit's tree was identical to the
   pre-merge commit's (a clean fast-forward-shaped merge), so the working
   tree's uncommitted edits carried over safely.
+- Opened PR #3 for the follow-up; user asked to merge it. GitHub reported a
+  real merge conflict this time (an unrelated Reward Tracker PR had landed
+  on `main` in the meantime, touching `CHANGELOG.md`/`DECISIONS.md` at the
+  same insertion points) - merged `origin/main` into the branch, resolved
+  both conflicts by keeping both sides' entries, then merged PR #3.
+- User reported the ahead/behind banner still wasn't showing when clicking
+  a kid's name. Checked the live production `kids` table directly: one
+  real kid had a pages goal and spin threshold saved, but no goal start
+  date, and `computeAheadBehind()` requires both - the "Goal start date"
+  field had no default value (unlike every other date field in the app),
+  so saving the goal alone left it silently unset with no visible sign why.
+- User also asked what the days-of-week checkboxes do, expecting reading
+  logged on any day to always count even if that day isn't ticked -
+  confirmed that's already exactly how it works: the checkboxes only
+  reduce which days accumulate toward the *expected* pages target;
+  `actualPages` sums every logged entry since the goal start date with no
+  day-of-week filter at all.
+- Fixed `renderSettings()` to default `goalStartDateInput` to today when a
+  kid has no saved start date (matching the log-date input's existing
+  convention), so hitting Save alone - without touching that field - now
+  activates the banner. Bumped `reading-tracker` service worker to v3.
+  Logged as `D-2026-07-30-reading-tracker-goal-start-date-default`.
+- Verified via Playwright against a fresh disposable family: the field
+  shows today by default, persists on save with no other changes, and the
+  banner appears immediately after reload. Cleaned up the test family.
 
 ## Files touched
 
 - `apps/reading-tracker/` - `index.html`, `app.js`, `styles.css` (reordered
   sections, book/log editing, ahead/behind banner, goal schedule +
-  holidays UI), `manifest.json`, `service-worker.js` (CACHE_NAME bumped to
-  v2), `icons/icon-192.png`, `icons/icon-512.png`
+  holidays UI, goal-start-date default), `manifest.json`,
+  `service-worker.js` (CACHE_NAME bumped to v2, then v3), `icons/icon-192.png`,
+  `icons/icon-512.png`
 - `supabase/functions/family-api/index.ts` - reading tracker actions +
   `creditReadingSpins` helper, then `edit_book`/`edit_reading_log`/
   `add_reading_holiday`/`delete_reading_holiday` and extended
@@ -108,6 +134,7 @@ per-kid book/page tracking, nightly goals, and a bonus-spin trigger.
 
 - `DECISIONS.md` → `decisions/2026/D-2026-07-30-reading-tracker-new-app.md`
 - `DECISIONS.md` → `decisions/2026/D-2026-07-30-reading-tracker-fk-cascade-fix.md`
+- `DECISIONS.md` → `decisions/2026/D-2026-07-30-reading-tracker-goal-start-date-default.md`
 
 ## Carried forward
 

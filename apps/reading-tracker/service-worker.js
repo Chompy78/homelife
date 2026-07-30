@@ -1,4 +1,4 @@
-const CACHE_NAME = "reading-tracker-pwa-v2";
+const CACHE_NAME = "reading-tracker-pwa-v3";
 const ASSETS = [
   "./",
   "./index.html",

@@ -6,6 +6,17 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-07-30-spin-tab-ask-kid-on-spin
+
+**Status:** Done
+
+**Summary:** Removed the shared header kid picker from the reward-tracker Spin tab; pressing SPIN
+  now opens a "Spin for who?" modal first and sets `selectedKidId` from that choice, instead of
+  spinning for whatever kid the header happened to have selected. Quick Tap's header picker is
+  unchanged.
+
+**Record:** decisions/2026/D-2026-07-30-spin-tab-ask-kid-on-spin.md
+
 ## D-2026-07-30-reading-tracker-new-app
 
 **Status:** Done

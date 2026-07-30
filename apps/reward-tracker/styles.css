@@ -411,6 +411,27 @@ header h1 { margin: 0; font-size: clamp(1.05rem, 3.2vw, 1.35rem); display: flex;
 .catUnusedSummary { color: var(--muted); font-weight: 700; font-size: 0.85rem; margin: -4px 0 12px; }
 .catUnusedBadge { font-size: 0.68rem; font-weight: 800; color: var(--muted); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; flex: 0 0 auto; white-space: nowrap; }
 
+/* "Spin for who?" modal - opened by the SPIN button itself rather than a
+   persistent header picker (Spin's header shows no kid chips), so this
+   needs to be big and tappable rather than the header's compact chips. */
+.spinKidGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; }
+.spinKidBtn {
+  --kid-colour: #888;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  padding: 16px 8px;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+}
+.spinKidBtn.selected { border-color: var(--kid-colour); background: color-mix(in srgb, var(--kid-colour) 15%, var(--card)); color: var(--kid-colour); }
+.spinKidAvatar { font-size: 1.8rem; }
+
 .headerBtns { display: flex; gap: 8px; }
 
 /* PIN modal */

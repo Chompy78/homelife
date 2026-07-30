@@ -35,6 +35,18 @@
     </div>
   </div>
 
+  <!-- Asked each time SPIN is pressed, rather than a persistent header kid
+       picker (Spin's header has none - see the spin tab's own doc). -->
+  <div class="catModal hidden" id="spinKidModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>Spin for who?</h2>
+        <button id="spinKidModalCancel" type="button" class="catModalClose">✕</button>
+      </div>
+      <div class="spinKidGrid" id="spinKidGrid"></div>
+    </div>
+  </div>
+
   <div class="catModal hidden" id="catModal">
     <div class="catCard">
       <div class="catCardHead">

@@ -21,6 +21,9 @@ on `TASK_BOARD.md`.
 - Reward Tracker: the Spin tab no longer shows the kid picker in the sticky header - pressing SPIN
   now opens a "Spin for who?" modal first, then spins for the chosen kid. Quick Tap's header kid
   picker is unchanged. See `DECISIONS.md` D-2026-07-30-spin-tab-ask-kid-on-spin.
+- Fixed Reward Tracker's app version tag being invisible: it was nested inside the Settings modal
+  instead of sitting at the bottom of the page like every other app (e.g. `parent-dashboard`) -
+  moved it to the bottom of the main app view.
 
 ## 2026-07-28
 

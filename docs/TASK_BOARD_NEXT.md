@@ -22,6 +22,70 @@ hand needs it — see `TASK_BOARD_NOW.md` for what's currently in progress.
 
 ## 🟡 NEXT
 
+### Tag AI photo-score submissions as full-room vs section
+- **Tags:** ai-vision, feature
+- **Status:** open
+- A kid can currently submit any photo for AI scoring - a shot of the whole
+  room or just a section/corner - with no distinction recorded on the
+  resulting score. Add a tag so a submission (and its score) is marked as
+  a genuine full-room view vs. a section: both kinds of photo can still be
+  submitted and scored, but only a full-room submission gets the
+  full-room tag.
+- **Done when:** a scored `photo_score_requests` row records whether the
+  submission was a full-room view or a section, verified against a
+  disposable Supabase family with one of each submitted and scored, and
+  the tag is visible somewhere a parent already looks (at minimum,
+  `get_photo_score_history`'s score history list in `parent-dashboard`).
+
+<details>
+<summary>Design notes</summary>
+
+- **Schema:** add a nullable `is_full_room boolean` column to
+  `photo_score_requests` (null until scored, same lifecycle as `score`/
+  `comment`/`rejection_reason`) - simplest fit alongside existing boolean
+  flags in this codebase (`is_public`, `is_bonus_spin`), and this is
+  inherently binary (full room vs. not), not a third option.
+- **Where it's set:** the worker already runs a vision pass per submission
+  for the room-validity gate / fingerprint match (see "Confirm the
+  fingerprint-based pipeline on the real worker" in `TASK_BOARD_NOW.md`) -
+  add one more classification to that same pass (does the photo show the
+  room's full extent - walls/floor boundaries visible - vs. a close-up of
+  one area) rather than a separate model call. Reported back via
+  `submit_photo_score` (worker-only action, `supabase/functions/family-api/index.ts`)
+  alongside `score`/`comment`, written into the new column on the same
+  update.
+- **Surfacing:** `get_photo_score_history` (family-api) should select the
+  new column; `parent-dashboard`'s AI score-history list (`app.js`'s
+  history rendering, `aiHistoryList`) should show a small badge for it.
+  Whether anything downstream (auto-approve threshold, a future
+  reading-tracker-style bonus-spin trigger, streaks) should require the
+  full-room tag specifically is intentionally left open for a later task -
+  this one is just about recording and surfacing the tag itself.
+
+</details>
+
+### Reorganize parent-dashboard into Setup vs Dashboard, add at-a-glance summary tiles
+- **Tags:** ux, feature
+- **Status:** open
+- `parent-dashboard` currently reads as mostly admin/setup (family settings,
+  add kid, bedroom checklist admin, add room) with the actual monitoring
+  (kids'/rooms' progress cards) tacked on at the bottom - see
+  `D-2026-07-30-reading-tracker-new-app`'s context for how this came up.
+  Reorganize the existing page into two clearly separated sections
+  ("Setup & Settings" vs "Dashboard"), and add real at-a-glance summary
+  tiles per kid to the Dashboard section: room/bedroom score (from
+  `get_family_dashboard` - streak, points, AI score already returned),
+  rewards earned (pull `get_reward_state`'s balances - already callable
+  from parent-dashboard, no backend change needed), and reading status
+  (now buildable - `apps/reading-tracker` shipped `get_reading_state`,
+  which returns each kid's current book/page, `pages_today`, and
+  `bonus_spins`).
+- **Done when:** parent-dashboard's page is visibly split into a
+  Setup/Settings area and a Dashboard area, and the Dashboard area shows a
+  real per-kid summary tile combining room score, rewards earned, and
+  reading status (not placeholders), verified against a disposable
+  Supabase family with data in all three.
+
 ### Migration M2b - Wrap the scaffold in Capacitor, build a debug APK
 - **Tags:** infra, migration
 - **Status:** blocked (needs Migration M2 done)

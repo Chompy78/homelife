@@ -492,6 +492,22 @@ async function grantSpinCredit(familyId: string, kidId: string, reasonId: string
   return data;
 }
 
+// Reading's own bonus-spin trigger: unlike grantSpinCredit above (a named
+// reason, capped once per day/week/month), this is a per-kid, customizable
+// "every N cumulative pages read" threshold with no period cap - a kid can
+// earn several spins in a row if a single log entry crosses more than one
+// threshold's worth of pages at once. Returns how many spins were newly
+// granted (0 if no threshold is set or none was crossed).
+async function creditReadingSpins(familyId: string, kidId: string): Promise<number> {
+  const { data, error } = await db.rpc("credit_reading_spins_atomic", {
+    p_family_id: familyId,
+    p_kid_id: kidId,
+    p_max: MAX_BONUS_SPINS,
+  });
+  if (error) return 0;
+  return data || 0;
+}
+
 async function getPhotosWithUrls(kidId: string) {
   const { data: rows } = await db
     .from("kid_reference_photos")
@@ -1164,6 +1180,178 @@ Deno.serve(async (req) => {
         const { data: entry } = await db.from("kid_big_rewards").select("id").eq("id", body.id).eq("family_id", session.family_id).maybeSingle();
         if (!entry) return json({ ok: false, error: "not_found" }, 404);
         await db.from("kid_big_rewards").delete().eq("id", entry.id);
+        return json({ ok: true });
+      }
+
+      // --- Reading tracker: a book per kid (title, optional total_pages,
+      // reading/finished), a nightly "what page are you up to" log per book,
+      // and a per-kid pages-per-night goal (kids.reading_daily_goal_pages).
+      // A parent only ever enters the page reached for a given date - the
+      // pages actually read that entry is computed here as the delta from
+      // the most recent earlier entry for the same book (0 if it's the
+      // first entry), so nobody has to do that subtraction by hand. This
+      // assumes entries are logged in roughly chronological order per book;
+      // deleting or backfilling an out-of-order entry doesn't recompute its
+      // neighbours - acceptable for a nightly-log use case, not worth the
+      // complexity of a full recompute for the rare correction.
+
+      case "get_reading_state": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const [{ data: kids }, { data: books }, { data: log }] = await Promise.all([
+          db
+            .from("kids")
+            .select("id, name, avatar_emoji, theme_color, reading_daily_goal_pages, reading_spin_threshold_pages, bonus_spins")
+            .eq("family_id", session.family_id)
+            .order("sort_order"),
+          db.from("kid_reading_books").select("*").eq("family_id", session.family_id).order("started_date", { ascending: false }),
+          db
+            .from("kid_reading_log")
+            .select("id, kid_id, book_id, log_date, page_up_to, pages_read, note, created_at")
+            .eq("family_id", session.family_id)
+            .order("log_date", { ascending: false })
+            .order("created_at", { ascending: false })
+            .limit(300),
+        ]);
+        const today = todayStr();
+        const pagesToday: Record<string, number> = {};
+        for (const entry of log || []) {
+          if (entry.log_date !== today) continue;
+          pagesToday[entry.kid_id] = (pagesToday[entry.kid_id] || 0) + entry.pages_read;
+        }
+        return json({ ok: true, data: { kids: kids || [], books: books || [], log: log || [], pages_today: pagesToday } });
+      }
+
+      // Sets both per-kid reading settings together: the nightly pages goal
+      // (display/comparison only) and the bonus-spin page threshold (see
+      // creditReadingSpins below) - each kid can have a different value for
+      // either, and either can be left unset (null clears it).
+      case "set_reading_settings": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: kid } = await db.from("kids").select("id").eq("id", body.kid_id).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+
+        const parseOptionalPositiveInt = (v: unknown): { ok: true; value: number | null } | { ok: false } => {
+          if (v === null || v === undefined || v === "") return { ok: true, value: null };
+          const parsed = Number(v);
+          if (!Number.isInteger(parsed) || parsed <= 0) return { ok: false };
+          return { ok: true, value: parsed };
+        };
+
+        const patch: Record<string, unknown> = {};
+        if ("goal_pages" in body) {
+          const parsed = parseOptionalPositiveInt(body.goal_pages);
+          if (!parsed.ok) return json({ ok: false, error: "bad_goal" }, 400);
+          patch.reading_daily_goal_pages = parsed.value;
+        }
+        if ("spin_threshold_pages" in body) {
+          const parsed = parseOptionalPositiveInt(body.spin_threshold_pages);
+          if (!parsed.ok) return json({ ok: false, error: "bad_spin_threshold" }, 400);
+          patch.reading_spin_threshold_pages = parsed.value;
+        }
+        if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
+        await db.from("kids").update(patch).eq("id", kid.id);
+        return json({ ok: true });
+      }
+
+      case "start_book": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: kid } = await db.from("kids").select("id").eq("id", body.kid_id).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        const title = String(body.title || "").trim().slice(0, 140);
+        if (!title) return json({ ok: false, error: "title_required" }, 400);
+        let totalPages: number | null = null;
+        if (body.total_pages !== null && body.total_pages !== undefined && body.total_pages !== "") {
+          const parsed = Number(body.total_pages);
+          if (!Number.isInteger(parsed) || parsed <= 0) return json({ ok: false, error: "bad_total_pages" }, 400);
+          totalPages = parsed;
+        }
+        const startedDate = typeof body.started_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.started_date) ? body.started_date : todayStr();
+        const { data: entry, error } = await db
+          .from("kid_reading_books")
+          .insert({ family_id: session.family_id, kid_id: kid.id, title, total_pages: totalPages, started_date: startedDate, status: "reading" })
+          .select()
+          .single();
+        if (error || !entry) return json({ ok: false, error: "could_not_add" }, 500);
+        return json({ ok: true, data: { entry } });
+      }
+
+      case "finish_book": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: book } = await db.from("kid_reading_books").select("id").eq("id", body.book_id).eq("family_id", session.family_id).maybeSingle();
+        if (!book) return json({ ok: false, error: "not_found" }, 404);
+        const finishedDate = typeof body.finished_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.finished_date) ? body.finished_date : todayStr();
+        await db.from("kid_reading_books").update({ status: "finished", finished_date: finishedDate }).eq("id", book.id);
+        return json({ ok: true });
+      }
+
+      // Undoes a mistaken "finish" - back to "reading", clears finished_date.
+      case "reopen_book": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: book } = await db.from("kid_reading_books").select("id").eq("id", body.book_id).eq("family_id", session.family_id).maybeSingle();
+        if (!book) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_reading_books").update({ status: "reading", finished_date: null }).eq("id", book.id);
+        return json({ ok: true });
+      }
+
+      case "delete_book": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: book } = await db.from("kid_reading_books").select("id").eq("id", body.book_id).eq("family_id", session.family_id).maybeSingle();
+        if (!book) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_reading_books").delete().eq("id", book.id); // cascades to kid_reading_log
+        return json({ ok: true });
+      }
+
+      case "log_reading_pages": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: kid } = await db.from("kids").select("id").eq("id", body.kid_id).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        const { data: book } = await db
+          .from("kid_reading_books")
+          .select("id, kid_id")
+          .eq("id", body.book_id)
+          .eq("family_id", session.family_id)
+          .maybeSingle();
+        if (!book || book.kid_id !== kid.id) return json({ ok: false, error: "not_found" }, 404);
+        const logDate = typeof body.log_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.log_date) ? body.log_date : todayStr();
+        const pageUpTo = Number(body.page_up_to);
+        if (!Number.isInteger(pageUpTo) || pageUpTo < 0) return json({ ok: false, error: "bad_page" }, 400);
+        const note = typeof body.note === "string" ? body.note.trim().slice(0, 140) : null;
+
+        const { data: prior } = await db
+          .from("kid_reading_log")
+          .select("page_up_to")
+          .eq("book_id", book.id)
+          .lte("log_date", logDate)
+          .order("log_date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const priorPage = prior?.page_up_to || 0;
+        const pagesRead = Math.max(0, pageUpTo - priorPage);
+
+        const { data: entry, error } = await db
+          .from("kid_reading_log")
+          .insert({ family_id: session.family_id, kid_id: kid.id, book_id: book.id, log_date: logDate, page_up_to: pageUpTo, pages_read: pagesRead, note: note || null })
+          .select()
+          .single();
+        if (error || !entry) return json({ ok: false, error: "could_not_add" }, 500);
+        const spinsGranted = pagesRead > 0 ? await creditReadingSpins(session.family_id, kid.id) : 0;
+        return json({ ok: true, data: { entry, spins_granted: spinsGranted } });
+      }
+
+      case "undo_reading_log": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: entry } = await db.from("kid_reading_log").select("id").eq("id", body.log_id).eq("family_id", session.family_id).maybeSingle();
+        if (!entry) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_reading_log").delete().eq("id", entry.id);
         return json({ ok: true });
       }
 

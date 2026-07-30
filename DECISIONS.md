@@ -6,6 +6,17 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-07-30-reading-tracker-new-app
+
+**Status:** Done
+
+**Summary:** Built reading tracking as its own new app (`apps/reading-tracker`) rather than folding it
+  into `parent-dashboard`, following the existing per-concern-app pattern; new `kid_reading_books`/
+  `kid_reading_log` tables plus a per-kid page-based bonus-spin trigger reusing the existing
+  `bonus_spins` mechanic.
+
+**Record:** decisions/2026/D-2026-07-30-reading-tracker-new-app.md
+
 ## D-2026-07-28-technical-access-not-scope
 
 **Status:** Done

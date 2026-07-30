@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#5c6bc0" />
+  <meta name="description" content="Track what each kid is reading, what page they're up to, and finished books." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="../shared/icons/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="../shared/icons/favicon-16.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Homelife - Reading Tracker</title>
+</head>
+<body>
+  <div class="gate" id="gate">
+    <div class="gateCard">
+      <h1>📖 Reading Tracker</h1>
+      <p>Enter your family's parent code. This device will remember it.</p>
+      <form id="codeForm">
+        <input id="codeInput" class="codeInput" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" placeholder="XXXX-XXXX" maxlength="12" />
+        <button type="submit" class="codeSubmit">Continue</button>
+      </form>
+      <p class="codeError hidden" id="codeError"></p>
+    </div>
+  </div>
+
+  <div class="confirmModal hidden" id="confirmModal">
+    <div class="confirmCard">
+      <p id="confirmText"></p>
+      <div class="confirmButtons">
+        <button id="confirmYes" type="button" class="confirmYes">Yes</button>
+        <button id="confirmNo" type="button" class="confirmNo">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toastContainer" id="toastContainer"></div>
+
+  <div class="app hidden" id="app">
+    <header>
+      <h1>📖 Reading Tracker</h1>
+      <div class="kidPickerRow" id="kidPickerRow"></div>
+    </header>
+
+    <p class="aheadBehindBanner hidden" id="aheadBehindBanner"></p>
+
+    <section class="card hidden" id="currentlyReadingCard">
+      <h2>Currently reading</h2>
+      <div class="bookList" id="currentBooksList"></div>
+
+      <div class="addBookRow">
+        <input type="text" id="newBookTitle" placeholder="Book title" maxlength="140" />
+        <input type="number" id="newBookTotalPages" placeholder="Total pages (optional)" min="1" />
+        <button id="addBookBtn" type="button" class="saveBtn">+ Start book</button>
+      </div>
+      <p class="addBookError hidden" id="addBookError"></p>
+    </section>
+
+    <section class="card settingsCard hidden" id="settingsCard">
+      <h2>Setup</h2>
+      <div class="settingsRow">
+        <label>Pages per night goal
+          <input type="number" id="goalPagesInput" min="1" placeholder="e.g. 20" />
+        </label>
+        <label>Goal start date
+          <input type="date" id="goalStartDateInput" />
+        </label>
+        <label>Bonus spin every
+          <input type="number" id="spinThresholdInput" min="1" placeholder="e.g. 100 pages" />
+        </label>
+      </div>
+
+      <div class="daysOfWeekRow">
+        <div class="settingsRowLabel">Days that count toward the goal</div>
+        <div class="daysOfWeekChecks" id="daysOfWeekChecks">
+          <label><input type="checkbox" value="0" checked />Sun</label>
+          <label><input type="checkbox" value="1" checked />Mon</label>
+          <label><input type="checkbox" value="2" checked />Tue</label>
+          <label><input type="checkbox" value="3" checked />Wed</label>
+          <label><input type="checkbox" value="4" checked />Thu</label>
+          <label><input type="checkbox" value="5" checked />Fri</label>
+          <label><input type="checkbox" value="6" checked />Sat</label>
+        </div>
+      </div>
+
+      <div class="buttons">
+        <button id="saveSettingsBtn" type="button" class="saveBtn">Save</button>
+      </div>
+      <p class="settingsHint">A bonus spin is earned automatically once this many cumulative pages have been read - spin it in the Reward Tracker app.</p>
+      <p class="bonusSpinRow hidden" id="bonusSpinRow"></p>
+      <p class="settingsSaved hidden" id="settingsSaved">Saved.</p>
+
+      <div class="holidaysSection">
+        <div class="settingsRowLabel">Reading holidays (excluded from the goal)</div>
+        <div class="holidaysList" id="holidaysList"></div>
+        <div class="addHolidayRow">
+          <input type="date" id="newHolidayStart" />
+          <input type="date" id="newHolidayEnd" />
+          <input type="text" id="newHolidayLabel" placeholder="Label (optional)" maxlength="60" />
+          <button id="addHolidayBtn" type="button" class="saveBtn">+ Add</button>
+        </div>
+        <p class="addHolidayError hidden" id="addHolidayError"></p>
+      </div>
+    </section>
+
+    <section class="card hidden" id="finishedBooksCard">
+      <h2>Finished books</h2>
+      <div class="bookList" id="finishedBooksList"></div>
+    </section>
+
+    <p class="switchFamily"><a href="#" id="switchFamilyLink">Use a different parent code</a></p>
+    <p class="appVersionTag" id="appVersion"></p>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

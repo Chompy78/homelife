@@ -93,6 +93,7 @@ input[type="checkbox"] { width: 32px; height: 32px; accent-color: var(--green); 
 .pinHint { margin: 8px 2px 0; font-size: 0.85rem; color: var(--muted); font-weight: 700; }
 footer { color: var(--muted); text-align: center; padding: 20px 0 8px; font-size: 0.9rem; }
 .appVersionTag { display: block; margin-top: 4px; font-size: 0.75rem; opacity: 0.6; }
+.installBtn { background: var(--blue); color: #fff; margin-top: 14px; }
 
 .newDayLink { text-align: center; margin: 22px 0 8px; }
 .resetLink {

@@ -1,0 +1,214 @@
+:root {
+  --bg: #eceefb;
+  --card: #ffffff;
+  --ink: #262a4d;
+  --muted: #6b6f9a;
+  --line: #d6d9f2;
+  --accent: #5c6bc0;
+  --gold: #ffca3a;
+  --green: #4caf50;
+  --red: #d9534f;
+  --shadow: 0 6px 20px rgba(38, 42, 77, 0.1);
+}
+html.dark {
+  --bg: #171826;
+  --card: #232544;
+  --ink: #e7e8fb;
+  --muted: #9a9dc9;
+  --line: #383a63;
+  --shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  padding: 0 16px 16px;
+}
+.hidden { display: none !important; }
+.app { max-width: 700px; margin: 0 auto; }
+.empty { color: var(--muted); font-weight: 700; text-align: center; }
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: linear-gradient(135deg, #5c6bc0, #7b8ce0);
+  color: white;
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  margin: 16px 0 14px;
+}
+header h1 { margin: 0 0 10px; font-size: clamp(1.1rem, 3.2vw, 1.4rem); }
+
+.kidPickerRow { display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
+.kidChip {
+  --kid-colour: #888;
+  display: flex; align-items: center; gap: 6px;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.25);
+  border: 2px solid transparent;
+  border-radius: 14px;
+  padding: 6px 12px;
+  color: white;
+  font-weight: 800;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.kidChip.selected { background: white; color: var(--kid-colour); border-color: var(--kid-colour); }
+.kidChipAvatar { font-size: 1.1rem; }
+
+.card {
+  background: var(--card);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  margin-bottom: 14px;
+}
+.card h2 { margin: 0 0 12px; font-size: 1.05rem; }
+
+.aheadBehindBanner {
+  text-align: center;
+  font-weight: 800;
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+}
+.aheadBehindBanner.aheadBanner { background: rgba(76, 175, 80, 0.15); color: var(--green); }
+.aheadBehindBanner.behindBanner { background: rgba(217, 83, 79, 0.15); color: var(--red); }
+.aheadBehindBanner.evenBanner { background: rgba(92, 107, 192, 0.15); color: var(--accent); }
+
+.settingsRow { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+.settingsRow label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; font-weight: 700; color: var(--muted); flex: 1; min-width: 140px; }
+.settingsRow input {
+  font-size: 0.95rem;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+.settingsRowLabel { font-size: 0.8rem; font-weight: 700; color: var(--muted); margin: 14px 0 6px; }
+.daysOfWeekRow { margin-top: 4px; }
+.daysOfWeekChecks { display: flex; gap: 10px; flex-wrap: wrap; }
+.daysOfWeekChecks label { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; font-weight: 700; color: var(--ink); }
+
+.buttons { margin-top: 14px; }
+
+.settingsHint { color: var(--muted); font-size: 0.8rem; margin: 10px 0 0; }
+.bonusSpinRow { margin: 10px 0 0; font-weight: 800; color: var(--accent); }
+.settingsSaved { color: var(--green); font-weight: 700; margin: 8px 0 0; }
+
+.holidaysSection { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.holidayRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.holidayRow:last-child { border-bottom: 0; }
+.holidayMain { font-size: 0.85rem; color: var(--ink); }
+.holidayDeleteBtn { background: transparent; border: 0; cursor: pointer; font-size: 1rem; color: var(--muted); padding: 2px 4px; }
+.addHolidayRow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.addHolidayRow input { flex: 1 1 130px; font-size: 0.85rem; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.addHolidayError { color: var(--red); font-weight: 700; margin-top: 8px; }
+
+.saveBtn { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.saveBtn:disabled { opacity: 0.6; }
+
+.bookList { display: flex; flex-direction: column; gap: 12px; }
+.bookCard { border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+.bookHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.bookTitle { font-weight: 800; font-size: 1.02rem; }
+.bookHeadBtns { display: flex; gap: 6px; flex: 0 0 auto; }
+.bookEditBtn, .bookDeleteBtn, .reopenBtn, .logEditBtn, .logDeleteBtn {
+  background: transparent; border: 0; cursor: pointer; font-size: 1rem; color: var(--muted); padding: 2px 4px;
+}
+.bookMeta { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+.bookEditFields { display: flex; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; }
+.bookEditTitle { flex: 1 1 160px; }
+.bookEditPages { flex: 0 1 140px; }
+.bookEditFields input {
+  font-size: 0.95rem; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.bookEditSaveBtn { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 8px 14px; font-weight: 800; cursor: pointer; }
+.bookEditCancelBtn { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 10px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
+
+.progressTrack { background: var(--bg); border: 1px solid var(--line); border-radius: 999px; height: 8px; margin-top: 8px; overflow: hidden; }
+.progressFill { background: linear-gradient(90deg, var(--accent), var(--gold)); height: 100%; border-radius: 999px; }
+
+.logRow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.logRow input { font-size: 0.9rem; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.logDateInput { flex: 1 1 140px; }
+.logPageInput { flex: 1 1 100px; }
+.logBtn { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 8px 14px; font-weight: 800; cursor: pointer; }
+.logBtn:disabled { opacity: 0.6; }
+
+.bookFootBtns { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+.finishBtn, .reopenBtn, .historyToggleBtn {
+  background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 10px; padding: 6px 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+}
+
+.addBookRow { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.addBookRow input { flex: 1 1 160px; font-size: 0.9rem; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.addBookError { color: var(--red); font-weight: 700; margin-top: 8px; }
+
+.logHistoryList { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.logHistoryRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+.logHistoryMain { font-size: 0.82rem; color: var(--muted); }
+.logHistoryBtns { display: flex; gap: 6px; flex: 0 0 auto; }
+.logHistoryEditFields { display: flex; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; }
+.logHistoryEditFields input {
+  font-size: 0.82rem; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.logEditDate { flex: 1 1 120px; }
+.logEditPage { flex: 0 1 90px; }
+.logEditNote { flex: 1 1 140px; }
+.logEditSaveBtn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 6px 10px; font-weight: 800; font-size: 0.8rem; cursor: pointer; }
+.logEditCancelBtn { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 0.8rem; cursor: pointer; }
+
+.switchFamily { text-align: center; margin-top: 20px; }
+.switchFamily a { color: var(--muted); font-weight: 700; }
+.appVersionTag { text-align: center; color: var(--muted); font-size: 0.7rem; margin-top: 10px; }
+
+.gate { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 50; padding: 20px; }
+.gate.hidden { display: none; }
+.gateCard { max-width: 420px; text-align: center; }
+.gateCard h1 { color: var(--ink); }
+.gateCard p { color: var(--muted); font-weight: 700; }
+.codeInput {
+  font-size: 1.1rem;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  width: 220px;
+  max-width: 100%;
+}
+.codeSubmit { background: var(--accent); color: #fff; border: 0; border-radius: 14px; padding: 14px 28px; font-weight: 800; cursor: pointer; margin-left: 8px; }
+.codeError { color: var(--red); font-weight: 700; margin-top: 14px; }
+
+.confirmModal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.4); display: grid; place-items: center; z-index: 70; padding: 20px; }
+.confirmModal.hidden { display: none; }
+.confirmCard { background: var(--card); border-radius: 18px; padding: 22px; max-width: 360px; text-align: center; box-shadow: var(--shadow); }
+.confirmCard p { font-weight: 700; color: var(--ink); }
+.confirmButtons { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+.confirmYes { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 10px 20px; font-weight: 800; cursor: pointer; }
+.confirmNo { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 12px; padding: 10px 20px; font-weight: 800; cursor: pointer; }
+
+.toastContainer { position: fixed; bottom: 20px; left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 90; pointer-events: none; }
+.toast {
+  background: var(--ink);
+  color: var(--card);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-weight: 700;
+  font-size: 0.9rem;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  max-width: 90vw;
+}
+.toastError { background: var(--red); color: #fff; }

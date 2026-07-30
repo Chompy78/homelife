@@ -44,6 +44,7 @@ const pie = document.getElementById("pie");
 const streakCount = document.getElementById("streakCount");
 const resetBtn = document.getElementById("resetBtn");
 const modeBtn = document.getElementById("modeBtn");
+const installBtn = document.getElementById("installBtn");
 const focusCard = document.getElementById("focusCard");
 const focusTask = document.getElementById("focusTask");
 const focusHint = document.getElementById("focusHint");
@@ -1011,6 +1012,28 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("./service-worker.js").catch(() => {});
   });
 }
+
+let deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  installBtn.classList.remove("hidden");
+});
+
+installBtn.addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  installBtn.disabled = true;
+  deferredInstallPrompt.prompt();
+  await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  installBtn.classList.add("hidden");
+  installBtn.disabled = false;
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  installBtn.classList.add("hidden");
+});
 
 function bootRoom() {
   applyAiScore(null, "off", null, null);

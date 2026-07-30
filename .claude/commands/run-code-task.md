@@ -5,7 +5,8 @@ argument-hint: <task title>
 
 # Homelife — work the roadmap task
 
-`$ARGUMENTS` identifies one task from `docs/TASK_BOARD.md`, handed off from `/pick-code-task`. This repo
+`$ARGUMENTS` identifies one task from `docs/TASK_BOARD_NOW.md`/`_NEXT.md`/`_LATER.md`, handed off from
+`/pick-code-task`. This repo
 **commits and pushes straight to `main`** — no branch, no worktree, no PR (see `AGENTS.md`'s "Project
 conventions"). If `/pick-code-task` hasn't been run yet this session, ask for its output first.
 
@@ -21,7 +22,8 @@ git status
 ```
 Pull latest `main` before editing. If the file(s) you're about to touch changed since you last read them
 this session (another session may have pushed), re-read them now — don't edit a stale copy. Update the
-task's `Status` to `in-progress` in `docs/TASK_BOARD.md` as your first edit if this is a multi-step task
+task's `Status` to `in-progress` in whichever of `docs/TASK_BOARD_NOW.md`/`_NEXT.md`/`_LATER.md` it's
+actually on (grep for the task title if you're not sure) as your first edit if this is a multi-step task
 likely to span more than one sitting, so the board's own status reflects reality for anyone else looking.
 
 ## Step 2 — do the work
@@ -34,9 +36,10 @@ hard rules as they apply to this task:
 - If you changed a cached asset, bump that app's `CACHE_NAME` in `service-worker.js`.
 - If you touched point values, keep `POINTS` in sync between the edge function and `apps/shared/config.js`.
 
-Update `CHANGELOG.md` (add the entry) and remove the task's entry from `docs/TASK_BOARD.md` in the same
-commit as the edit — don't defer either. Add a `DECISIONS.md` entry (format: `D-<YYYY-MM-DD>-<slug>`) if
-the change involved a non-obvious *why*.
+Update `CHANGELOG.md` (add the entry) and remove the task's entry from whichever `docs/TASK_BOARD_*.md`
+band file it's on, in the same commit as the edit — don't defer either. If the change involved a
+non-obvious *why*, write a decision record to `decisions/2026/D-<YYYY-MM-DD>-<slug>.md` and add its
+one-line index entry to `DECISIONS.md`.
 
 If the task turns out to be bigger than `/pick-code-task` assumed, stop and flag it rather than forcing it
 through — leave its `Status` as `open` (not `in-progress`) and say clearly why you're dropping it.

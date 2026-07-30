@@ -1,0 +1,665 @@
+import { callApi } from "../shared/api.js";
+import { askConfirm } from "../shared/confirm.js";
+import { escapeHtml } from "../shared/escape.js";
+import { showAppVersion } from "../shared/version.js";
+
+// Same key every parent-facing app shares - a parent already logged in
+// elsewhere on this device is automatically logged in here too.
+const TOKEN_KEY = "homelife_parent_token";
+const TOAST_MS = 4000;
+
+const KID_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
+
+const gate = document.getElementById("gate");
+const codeForm = document.getElementById("codeForm");
+const codeInput = document.getElementById("codeInput");
+const codeError = document.getElementById("codeError");
+const appEl = document.getElementById("app");
+const switchFamilyLink = document.getElementById("switchFamilyLink");
+const toastContainer = document.getElementById("toastContainer");
+
+const kidPickerRow = document.getElementById("kidPickerRow");
+const aheadBehindBanner = document.getElementById("aheadBehindBanner");
+
+const settingsCard = document.getElementById("settingsCard");
+const goalPagesInput = document.getElementById("goalPagesInput");
+const goalStartDateInput = document.getElementById("goalStartDateInput");
+const spinThresholdInput = document.getElementById("spinThresholdInput");
+const daysOfWeekChecks = document.getElementById("daysOfWeekChecks");
+const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+const settingsSaved = document.getElementById("settingsSaved");
+const bonusSpinRow = document.getElementById("bonusSpinRow");
+
+const holidaysList = document.getElementById("holidaysList");
+const newHolidayStart = document.getElementById("newHolidayStart");
+const newHolidayEnd = document.getElementById("newHolidayEnd");
+const newHolidayLabel = document.getElementById("newHolidayLabel");
+const addHolidayBtn = document.getElementById("addHolidayBtn");
+const addHolidayError = document.getElementById("addHolidayError");
+
+const currentlyReadingCard = document.getElementById("currentlyReadingCard");
+const currentBooksList = document.getElementById("currentBooksList");
+const newBookTitle = document.getElementById("newBookTitle");
+const newBookTotalPages = document.getElementById("newBookTotalPages");
+const addBookBtn = document.getElementById("addBookBtn");
+const addBookError = document.getElementById("addBookError");
+
+const finishedBooksCard = document.getElementById("finishedBooksCard");
+const finishedBooksList = document.getElementById("finishedBooksList");
+
+let token = null;
+let state = { kids: [], books: [], log: [], pages_today: {}, holidays: [] };
+let selectedKidId = null;
+
+// Which book cards have their page-log history expanded, and which single
+// book/log row (if any) is mid-edit - all reset naturally on reload since
+// there's nothing meaningful to preserve across a fresh loadState() other
+// than which histories were left open.
+let expandedBookIds = new Set();
+let editingBookId = null;
+let editingLogId = null;
+
+// --- Toasts ---------------------------------------------------------------
+
+function showToast(message, isError = false) {
+  const toast = document.createElement("div");
+  toast.className = "toast" + (isError ? " toastError" : "");
+  toast.innerHTML = `<div>${escapeHtml(message)}</div>`;
+  setTimeout(() => toast.remove(), TOAST_MS);
+  toastContainer.appendChild(toast);
+}
+
+// --- Gate / code entry -----------------------------------------------------
+
+codeForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const code = codeInput.value.trim();
+  if (!code) return;
+  codeError.classList.add("hidden");
+  const btn = codeForm.querySelector(".codeSubmit");
+  btn.disabled = true;
+  const res = await callApi("redeem_parent_code", { code });
+  btn.disabled = false;
+  if (!res.ok) {
+    codeError.textContent = res.error || "Something went wrong. Try again.";
+    codeError.classList.remove("hidden");
+    return;
+  }
+  token = res.data.token;
+  localStorage.setItem(TOKEN_KEY, token);
+  enterApp();
+});
+
+switchFamilyLink.addEventListener("click", async (e) => {
+  e.preventDefault();
+  const ok = await askConfirm("Switch to a different family's parent code on this device?");
+  if (!ok) return;
+  localStorage.removeItem(TOKEN_KEY);
+  location.reload();
+});
+
+async function enterApp() {
+  gate.classList.add("hidden");
+  appEl.classList.remove("hidden");
+  await loadState();
+}
+
+// --- Data loading -----------------------------------------------------
+
+let loadStateSeq = 0;
+
+async function loadState() {
+  const seq = ++loadStateSeq;
+  const res = await callApi("get_reading_state", { token });
+  if (seq !== loadStateSeq) return;
+  if (!res.ok) {
+    if (res.error === "session_expired") {
+      localStorage.removeItem(TOKEN_KEY);
+      location.reload();
+      return;
+    }
+    showToast("Couldn't refresh - check your connection and try again.", true);
+    return;
+  }
+  state = res.data;
+  if (!selectedKidId || !state.kids.some((k) => k.id === selectedKidId)) {
+    selectedKidId = state.kids[0]?.id || null;
+  }
+  editingBookId = null;
+  editingLogId = null;
+  renderAll();
+}
+
+function kidColour(kidId) {
+  const kid = state.kids.find((k) => k.id === kidId);
+  if (kid?.theme_color) return kid.theme_color;
+  const idx = state.kids.findIndex((k) => k.id === kidId);
+  return KID_PALETTE[idx % KID_PALETTE.length] || "#888";
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// Parsed as local midnight, not UTC - so date-range comparisons (holidays,
+// goal start) can't land a day off depending on the browser's UTC offset.
+function parseDateStr(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatDateStr(dateStr) {
+  return parseDateStr(dateStr).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// Latest logged page and total pages read so far for a book - derived from
+// state.log rather than stored on the book row, same "compute, don't cache"
+// approach as the reward tracker's live balances.
+function bookProgress(bookId) {
+  const entries = state.log.filter((l) => l.book_id === bookId);
+  if (!entries.length) return { currentPage: 0, totalRead: 0, lastLogDate: null };
+  // state.log is already ordered log_date desc, created_at desc.
+  const latest = entries[0];
+  const totalRead = entries.reduce((sum, e) => sum + e.pages_read, 0);
+  return { currentPage: latest.page_up_to, totalRead, lastLogDate: latest.log_date };
+}
+
+// How many pages a kid should have read by today (goal_pages x every
+// included calendar day from their goal start date to today, skipping
+// weekdays not selected and any date inside a reading holiday), compared
+// against what they've actually logged since that start date. Positive =
+// ahead, negative = behind, null = goal isn't set up yet (no start date/
+// goal pages) or starts in the future.
+function computeAheadBehind(kidId) {
+  const kid = state.kids.find((k) => k.id === kidId);
+  if (!kid || !kid.reading_daily_goal_pages || !kid.reading_goal_start_date) return null;
+  const start = parseDateStr(kid.reading_goal_start_date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (start > today) return null;
+
+  const daysSet =
+    kid.reading_goal_days_of_week && kid.reading_goal_days_of_week.length
+      ? new Set(kid.reading_goal_days_of_week)
+      : new Set([0, 1, 2, 3, 4, 5, 6]);
+  const holidayRanges = state.holidays
+    .filter((h) => h.kid_id === kidId)
+    .map((h) => [parseDateStr(h.start_date), parseDateStr(h.end_date)]);
+  const isHoliday = (d) => holidayRanges.some(([s, e]) => d >= s && d <= e);
+
+  let expectedDays = 0;
+  for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+    if (daysSet.has(d.getDay()) && !isHoliday(d)) expectedDays++;
+  }
+  const expectedPages = expectedDays * kid.reading_daily_goal_pages;
+
+  const startStr = kid.reading_goal_start_date;
+  const actualPages = state.log
+    .filter((l) => l.kid_id === kidId && l.log_date >= startStr)
+    .reduce((sum, l) => sum + l.pages_read, 0);
+
+  return actualPages - expectedPages;
+}
+
+// --- Rendering -----------------------------------------------------
+
+function renderAll() {
+  renderKidPicker();
+  const hasKid = !!selectedKidId;
+  settingsCard.classList.toggle("hidden", !hasKid);
+  currentlyReadingCard.classList.toggle("hidden", !hasKid);
+  finishedBooksCard.classList.toggle("hidden", !hasKid);
+  if (!hasKid) {
+    aheadBehindBanner.classList.add("hidden");
+    return;
+  }
+  renderAheadBehindBanner();
+  renderSettings();
+  renderCurrentBooks();
+  renderFinishedBooks();
+}
+
+function renderKidPicker() {
+  kidPickerRow.innerHTML = "";
+  state.kids.forEach((kid) => {
+    const btn = document.createElement("button");
+    btn.className = "kidChip" + (kid.id === selectedKidId ? " selected" : "");
+    btn.style.setProperty("--kid-colour", kidColour(kid.id));
+    btn.innerHTML = `<span class="kidChipAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span>`;
+    btn.addEventListener("click", () => {
+      selectedKidId = kid.id;
+      expandedBookIds = new Set();
+      editingBookId = null;
+      editingLogId = null;
+      renderAll();
+    });
+    kidPickerRow.appendChild(btn);
+  });
+}
+
+function renderAheadBehindBanner() {
+  const diff = computeAheadBehind(selectedKidId);
+  aheadBehindBanner.classList.remove("aheadBanner", "behindBanner", "evenBanner");
+  if (diff === null) {
+    aheadBehindBanner.classList.add("hidden");
+    return;
+  }
+  aheadBehindBanner.classList.remove("hidden");
+  if (diff > 0) {
+    aheadBehindBanner.classList.add("aheadBanner");
+    aheadBehindBanner.textContent = `🟢 ${diff} page${diff === 1 ? "" : "s"} ahead of schedule`;
+  } else if (diff < 0) {
+    const behind = Math.abs(diff);
+    aheadBehindBanner.classList.add("behindBanner");
+    aheadBehindBanner.textContent = `🔴 ${behind} page${behind === 1 ? "" : "s"} behind schedule`;
+  } else {
+    aheadBehindBanner.classList.add("evenBanner");
+    aheadBehindBanner.textContent = `✅ Right on schedule`;
+  }
+}
+
+function renderSettings() {
+  const kid = state.kids.find((k) => k.id === selectedKidId);
+  if (!kid) return;
+  goalPagesInput.value = kid.reading_daily_goal_pages ?? "";
+  goalStartDateInput.value = kid.reading_goal_start_date ?? "";
+  spinThresholdInput.value = kid.reading_spin_threshold_pages ?? "";
+  settingsSaved.classList.add("hidden");
+
+  const checkedDays =
+    kid.reading_goal_days_of_week && kid.reading_goal_days_of_week.length
+      ? new Set(kid.reading_goal_days_of_week)
+      : new Set([0, 1, 2, 3, 4, 5, 6]);
+  daysOfWeekChecks.querySelectorAll("input[type=checkbox]").forEach((cb) => {
+    cb.checked = checkedDays.has(Number(cb.value));
+  });
+
+  const spins = kid.bonus_spins || 0;
+  bonusSpinRow.classList.toggle("hidden", spins === 0);
+  bonusSpinRow.textContent = spins > 0 ? `🎉 ${spins} bonus spin${spins === 1 ? "" : "s"} waiting - spin it in Reward Tracker!` : "";
+
+  renderHolidays();
+}
+
+saveSettingsBtn.addEventListener("click", async () => {
+  if (!selectedKidId) return;
+  settingsSaved.classList.add("hidden");
+  saveSettingsBtn.disabled = true;
+  const checkedDays = [...daysOfWeekChecks.querySelectorAll("input[type=checkbox]:checked")].map((cb) => Number(cb.value));
+  const res = await callApi("set_reading_settings", {
+    token,
+    kid_id: selectedKidId,
+    goal_pages: goalPagesInput.value.trim(),
+    spin_threshold_pages: spinThresholdInput.value.trim(),
+    goal_start_date: goalStartDateInput.value,
+    goal_days_of_week: checkedDays,
+  });
+  saveSettingsBtn.disabled = false;
+  if (!res.ok) {
+    showToast("Couldn't save that - try again.", true);
+    return;
+  }
+  settingsSaved.classList.remove("hidden");
+  await loadState();
+});
+
+function renderHolidays() {
+  holidaysList.innerHTML = "";
+  const holidays = state.holidays
+    .filter((h) => h.kid_id === selectedKidId)
+    .sort((a, b) => b.start_date.localeCompare(a.start_date));
+  if (!holidays.length) {
+    holidaysList.innerHTML = `<p class="empty">No reading holidays set.</p>`;
+    return;
+  }
+  holidays.forEach((h) => {
+    const row = document.createElement("div");
+    row.className = "holidayRow";
+    row.innerHTML = `
+      <div class="holidayMain">${formatDateStr(h.start_date)} – ${formatDateStr(h.end_date)}${h.label ? ` · ${escapeHtml(h.label)}` : ""}</div>
+      <button type="button" class="holidayDeleteBtn" data-id="${h.id}">🗑</button>
+    `;
+    row.querySelector(".holidayDeleteBtn").addEventListener("click", async () => {
+      const ok = await askConfirm("Delete this reading holiday?");
+      if (!ok) return;
+      const res = await callApi("delete_reading_holiday", { token, holiday_id: h.id });
+      if (!res.ok) {
+        showToast("Couldn't delete that - try again.", true);
+        return;
+      }
+      await loadState();
+    });
+    holidaysList.appendChild(row);
+  });
+}
+
+addHolidayBtn.addEventListener("click", async () => {
+  addHolidayError.classList.add("hidden");
+  const start = newHolidayStart.value;
+  const end = newHolidayEnd.value;
+  if (!start || !end) {
+    addHolidayError.textContent = "Pick a start and end date.";
+    addHolidayError.classList.remove("hidden");
+    return;
+  }
+  if (end < start) {
+    addHolidayError.textContent = "End date must be on or after the start date.";
+    addHolidayError.classList.remove("hidden");
+    return;
+  }
+  addHolidayBtn.disabled = true;
+  const res = await callApi("add_reading_holiday", {
+    token,
+    kid_id: selectedKidId,
+    start_date: start,
+    end_date: end,
+    label: newHolidayLabel.value.trim(),
+  });
+  addHolidayBtn.disabled = false;
+  if (!res.ok) {
+    addHolidayError.textContent = "Couldn't add that - try again.";
+    addHolidayError.classList.remove("hidden");
+    return;
+  }
+  newHolidayStart.value = "";
+  newHolidayEnd.value = "";
+  newHolidayLabel.value = "";
+  await loadState();
+});
+
+// --- Log history (per book) -------------------------------------------
+
+function renderLogHistory(book) {
+  const entries = state.log.filter((l) => l.book_id === book.id);
+  if (!entries.length) return `<p class="empty">No pages logged yet.</p>`;
+  return entries
+    .map((entry) => {
+      // entry.id is a bigint from Postgres (a JS number here); editingLogId
+      // is always set from a DOM dataset value (a string) - compare as
+      // strings so this actually matches instead of silently never firing.
+      if (String(editingLogId) === String(entry.id)) {
+        return `
+          <div class="logHistoryRow" data-log="${entry.id}">
+            <div class="logHistoryEditFields">
+              <input type="date" class="logEditDate" value="${entry.log_date}" />
+              <input type="number" class="logEditPage" min="0" value="${entry.page_up_to}" />
+              <input type="text" class="logEditNote" maxlength="140" placeholder="Note (optional)" value="${escapeHtml(entry.note || "")}" />
+            </div>
+            <div class="logHistoryBtns">
+              <button type="button" class="logEditSaveBtn" data-id="${entry.id}">Save</button>
+              <button type="button" class="logEditCancelBtn" data-id="${entry.id}">Cancel</button>
+            </div>
+          </div>`;
+      }
+      return `
+        <div class="logHistoryRow" data-log="${entry.id}">
+          <div class="logHistoryMain">
+            ${formatDateStr(entry.log_date)} · page ${entry.page_up_to} (+${entry.pages_read})${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}
+          </div>
+          <div class="logHistoryBtns">
+            <button type="button" class="logEditBtn" data-id="${entry.id}" title="Edit">✏️</button>
+            <button type="button" class="logDeleteBtn" data-id="${entry.id}" title="Delete">🗑</button>
+          </div>
+        </div>`;
+    })
+    .join("");
+}
+
+function bindLogHistoryHandlers(cardEl, book) {
+  cardEl.querySelectorAll(".logEditBtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      editingLogId = btn.dataset.id;
+      renderAll();
+    });
+  });
+  cardEl.querySelectorAll(".logEditCancelBtn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      editingLogId = null;
+      renderAll();
+    });
+  });
+  cardEl.querySelectorAll(".logEditSaveBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest(".logHistoryRow");
+      const logDate = row.querySelector(".logEditDate").value;
+      const pageVal = row.querySelector(".logEditPage").value;
+      const note = row.querySelector(".logEditNote").value.trim();
+      if (pageVal === "" || Number(pageVal) < 0) {
+        showToast("Enter a valid page number.", true);
+        return;
+      }
+      btn.disabled = true;
+      const res = await callApi("edit_reading_log", { token, log_id: btn.dataset.id, log_date: logDate, page_up_to: Number(pageVal), note });
+      btn.disabled = false;
+      if (!res.ok) {
+        showToast("Couldn't save that - try again.", true);
+        return;
+      }
+      editingLogId = null;
+      await loadState();
+    });
+  });
+  cardEl.querySelectorAll(".logDeleteBtn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const ok = await askConfirm("Delete this log entry? This can't be undone.");
+      if (!ok) return;
+      const res = await callApi("undo_reading_log", { token, log_id: btn.dataset.id });
+      if (!res.ok) {
+        showToast("Couldn't delete that - try again.", true);
+        return;
+      }
+      await loadState();
+    });
+  });
+}
+
+// --- Book cards (currently reading + finished) --------------------------
+
+function renderBookCard(book, isFinished) {
+  const { currentPage, lastLogDate } = bookProgress(book.id);
+  const pct = book.total_pages ? Math.min(100, Math.round((currentPage / book.total_pages) * 100)) : null;
+  const isEditingBook = editingBookId === book.id;
+  const isExpanded = expandedBookIds.has(book.id);
+  const entryCount = state.log.filter((l) => l.book_id === book.id).length;
+
+  const card = document.createElement("div");
+  card.className = "bookCard";
+
+  const headHtml = isEditingBook
+    ? `
+      <div class="bookEditFields">
+        <input type="text" class="bookEditTitle" maxlength="140" value="${escapeHtml(book.title)}" />
+        <input type="number" class="bookEditPages" min="1" placeholder="Total pages (optional)" value="${book.total_pages ?? ""}" />
+      </div>
+      <div class="bookHeadBtns">
+        <button type="button" class="bookEditSaveBtn" data-id="${book.id}">Save</button>
+        <button type="button" class="bookEditCancelBtn">Cancel</button>
+      </div>`
+    : `
+      <div class="bookTitle">${escapeHtml(book.title)}</div>
+      <div class="bookHeadBtns">
+        <button type="button" class="bookEditBtn" data-id="${book.id}" title="Edit book">✏️</button>
+        <button type="button" class="bookDeleteBtn" data-id="${book.id}" title="Delete book">🗑</button>
+      </div>`;
+
+  card.innerHTML = `
+    <div class="bookHead">${headHtml}</div>
+    <div class="bookMeta">
+      ${book.total_pages ? `Page ${currentPage} of ${book.total_pages}` : currentPage ? `Page ${currentPage}` : "No pages logged yet"}
+      ${lastLogDate ? ` · last logged ${formatDateStr(lastLogDate)}` : ""}
+      ${isFinished && book.finished_date ? ` · finished ${formatDateStr(book.finished_date)}` : ""}
+    </div>
+    ${pct !== null ? `<div class="progressTrack"><div class="progressFill" style="width:${pct}%"></div></div>` : ""}
+    ${
+      isFinished
+        ? ""
+        : `<div class="logRow">
+            <input type="date" class="logDateInput" value="${todayStr()}" />
+            <input type="number" class="logPageInput" min="0" placeholder="Page up to" />
+            <button type="button" class="logBtn" data-id="${book.id}">Log</button>
+          </div>`
+    }
+    <div class="bookFootBtns">
+      <button type="button" class="historyToggleBtn" data-id="${book.id}">📜 ${isExpanded ? "Hide" : "Show"} history (${entryCount})</button>
+      ${isFinished ? `<button type="button" class="reopenBtn" data-id="${book.id}">↩ Reopen</button>` : `<button type="button" class="finishBtn" data-id="${book.id}">🏁 Mark finished</button>`}
+    </div>
+    ${isExpanded ? `<div class="logHistoryList">${renderLogHistory(book)}</div>` : ""}
+  `;
+
+  if (isEditingBook) {
+    card.querySelector(".bookEditSaveBtn").addEventListener("click", async () => {
+      const title = card.querySelector(".bookEditTitle").value.trim();
+      if (!title) {
+        showToast("A book needs a title.", true);
+        return;
+      }
+      const totalPages = card.querySelector(".bookEditPages").value.trim();
+      const res = await callApi("edit_book", { token, book_id: book.id, title, total_pages: totalPages });
+      if (!res.ok) {
+        showToast("Couldn't save that - try again.", true);
+        return;
+      }
+      editingBookId = null;
+      await loadState();
+    });
+    card.querySelector(".bookEditCancelBtn").addEventListener("click", () => {
+      editingBookId = null;
+      renderAll();
+    });
+  } else {
+    card.querySelector(".bookEditBtn").addEventListener("click", () => {
+      editingBookId = book.id;
+      renderAll();
+    });
+    card.querySelector(".bookDeleteBtn").addEventListener("click", async () => {
+      const ok = await askConfirm(`Delete "${book.title}" and all its logged pages? This can't be undone.`);
+      if (!ok) return;
+      const res = await callApi("delete_book", { token, book_id: book.id });
+      if (!res.ok) {
+        showToast("Couldn't delete that - try again.", true);
+        return;
+      }
+      await loadState();
+    });
+  }
+
+  card.querySelector(".historyToggleBtn").addEventListener("click", () => {
+    if (expandedBookIds.has(book.id)) expandedBookIds.delete(book.id);
+    else expandedBookIds.add(book.id);
+    renderAll();
+  });
+  bindLogHistoryHandlers(card, book);
+
+  if (!isFinished) {
+    card.querySelector(".logBtn").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const dateVal = card.querySelector(".logDateInput").value || todayStr();
+      const pageVal = card.querySelector(".logPageInput").value;
+      if (pageVal === "" || Number(pageVal) < 0) {
+        showToast("Enter the page they're up to.", true);
+        return;
+      }
+      btn.disabled = true;
+      const res = await callApi("log_reading_pages", {
+        token,
+        kid_id: selectedKidId,
+        book_id: book.id,
+        log_date: dateVal,
+        page_up_to: Number(pageVal),
+      });
+      btn.disabled = false;
+      if (!res.ok) {
+        showToast("Couldn't log that - try again.", true);
+        return;
+      }
+      const pagesRead = res.data.entry.pages_read;
+      const spinsGranted = res.data.spins_granted || 0;
+      showToast(
+        spinsGranted > 0
+          ? `📖 +${pagesRead} pages - 🎉 ${spinsGranted} bonus spin${spinsGranted === 1 ? "" : "s"} earned!`
+          : `📖 +${pagesRead} pages logged.`
+      );
+      await loadState();
+    });
+    card.querySelector(".finishBtn").addEventListener("click", async () => {
+      const ok = await askConfirm(`Mark "${book.title}" as finished?`);
+      if (!ok) return;
+      const res = await callApi("finish_book", { token, book_id: book.id, finished_date: todayStr() });
+      if (!res.ok) {
+        showToast("Couldn't do that - try again.", true);
+        return;
+      }
+      await loadState();
+    });
+  } else {
+    card.querySelector(".reopenBtn").addEventListener("click", async () => {
+      const res = await callApi("reopen_book", { token, book_id: book.id });
+      if (!res.ok) {
+        showToast("Couldn't do that - try again.", true);
+        return;
+      }
+      await loadState();
+    });
+  }
+
+  return card;
+}
+
+function renderCurrentBooks() {
+  currentBooksList.innerHTML = "";
+  const books = state.books.filter((b) => b.kid_id === selectedKidId && b.status === "reading");
+  if (!books.length) {
+    currentBooksList.innerHTML = `<p class="empty">Not reading anything yet - start a book below.</p>`;
+  }
+  books.forEach((book) => currentBooksList.appendChild(renderBookCard(book, false)));
+}
+
+addBookBtn.addEventListener("click", async () => {
+  addBookError.classList.add("hidden");
+  const title = newBookTitle.value.trim();
+  if (!title) {
+    addBookError.textContent = "Enter a book title first.";
+    addBookError.classList.remove("hidden");
+    return;
+  }
+  const totalPagesVal = newBookTotalPages.value.trim();
+  addBookBtn.disabled = true;
+  const res = await callApi("start_book", {
+    token,
+    kid_id: selectedKidId,
+    title,
+    total_pages: totalPagesVal,
+  });
+  addBookBtn.disabled = false;
+  if (!res.ok) {
+    addBookError.textContent = "Couldn't add that - try again.";
+    addBookError.classList.remove("hidden");
+    return;
+  }
+  newBookTitle.value = "";
+  newBookTotalPages.value = "";
+  await loadState();
+});
+
+function renderFinishedBooks() {
+  finishedBooksList.innerHTML = "";
+  const books = state.books
+    .filter((b) => b.kid_id === selectedKidId && b.status === "finished")
+    .sort((a, b) => (b.finished_date || "").localeCompare(a.finished_date || ""));
+  if (!books.length) {
+    finishedBooksList.innerHTML = `<p class="empty">No finished books yet.</p>`;
+    return;
+  }
+  books.forEach((book) => finishedBooksList.appendChild(renderBookCard(book, true)));
+}
+
+// --- Boot -----------------------------------------------------------------
+
+showAppVersion("appVersion");
+
+token = localStorage.getItem(TOKEN_KEY);
+if (token) {
+  enterApp();
+} else {
+  gate.classList.remove("hidden");
+}

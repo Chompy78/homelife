@@ -44,6 +44,26 @@ intentionally not merged into `kid_streaks.total_points` or the public
 leaderboard, since a reward tally (things like "Macdonalds" or "$5 at the
 reject shop") isn't the same kind of thing as a chore-completion streak.
 
+## Big Rewards tab
+
+A separate, much lower-frequency ledger (1-2/month/kid) alongside the tap
+tally above, for a reward that's worth its own reason and spend record
+instead of a category tap - e.g. "aced the spelling test" -> earned, then
+later "new Lego set" -> spent, each with its own date. No PIN and no dollar
+amount, just free text - matching how infrequent and low-stakes these are
+compared to the main tally.
+
+- `kid_big_rewards` - one row per big reward. Starts `status: "pending"`
+  (reason + earned date) when added; a parent later taps "💰 Spend" on it to
+  record what it was spent on and when, moving it to `status: "spent"`.
+  Unlike `kid_reward_log`, a row is updated in place rather than only ever
+  inserted/deleted, since "still waiting to be spent" is itself worth
+  showing. Undoing a spend (↩) reverts it back to pending without losing
+  the original reason/earned date; deleting (🗑) removes the row entirely.
+
+Read-only for kids too - see [`apps/my-rewards`](../my-rewards)'s own big
+rewards section on their card.
+
 ## What's different from the original standalone version
 
 - Kid names and colours come from the family's real `kids` table instead of
@@ -118,14 +138,15 @@ older entry.
 ## Spin wheel
 
 A 🎡 Spin mode alongside Quick Tap: a wheel with one wedge per reward
-category (same colours as everywhere else), spun for whichever kid is
-selected. Landing logs a real earn exactly like tapping + does, no
-backend changes needed - it's `adjust_reward` under the hood, with an
-automatic note ("🎡 Spinner: <category>") so History shows why the
-balance moved. Landing on "Spin twice" (the seeded default category)
-doesn't tally a literal reward - it triggers two more spins instead,
-since that's what the category actually represents. See
-`D-2026-07-18-reward-tracker-spin-wheel`.
+category (same colours as everywhere else). Unlike Quick Tap, Spin has no
+kid picker in the header - pressing SPIN asks which kid it's for first,
+then spins for them (see `D-2026-07-30-spin-tab-ask-kid-on-spin`). Landing
+logs a real earn exactly like tapping + does, no backend changes needed -
+it's `adjust_reward` under the hood, with an automatic note ("🎡 Spinner:
+<category>") so History shows why the balance moved. Landing on "Spin
+twice" (the seeded default category) doesn't tally a literal reward - it
+triggers two more spins instead, since that's what the category actually
+represents. See `D-2026-07-18-reward-tracker-spin-wheel`.
 
 Each category has a spin weight (1-5, editable in "Manage reward
 categories" - `family_reward_categories.spin_weight`, defaults to 1).

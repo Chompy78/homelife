@@ -28,6 +28,15 @@ Trading with a sibling (below) does write, but only ever moves reward
 units between two kids in the same family; there's still no way for a kid
 to adjust their own tally out of thin air.
 
+## Big Rewards
+
+Below the category breakdown, a read-only list of the kid's own occasional
+"big" rewards (recorded by a parent in Reward Tracker's Big Rewards tab) -
+a pending one shows its reason and earned date; a spent one also shows
+what it went on and when. `get_kid_big_rewards` only reads, same posture
+as `get_kid_reward_state` - nothing here for a kid to game. The section is
+hidden entirely if the kid has no big rewards yet.
+
 ## Trading with a sibling
 
 A kid can propose giving up some of one reward category for some of a

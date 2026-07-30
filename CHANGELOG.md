@@ -6,6 +6,75 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-30
+
+- Added `apps/reading-tracker`, a new parent-facing PWA for tracking each kid's reading: start a book
+  (title, optional total pages), log the page they're up to for a given date (pages read is computed
+  automatically as the delta from the last entry), mark books finished, and set a per-kid nightly pages
+  goal plus a per-kid "bonus spin every N cumulative pages" threshold. Crossing that threshold grants a
+  Reward Tracker bonus spin automatically via the existing `bonus_spins`/atomic-increment mechanic (same
+  one Bedroom Reset's AI auto-approve already uses). New tables `kid_reading_books`/`kid_reading_log` and
+  new `kids` columns `reading_daily_goal_pages`/`reading_spin_threshold_pages`/
+  `reading_pages_credited_for_spin`; new family-api actions `get_reading_state`, `set_reading_settings`,
+  `start_book`, `finish_book`, `reopen_book`, `delete_book`, `log_reading_pages`, `undo_reading_log`. See
+  `DECISIONS.md` D-2026-07-30-reading-tracker-new-app.
+- Reward Tracker: the Spin tab no longer shows the kid picker in the sticky header - pressing SPIN
+  now opens a "Spin for who?" modal first, then spins for the chosen kid. Quick Tap's header kid
+  picker is unchanged. See `DECISIONS.md` D-2026-07-30-spin-tab-ask-kid-on-spin.
+- Fixed Reward Tracker's app version tag being invisible: it was nested inside the Settings modal
+  instead of sitting at the bottom of the page like every other app (e.g. `parent-dashboard`) -
+  moved it to the bottom of the main app view.
+- Expanded `apps/reading-tracker`: books and individual page-log entries are now editable in place
+  (`edit_book`, `edit_reading_log`) alongside delete, with a per-book expandable log history; "Currently
+  reading" moved above the Setup section; Setup gained a goal start date, which weekdays count toward the
+  goal, and a reading-holidays list (date ranges excluded from the goal) via new table
+  `kid_reading_holidays` and new `kids` columns `reading_goal_start_date`/`reading_goal_days_of_week`; a
+  new banner just below the header shows whether a kid is ahead or behind their pages goal as of today,
+  computed client-side from the log plus these settings. Also fixed `kid_reading_books`/`kid_reading_log`/
+  `kid_reading_holidays`'s `family_id`/`kid_id` foreign keys to cascade on delete, matching every other
+  family/kid table's convention (missed in the original migration; surfaced by the disposable-test-family
+  cleanup step failing with a foreign-key violation).
+
+## 2026-07-28
+
+- Added a "Technical access ≠ scope" section to `AGENTS.md`, retrofitted from a new standard-level rule in
+  AI_templates (`AGENTS_TEMPLATE.md`/`AI_RULES.md` Rule 10), after direct testing on Home AI Server
+  confirmed a session with broad, non-enforced access would cross into a different project's files if
+  asked. See `DECISIONS.md` D-2026-07-28-technical-access-not-scope.
+
+## 2026-07-27
+
+- Added a "🎁 Big" tab to `reward-tracker` for ad-hoc "big" rewards (1-2/month/kid) that are bigger and
+  rarer than a category tap: a reason + earned date when logged, then what it was spent on + a spent date
+  recorded later via a "💰 Spend" button. New `kid_big_rewards` table (RLS enabled, zero policies, same
+  posture as every other family table) with `add_big_reward`, `spend_big_reward`, `undo_big_reward_spend`
+  and `delete_big_reward` edge function actions - no PIN gate, no dollar/point amount, free text only.
+  `my-rewards` gained a matching read-only section so a kid can see their own pending and spent big
+  rewards on their card (`get_kid_big_rewards`, no write path). Bumped `reward-tracker` service worker to
+  v17 and `my-rewards` to v6. See `D-2026-07-27-reward-tracker-big-rewards`.
+
+## 2026-07-26
+
+- Fixed a kid-to-kid trade bug in `my-rewards`: a kid could propose trading away a reward category they
+  had zero (or fewer than the offered quantity of) balance in - the "you give" picker listed every family
+  reward category regardless of what the kid actually held. `openProposeView()` now restricts that picker
+  to categories with a positive balance (`myGiveableCategories()`), clamps the quantity input to the
+  available balance, and shows "You don't have any rewards to trade yet" with the propose flow disabled
+  if none qualify. Enforced server-side too, per the usual boundary: `propose_trade` now checks the
+  proposing kid's actual balance before inserting the trade, and `respond_to_trade`'s accept path
+  re-checks both sides' balances at the moment of acceptance (balances can shift between propose and
+  accept) and auto-cancels a trade that no longer checks out instead of moving balances negative. Bumped
+  `my-rewards` service worker to v5.
+- Added a real "Install App" button to the bottom of bedroom-reset, using the `beforeinstallprompt` /
+  `prompt()` flow (Chrome/Edge/Android) instead of only the text hint telling people to find the browser's
+  install menu themselves. The text hint stays for browsers (iOS Safari) that never fire
+  `beforeinstallprompt`, where there's no programmatic install to trigger. Bumped `CACHE_NAME` to
+  `bedroom-reset-pwa-v23`.
+- Fixed bedroom-reset's install hint text, which told people to use "Chrome or Edge" even though Firefox
+  and Safari both support installing via their own browser menu (they just don't support the
+  `beforeinstallprompt` API our button uses, so they need the manual path). Bumped `CACHE_NAME` to
+  `bedroom-reset-pwa-v24`.
+
 ## 2026-07-20
 
 - Added a visible cache-version indicator to all four PWAs (bedroom-reset, reward-tracker, my-rewards,

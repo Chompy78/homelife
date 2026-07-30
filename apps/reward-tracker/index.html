@@ -35,6 +35,18 @@
     </div>
   </div>
 
+  <!-- Asked each time SPIN is pressed, rather than a persistent header kid
+       picker (Spin's header has none - see the spin tab's own doc). -->
+  <div class="catModal hidden" id="spinKidModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>Spin for who?</h2>
+        <button id="spinKidModalCancel" type="button" class="catModalClose">✕</button>
+      </div>
+      <div class="spinKidGrid" id="spinKidGrid"></div>
+    </div>
+  </div>
+
   <div class="catModal hidden" id="catModal">
     <div class="catCard">
       <div class="catCardHead">
@@ -165,8 +177,6 @@
         <div class="settingsRowSub">Clears all reward history and balances for every kid. Categories are kept.</div>
         <button id="resetHistoryBtn" type="button" class="dangerBtn">Reset all reward history</button>
       </div>
-
-      <p class="appVersionTag" id="appVersion"></p>
     </div>
   </div>
 
@@ -205,6 +215,7 @@
       <button data-mode="table" class="modeBtn">Table</button>
       <button data-mode="insights" class="modeBtn">Insights</button>
       <button data-mode="history" class="modeBtn">History</button>
+      <button data-mode="big" class="modeBtn">🎁 Big</button>
     </div>
 
     <div class="activeKidBanner hidden" id="activeKidBanner"></div>
@@ -243,7 +254,59 @@
       <div class="historyList" id="historyList"></div>
     </section>
 
+    <!-- Big Rewards: ad-hoc, occasional rewards (1-2/month/kid) worth their
+         own reason and spend record instead of a category tap - e.g. "aced
+         the spelling test" -> earned, then later "new Lego set" -> spent. -->
+    <section id="bigRewardsView" class="view hidden">
+      <button id="openAddBigRewardBtn" type="button" class="bigRewardAddBtn">+ New Big Reward</button>
+      <div class="bigRewardsList" id="bigRewardsList"></div>
+    </section>
+
     <p class="switchFamily"><a href="#" id="switchFamilyLink">Use a different parent code</a></p>
+    <p class="appVersionTag" id="appVersion"></p>
+  </div>
+
+  <div class="catModal hidden" id="addBigRewardModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>🎁 New Big Reward</h2>
+        <button id="addBigRewardModalClose" type="button" class="catModalClose">✕</button>
+      </div>
+      <div class="bigRewardField">
+        <label>For</label>
+        <select id="bigRewardKidSelect"></select>
+      </div>
+      <div class="bigRewardField">
+        <label>Reason</label>
+        <input id="bigRewardReasonInput" type="text" placeholder="e.g. Finished the school term with straight A's" maxlength="140" />
+      </div>
+      <div class="bigRewardField">
+        <label>Date earned</label>
+        <input id="bigRewardEarnedDateInput" type="date" />
+      </div>
+      <button id="saveBigRewardBtn" type="button" class="bigRewardSaveBtn">Save</button>
+      <p class="catError hidden" id="addBigRewardError"></p>
+    </div>
+  </div>
+
+  <div class="catModal hidden" id="spendBigRewardModal">
+    <div class="catCard">
+      <div class="catCardHead">
+        <h2>💸 Spend Big Reward</h2>
+        <button id="spendBigRewardModalClose" type="button" class="catModalClose">✕</button>
+      </div>
+      <p class="bigRewardSpendSummary" id="spendBigRewardSummary"></p>
+      <div class="bigRewardField">
+        <label>Spent on</label>
+        <input id="spendOnInput" type="text" placeholder="e.g. Lego Technic set" maxlength="140" />
+      </div>
+      <div class="bigRewardField">
+        <label>Date spent</label>
+        <input id="spendDateInput" type="date" />
+      </div>
+      <button id="confirmSpendBtn" type="button" class="bigRewardSaveBtn">Save</button>
+      <p class="catError hidden" id="spendBigRewardError"></p>
+    </div>
   </div>
 
   <script type="module" src="app.js"></script>

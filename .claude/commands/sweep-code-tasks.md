@@ -14,7 +14,7 @@ deploy (`.github/workflows/deploy-pages.yml`) immediately — there's no review 
 production the way a PR-based workflow would have. Be more conservative here than a branch/PR-based sweep
 would need to be.
 
-**This repo's `docs/TASK_BOARD.md` has no Effort/Risk tags** (unlike a stored-tag convention another
+**This repo's task board has no Effort/Risk tags** (unlike a stored-tag convention another
 project might use) — this skill classifies eligibility itself at sweep time, using the rule below, rather
 than trusting a pre-existing tag.
 
@@ -24,7 +24,9 @@ Delegate to an `Explore`-type subagent:
 ```
 git fetch origin
 git show origin/main:AGENTS.md
-git show origin/main:docs/TASK_BOARD.md
+git show origin/main:docs/TASK_BOARD_NOW.md
+git show origin/main:docs/TASK_BOARD_NEXT.md
+git show origin/main:docs/TASK_BOARD_LATER.md
 ```
 Return every task verbatim with its Tags/Status.
 
@@ -35,7 +37,7 @@ A task is **never** eligible, full stop, if any of these apply — this is the s
 - It touches the `family-api` edge function, RLS policies, or any DB schema/migration (security boundary
   — always needs a human).
 - It touches the AI-vision pipeline's core gate/scorer logic (`poller.py`'s layered checks) — this
-  pipeline has a documented history of subtle failure modes (see `docs/TASK_BOARD.md`'s own NOW entry)
+  pipeline has a documented history of subtle failure modes (see `docs/TASK_BOARD_NOW.md`'s own entry)
   that only surfaced under real photos, not by inspection.
 - The task's own description reads as a genuine design trade-off rather than a well-scoped build — e.g. it
   says "evaluate", "benchmark", or otherwise doesn't have one clear implementation path.
@@ -63,7 +65,7 @@ For each candidate:
    single file/app) before it goes live, since there's no PR to catch a problem after the fact.
 3. **If a real finding survives**, fix it, re-verify per `/run-code-task`'s Step 3, and amend the commit. If the
    finding needs a genuine redesign rather than a small fix, park the task — revert the local commit
-   (`git reset --soft HEAD~1` and discard the working changes), leave `docs/TASK_BOARD.md`'s entry as
+   (`git reset --soft HEAD~1` and discard the working changes), leave its `docs/TASK_BOARD_*.md` entry as
    `open`, count it toward the circuit breaker, and move on.
 4. **Push.** `git push origin main`. If rejected as non-fast-forward, `git pull --rebase origin main` and
    retry once; a real conflict is a park, not something to resolve silently.

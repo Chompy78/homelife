@@ -15,8 +15,8 @@ command supersedes as the reusable, standalone version).
 
 `$ARGUMENTS` is a file path, a directory, a glob, or empty:
 - **Empty** — mine this session's own conversation so far.
-- **A single file** — a `docs/sessions/*.md` entry, an exported transcript, a `DECISIONS.md` excerpt.
-  Read it directly.
+- **A single file** — a `docs/sessions/*.md` entry, an exported transcript, a `DECISIONS.md` index entry or
+  `decisions/2026/D-*.md` record. Read it directly.
 - **A directory or glob matching several files** — don't read them all inline. Delegate to a
   `general-purpose` agent: give it the file list, ask it to return only the drafted candidates as compact
   text, not the raw source content.

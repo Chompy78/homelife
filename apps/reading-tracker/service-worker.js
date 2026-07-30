@@ -1,4 +1,4 @@
-const CACHE_NAME = "reading-tracker-pwa-v3";
+const CACHE_NAME = "reading-tracker-pwa-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -7,12 +7,12 @@ const ASSETS = [
   "./manifest.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  "./icons/favicon-32.png",
+  "./icons/favicon-16.png",
   "../shared/api.js",
   "../shared/confirm.js",
   "../shared/escape.js",
   "../shared/version.js",
-  "../shared/icons/favicon-32.png",
-  "../shared/icons/favicon-16.png",
 ];
 
 self.addEventListener("install", (event) => {

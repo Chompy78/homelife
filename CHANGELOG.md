@@ -8,6 +8,13 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-30
 
+- Gave `apps/reading-tracker` its own distinct favicon/PWA icon (open book with a purple bookmark, on
+  blue - `assets/images/homelife-reading-original.png`), replacing the generic placeholder it launched
+  with. Resized down to `apps/reading-tracker/icons/{favicon-16,favicon-32,icon-192,icon-512}.png`
+  (palette-quantized, 502KB source → 19.5KB at 512x512) and pointed `index.html`'s favicon `<link>`
+  tags and the service worker's cache list at these local files instead of the shared
+  `apps/shared/icons/favicon-{16,32}.png`, matching the existing per-app-favicon convention (e.g.
+  parent-dashboard, reward-tracker). Bumped `reading-tracker` service worker to v4.
 - Added `apps/reading-tracker`, a new parent-facing PWA for tracking each kid's reading: start a book
   (title, optional total pages), log the page they're up to for a given date (pages read is computed
   automatically as the delta from the last entry), mark books finished, and set a per-kid nightly pages

@@ -6,6 +6,16 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-07-30-reading-tracker-goal-start-date-default
+
+**Status:** Done
+
+**Summary:** The reading tracker's Setup "Goal start date" field now defaults to today when a kid has
+  none saved, instead of showing blank - a kid could otherwise have a pages-per-night goal saved with
+  no start date, silently and permanently hiding the ahead/behind banner.
+
+**Record:** decisions/2026/D-2026-07-30-reading-tracker-goal-start-date-default.md
+
 ## D-2026-07-30-spin-tab-ask-kid-on-spin
 
 **Status:** Done

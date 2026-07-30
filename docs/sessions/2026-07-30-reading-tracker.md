@@ -50,23 +50,64 @@ per-kid book/page tracking, nightly goals, and a bonus-spin trigger.
   fixed-timeout checks in the test harness itself raced ahead of the network
   round trip, not real app bugs (confirmed by re-checking state via direct
   API calls afterward). Cleaned up both disposable test families.
+- Opened and merged PR #2 for the above (user asked for both).
+- User then asked for a substantial follow-up on the same app: editing a
+  book's name/pages, viewing and editing the page-log entries, moving
+  "Currently reading" above the Setup section, an at-a-glance
+  ahead/behind-schedule banner just below the header, and Setup gaining a
+  goal start date, which weekdays count toward it, and a reading-holidays
+  list.
+- Added `kids.reading_goal_start_date`/`reading_goal_days_of_week`, new
+  table `kid_reading_holidays`, and family-api actions `edit_book`,
+  `edit_reading_log`, `add_reading_holiday`, `delete_reading_holiday`;
+  extended `set_reading_settings` and `get_reading_state` accordingly.
+  Deployed the updated function.
+- Rebuilt the reading-tracker UI: reordered sections, added the
+  ahead/behind banner (computed client-side from the log plus goal
+  settings/holidays), day-of-week checkboxes and a holidays list/add form
+  in Setup, and per-book inline edit + an expandable page-log history with
+  its own inline edit/delete per entry.
+- Re-verified end-to-end via Playwright against fresh disposable test
+  families. Caught and fixed two real bugs this way: (1) a `String()` vs
+  bare `===` comparison bug where `editingLogId` (a DOM dataset string)
+  never matched a log entry's `id` (a Postgres bigint/JS number), so the
+  log-edit form silently never opened; (2) `kid_reading_books`/
+  `kid_reading_log`/`kid_reading_holidays`'s `family_id`/`kid_id` foreign
+  keys were missing `on delete cascade` (present on every other family/kid
+  table), discovered when deleting a disposable test family failed with a
+  foreign-key violation - fixed via migration, logged as
+  `D-2026-07-30-reading-tracker-fk-cascade-fix`. Cleaned up all test
+  families afterward.
+- Since PR #2 was already merged before this follow-up started, restarted
+  the branch from the latest `main` (`git checkout -B <branch> origin/main`)
+  before committing the follow-up work, per this session's branch-per-PR
+  workflow - confirmed the merge commit's tree was identical to the
+  pre-merge commit's (a clean fast-forward-shaped merge), so the working
+  tree's uncommitted edits carried over safely.
 
 ## Files touched
 
-- `apps/reading-tracker/` - new: `index.html`, `app.js`, `styles.css`,
-  `manifest.json`, `service-worker.js`, `icons/icon-192.png`,
-  `icons/icon-512.png`
-- `supabase/functions/family-api/index.ts` - new actions + `creditReadingSpins` helper
+- `apps/reading-tracker/` - `index.html`, `app.js`, `styles.css` (reordered
+  sections, book/log editing, ahead/behind banner, goal schedule +
+  holidays UI), `manifest.json`, `service-worker.js` (CACHE_NAME bumped to
+  v2), `icons/icon-192.png`, `icons/icon-512.png`
+- `supabase/functions/family-api/index.ts` - reading tracker actions +
+  `creditReadingSpins` helper, then `edit_book`/`edit_reading_log`/
+  `add_reading_holiday`/`delete_reading_holiday` and extended
+  `get_reading_state`/`set_reading_settings`
 - Supabase migrations: `create_reading_tracker_schema`,
   `add_reading_bonus_spin_trigger` (an earlier, simpler
   `family_reading_log`-based design was applied then dropped once the
-  real spec - books/pages/goals/spins - came in mid-session)
-- `README.md` - new app entry, new tables, `kids` column additions
+  real spec - books/pages/goals/spins - came in mid-session),
+  `reading_tracker_goal_schedule_and_holidays`,
+  `fix_reading_tracker_fk_cascade`
+- `README.md` - new app entry, new tables, `kids` column additions (both rounds)
 - `CHANGELOG.md`, `DECISIONS.md`, `docs/TASK_BOARD_NEXT.md`
 
 ## Related
 
 - `DECISIONS.md` → `decisions/2026/D-2026-07-30-reading-tracker-new-app.md`
+- `DECISIONS.md` → `decisions/2026/D-2026-07-30-reading-tracker-fk-cascade-fix.md`
 
 ## Carried forward
 

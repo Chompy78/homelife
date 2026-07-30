@@ -17,6 +17,16 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 **Record:** decisions/2026/D-2026-07-30-spin-tab-ask-kid-on-spin.md
 
+## D-2026-07-30-reading-tracker-fk-cascade-fix
+
+**Status:** Done
+
+**Summary:** `kid_reading_books`/`kid_reading_log`/`kid_reading_holidays`'s `family_id`/`kid_id` foreign
+  keys were created without `on delete cascade`, unlike every other family/kid table - fixed to match,
+  after it broke deleting a disposable test family during verification.
+
+**Record:** decisions/2026/D-2026-07-30-reading-tracker-fk-cascade-fix.md
+
 ## D-2026-07-30-reading-tracker-new-app
 
 **Status:** Done

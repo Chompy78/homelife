@@ -24,6 +24,16 @@ on `TASK_BOARD.md`.
 - Fixed Reward Tracker's app version tag being invisible: it was nested inside the Settings modal
   instead of sitting at the bottom of the page like every other app (e.g. `parent-dashboard`) -
   moved it to the bottom of the main app view.
+- Expanded `apps/reading-tracker`: books and individual page-log entries are now editable in place
+  (`edit_book`, `edit_reading_log`) alongside delete, with a per-book expandable log history; "Currently
+  reading" moved above the Setup section; Setup gained a goal start date, which weekdays count toward the
+  goal, and a reading-holidays list (date ranges excluded from the goal) via new table
+  `kid_reading_holidays` and new `kids` columns `reading_goal_start_date`/`reading_goal_days_of_week`; a
+  new banner just below the header shows whether a kid is ahead or behind their pages goal as of today,
+  computed client-side from the log plus these settings. Also fixed `kid_reading_books`/`kid_reading_log`/
+  `kid_reading_holidays`'s `family_id`/`kid_id` foreign keys to cascade on delete, matching every other
+  family/kid table's convention (missed in the original migration; surfaced by the disposable-test-family
+  cleanup step failing with a foreign-key violation).
 
 ## 2026-07-28
 

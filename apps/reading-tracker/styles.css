@@ -71,6 +71,17 @@ header h1 { margin: 0 0 10px; font-size: clamp(1.1rem, 3.2vw, 1.4rem); }
 }
 .card h2 { margin: 0 0 12px; font-size: 1.05rem; }
 
+.aheadBehindBanner {
+  text-align: center;
+  font-weight: 800;
+  border-radius: 14px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+}
+.aheadBehindBanner.aheadBanner { background: rgba(76, 175, 80, 0.15); color: var(--green); }
+.aheadBehindBanner.behindBanner { background: rgba(217, 83, 79, 0.15); color: var(--red); }
+.aheadBehindBanner.evenBanner { background: rgba(92, 107, 192, 0.15); color: var(--accent); }
+
 .settingsRow { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
 .settingsRow label { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; font-weight: 700; color: var(--muted); flex: 1; min-width: 140px; }
 .settingsRow input {
@@ -81,9 +92,25 @@ header h1 { margin: 0 0 10px; font-size: clamp(1.1rem, 3.2vw, 1.4rem); }
   background: var(--bg);
   color: var(--ink);
 }
+.settingsRowLabel { font-size: 0.8rem; font-weight: 700; color: var(--muted); margin: 14px 0 6px; }
+.daysOfWeekRow { margin-top: 4px; }
+.daysOfWeekChecks { display: flex; gap: 10px; flex-wrap: wrap; }
+.daysOfWeekChecks label { display: flex; align-items: center; gap: 4px; font-size: 0.85rem; font-weight: 700; color: var(--ink); }
+
+.buttons { margin-top: 14px; }
+
 .settingsHint { color: var(--muted); font-size: 0.8rem; margin: 10px 0 0; }
 .bonusSpinRow { margin: 10px 0 0; font-weight: 800; color: var(--accent); }
 .settingsSaved { color: var(--green); font-weight: 700; margin: 8px 0 0; }
+
+.holidaysSection { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.holidayRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.holidayRow:last-child { border-bottom: 0; }
+.holidayMain { font-size: 0.85rem; color: var(--ink); }
+.holidayDeleteBtn { background: transparent; border: 0; cursor: pointer; font-size: 1rem; color: var(--muted); padding: 2px 4px; }
+.addHolidayRow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.addHolidayRow input { flex: 1 1 130px; font-size: 0.85rem; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.addHolidayError { color: var(--red); font-weight: 700; margin-top: 8px; }
 
 .saveBtn { background: var(--accent); color: #fff; border: 0; border-radius: 12px; padding: 10px 16px; font-weight: 800; cursor: pointer; white-space: nowrap; }
 .saveBtn:disabled { opacity: 0.6; }
@@ -92,10 +119,20 @@ header h1 { margin: 0 0 10px; font-size: clamp(1.1rem, 3.2vw, 1.4rem); }
 .bookCard { border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
 .bookHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .bookTitle { font-weight: 800; font-size: 1.02rem; }
-.bookDeleteBtn, .finishedDeleteBtn, .reopenBtn {
+.bookHeadBtns { display: flex; gap: 6px; flex: 0 0 auto; }
+.bookEditBtn, .bookDeleteBtn, .reopenBtn, .logEditBtn, .logDeleteBtn {
   background: transparent; border: 0; cursor: pointer; font-size: 1rem; color: var(--muted); padding: 2px 4px;
 }
 .bookMeta { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+.bookEditFields { display: flex; gap: 8px; flex-wrap: wrap; flex: 1 1 auto; }
+.bookEditTitle { flex: 1 1 160px; }
+.bookEditPages { flex: 0 1 140px; }
+.bookEditFields input {
+  font-size: 0.95rem; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.bookEditSaveBtn { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 8px 14px; font-weight: 800; cursor: pointer; }
+.bookEditCancelBtn { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 10px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
 
 .progressTrack { background: var(--bg); border: 1px solid var(--line); border-radius: 999px; height: 8px; margin-top: 8px; overflow: hidden; }
 .progressFill { background: linear-gradient(90deg, var(--accent), var(--gold)); height: 100%; border-radius: 999px; }
@@ -107,17 +144,28 @@ header h1 { margin: 0 0 10px; font-size: clamp(1.1rem, 3.2vw, 1.4rem); }
 .logBtn { background: var(--accent); color: #fff; border: 0; border-radius: 10px; padding: 8px 14px; font-weight: 800; cursor: pointer; }
 .logBtn:disabled { opacity: 0.6; }
 
-.bookFootBtns { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-.finishBtn { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 10px; padding: 6px 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer; }
+.bookFootBtns { display: flex; gap: 8px; margin-top: 10px; align-items: center; flex-wrap: wrap; }
+.finishBtn, .reopenBtn, .historyToggleBtn {
+  background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 10px; padding: 6px 12px; font-weight: 700; font-size: 0.85rem; cursor: pointer;
+}
 
 .addBookRow { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .addBookRow input { flex: 1 1 160px; font-size: 0.9rem; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
 .addBookError { color: var(--red); font-weight: 700; margin-top: 8px; }
 
-.finishedRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.finishedRow:last-child { border-bottom: 0; }
-.finishedTitle { font-weight: 700; }
-.finishedMeta { color: var(--muted); font-size: 0.8rem; }
+.logHistoryList { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.logHistoryRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; flex-wrap: wrap; }
+.logHistoryMain { font-size: 0.82rem; color: var(--muted); }
+.logHistoryBtns { display: flex; gap: 6px; flex: 0 0 auto; }
+.logHistoryEditFields { display: flex; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; }
+.logHistoryEditFields input {
+  font-size: 0.82rem; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.logEditDate { flex: 1 1 120px; }
+.logEditPage { flex: 0 1 90px; }
+.logEditNote { flex: 1 1 140px; }
+.logEditSaveBtn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 6px 10px; font-weight: 800; font-size: 0.8rem; cursor: pointer; }
+.logEditCancelBtn { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 0.8rem; cursor: pointer; }
 
 .switchFamily { text-align: center; margin-top: 20px; }
 .switchFamily a { color: var(--muted); font-weight: 700; }

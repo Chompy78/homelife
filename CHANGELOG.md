@@ -18,6 +18,16 @@ on `TASK_BOARD.md`.
   `reading_pages_credited_for_spin`; new family-api actions `get_reading_state`, `set_reading_settings`,
   `start_book`, `finish_book`, `reopen_book`, `delete_book`, `log_reading_pages`, `undo_reading_log`. See
   `DECISIONS.md` D-2026-07-30-reading-tracker-new-app.
+- Expanded `apps/reading-tracker`: books and individual page-log entries are now editable in place
+  (`edit_book`, `edit_reading_log`) alongside delete, with a per-book expandable log history; "Currently
+  reading" moved above the Setup section; Setup gained a goal start date, which weekdays count toward the
+  goal, and a reading-holidays list (date ranges excluded from the goal) via new table
+  `kid_reading_holidays` and new `kids` columns `reading_goal_start_date`/`reading_goal_days_of_week`; a
+  new banner just below the header shows whether a kid is ahead or behind their pages goal as of today,
+  computed client-side from the log plus these settings. Also fixed `kid_reading_books`/`kid_reading_log`/
+  `kid_reading_holidays`'s `family_id`/`kid_id` foreign keys to cascade on delete, matching every other
+  family/kid table's convention (missed in the original migration; surfaced by the disposable-test-family
+  cleanup step failing with a foreign-key violation).
 
 ## 2026-07-28
 

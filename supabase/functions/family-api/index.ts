@@ -1198,10 +1198,12 @@ Deno.serve(async (req) => {
       case "get_reading_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: kids }, { data: books }, { data: log }] = await Promise.all([
+        const [{ data: kids }, { data: books }, { data: log }, { data: holidays }] = await Promise.all([
           db
             .from("kids")
-            .select("id, name, avatar_emoji, theme_color, reading_daily_goal_pages, reading_spin_threshold_pages, bonus_spins")
+            .select(
+              "id, name, avatar_emoji, theme_color, reading_daily_goal_pages, reading_spin_threshold_pages, reading_goal_start_date, reading_goal_days_of_week, bonus_spins"
+            )
             .eq("family_id", session.family_id)
             .order("sort_order"),
           db.from("kid_reading_books").select("*").eq("family_id", session.family_id).order("started_date", { ascending: false }),
@@ -1212,6 +1214,7 @@ Deno.serve(async (req) => {
             .order("log_date", { ascending: false })
             .order("created_at", { ascending: false })
             .limit(300),
+          db.from("kid_reading_holidays").select("*").eq("family_id", session.family_id).order("start_date", { ascending: false }),
         ]);
         const today = todayStr();
         const pagesToday: Record<string, number> = {};
@@ -1219,13 +1222,19 @@ Deno.serve(async (req) => {
           if (entry.log_date !== today) continue;
           pagesToday[entry.kid_id] = (pagesToday[entry.kid_id] || 0) + entry.pages_read;
         }
-        return json({ ok: true, data: { kids: kids || [], books: books || [], log: log || [], pages_today: pagesToday } });
+        return json({
+          ok: true,
+          data: { kids: kids || [], books: books || [], log: log || [], pages_today: pagesToday, holidays: holidays || [] },
+        });
       }
 
-      // Sets both per-kid reading settings together: the nightly pages goal
-      // (display/comparison only) and the bonus-spin page threshold (see
-      // creditReadingSpins below) - each kid can have a different value for
-      // either, and either can be left unset (null clears it).
+      // Sets a kid's reading goal settings together: the nightly pages goal
+      // and its start date, which weekdays count toward it, and the
+      // bonus-spin page threshold (see creditReadingSpins below). Each field
+      // is independently optional (only patches whichever keys are present)
+      // and null clears it - reading_goal_days_of_week null/empty means
+      // "every day counts", the simplest default that doesn't force setup
+      // before the goal has any value.
       case "set_reading_settings": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
@@ -1238,6 +1247,11 @@ Deno.serve(async (req) => {
           if (!Number.isInteger(parsed) || parsed <= 0) return { ok: false };
           return { ok: true, value: parsed };
         };
+        const parseOptionalDate = (v: unknown): { ok: true; value: string | null } | { ok: false } => {
+          if (v === null || v === undefined || v === "") return { ok: true, value: null };
+          if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return { ok: true, value: v };
+          return { ok: false };
+        };
 
         const patch: Record<string, unknown> = {};
         if ("goal_pages" in body) {
@@ -1249,6 +1263,28 @@ Deno.serve(async (req) => {
           const parsed = parseOptionalPositiveInt(body.spin_threshold_pages);
           if (!parsed.ok) return json({ ok: false, error: "bad_spin_threshold" }, 400);
           patch.reading_spin_threshold_pages = parsed.value;
+        }
+        if ("goal_start_date" in body) {
+          const parsed = parseOptionalDate(body.goal_start_date);
+          if (!parsed.ok) return json({ ok: false, error: "bad_start_date" }, 400);
+          patch.reading_goal_start_date = parsed.value;
+        }
+        if ("goal_days_of_week" in body) {
+          const raw = body.goal_days_of_week;
+          if (raw === null || raw === undefined) {
+            patch.reading_goal_days_of_week = null;
+          } else if (
+            Array.isArray(raw) &&
+            raw.every((d) => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6)
+          ) {
+            // A full or empty set both mean "every day" - store null for
+            // either so get_reading_state's/the client's "every day" default
+            // doesn't have to special-case a redundant [0,1,2,3,4,5,6] value.
+            const unique = [...new Set(raw as number[])];
+            patch.reading_goal_days_of_week = unique.length === 0 || unique.length === 7 ? null : unique;
+          } else {
+            return json({ ok: false, error: "bad_days_of_week" }, 400);
+          }
         }
         if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
         await db.from("kids").update(patch).eq("id", kid.id);
@@ -1276,6 +1312,35 @@ Deno.serve(async (req) => {
           .single();
         if (error || !entry) return json({ ok: false, error: "could_not_add" }, 500);
         return json({ ok: true, data: { entry } });
+      }
+
+      // Edits an existing book's title and/or total_pages - either can be
+      // patched independently; total_pages can be cleared back to null
+      // (empty/undefined), but title can't (a book always needs one).
+      case "edit_book": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: book } = await db.from("kid_reading_books").select("id").eq("id", body.book_id).eq("family_id", session.family_id).maybeSingle();
+        if (!book) return json({ ok: false, error: "not_found" }, 404);
+
+        const patch: Record<string, unknown> = {};
+        if ("title" in body) {
+          const title = String(body.title || "").trim().slice(0, 140);
+          if (!title) return json({ ok: false, error: "title_required" }, 400);
+          patch.title = title;
+        }
+        if ("total_pages" in body) {
+          if (body.total_pages === null || body.total_pages === undefined || body.total_pages === "") {
+            patch.total_pages = null;
+          } else {
+            const parsed = Number(body.total_pages);
+            if (!Number.isInteger(parsed) || parsed <= 0) return json({ ok: false, error: "bad_total_pages" }, 400);
+            patch.total_pages = parsed;
+          }
+        }
+        if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
+        await db.from("kid_reading_books").update(patch).eq("id", book.id);
+        return json({ ok: true });
       }
 
       case "finish_book": {
@@ -1346,12 +1411,89 @@ Deno.serve(async (req) => {
         return json({ ok: true, data: { entry, spins_granted: spinsGranted } });
       }
 
+      // Edits an existing log entry's date, page, and/or note. pages_read is
+      // recomputed the same way log_reading_pages computes it for a new
+      // entry (delta from the most recent *other* entry as of the
+      // effective date) - but, same documented limitation as delete, this
+      // doesn't cascade to recompute any entry that used to treat this one
+      // as its own "prior" page. Doesn't re-run the bonus-spin check either
+      // (that only fires on the original log_reading_pages insert) - a
+      // correction here is assumed to be fixing a typo, not adding new
+      // reading, so it shouldn't retroactively grant a spin.
+      case "edit_reading_log": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: entry } = await db
+          .from("kid_reading_log")
+          .select("id, book_id, log_date, page_up_to")
+          .eq("id", body.log_id)
+          .eq("family_id", session.family_id)
+          .maybeSingle();
+        if (!entry) return json({ ok: false, error: "not_found" }, 404);
+
+        const logDate = typeof body.log_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.log_date) ? body.log_date : entry.log_date;
+        const pageUpTo = body.page_up_to !== undefined ? Number(body.page_up_to) : entry.page_up_to;
+        if (!Number.isInteger(pageUpTo) || pageUpTo < 0) return json({ ok: false, error: "bad_page" }, 400);
+        const note = typeof body.note === "string" ? body.note.trim().slice(0, 140) : null;
+
+        const { data: prior } = await db
+          .from("kid_reading_log")
+          .select("page_up_to")
+          .eq("book_id", entry.book_id)
+          .neq("id", entry.id)
+          .lte("log_date", logDate)
+          .order("log_date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const priorPage = prior?.page_up_to || 0;
+        const pagesRead = Math.max(0, pageUpTo - priorPage);
+
+        await db
+          .from("kid_reading_log")
+          .update({ log_date: logDate, page_up_to: pageUpTo, pages_read: pagesRead, note: note || null })
+          .eq("id", entry.id);
+        return json({ ok: true, data: { pages_read: pagesRead } });
+      }
+
       case "undo_reading_log": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
         const { data: entry } = await db.from("kid_reading_log").select("id").eq("id", body.log_id).eq("family_id", session.family_id).maybeSingle();
         if (!entry) return json({ ok: false, error: "not_found" }, 404);
         await db.from("kid_reading_log").delete().eq("id", entry.id);
+        return json({ ok: true });
+      }
+
+      // A per-kid list of date ranges excluded from the "ahead/behind"
+      // expected-pages calculation (school holidays, sick days, etc) - the
+      // client computes that comparison itself from these plus the log,
+      // so this is just CRUD, no server-side aggregation needed here.
+      case "add_reading_holiday": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: kid } = await db.from("kids").select("id").eq("id", body.kid_id).eq("family_id", session.family_id).maybeSingle();
+        if (!kid) return json({ ok: false, error: "not_found" }, 404);
+        const startDate = String(body.start_date || "");
+        const endDate = String(body.end_date || "");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) return json({ ok: false, error: "bad_date" }, 400);
+        if (endDate < startDate) return json({ ok: false, error: "end_before_start" }, 400);
+        const label = typeof body.label === "string" ? body.label.trim().slice(0, 60) : null;
+        const { data: entry, error } = await db
+          .from("kid_reading_holidays")
+          .insert({ family_id: session.family_id, kid_id: kid.id, start_date: startDate, end_date: endDate, label: label || null })
+          .select()
+          .single();
+        if (error || !entry) return json({ ok: false, error: "could_not_add" }, 500);
+        return json({ ok: true, data: { entry } });
+      }
+
+      case "delete_reading_holiday": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const { data: entry } = await db.from("kid_reading_holidays").select("id").eq("id", body.holiday_id).eq("family_id", session.family_id).maybeSingle();
+        if (!entry) return json({ ok: false, error: "not_found" }, 404);
+        await db.from("kid_reading_holidays").delete().eq("id", entry.id);
         return json({ ok: true });
       }
 

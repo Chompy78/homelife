@@ -6,6 +6,19 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-30
+
+- Added `apps/reading-tracker`, a new parent-facing PWA for tracking each kid's reading: start a book
+  (title, optional total pages), log the page they're up to for a given date (pages read is computed
+  automatically as the delta from the last entry), mark books finished, and set a per-kid nightly pages
+  goal plus a per-kid "bonus spin every N cumulative pages" threshold. Crossing that threshold grants a
+  Reward Tracker bonus spin automatically via the existing `bonus_spins`/atomic-increment mechanic (same
+  one Bedroom Reset's AI auto-approve already uses). New tables `kid_reading_books`/`kid_reading_log` and
+  new `kids` columns `reading_daily_goal_pages`/`reading_spin_threshold_pages`/
+  `reading_pages_credited_for_spin`; new family-api actions `get_reading_state`, `set_reading_settings`,
+  `start_book`, `finish_book`, `reopen_book`, `delete_book`, `log_reading_pages`, `undo_reading_log`. See
+  `DECISIONS.md` D-2026-07-30-reading-tracker-new-app.
+
 ## 2026-07-28
 
 - Added a "Technical access ≠ scope" section to `AGENTS.md`, retrofitted from a new standard-level rule in

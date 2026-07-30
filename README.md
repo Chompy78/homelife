@@ -11,6 +11,7 @@ codes, and can optionally share their stats on a public leaderboard.
 - [`apps/leaderboard`](apps/leaderboard) - public, no code needed. Shows aggregate stats (total points, best streak, rooms passed) for families that have opted in. Never shows individual kids' names or checklist details, even for opted-in families.
 - [`apps/reward-tracker`](apps/reward-tracker) - a parent enters their family's parent code (same one as the parent dashboard) and taps a reward category to earn or spend for any of their kids. Quick Tap, Table and History+Undo views, plus a Big Rewards tab for occasional ad-hoc rewards with their own reason/spend record. A separate currency from the bedroom-reset points/streaks system - not merged into it or the leaderboard.
 - [`apps/my-rewards`](apps/my-rewards) - kid-facing: a kid enters their own kid code (same one as bedroom-reset) and sees their own reward balance, on their own device. Mostly read-only, except trading with a sibling (give some of one reward for some of theirs) - accepting is gated by a 4x4 picture-grid pick instead of a PIN.
+- [`apps/reading-tracker`](apps/reading-tracker) - a parent enters their family's parent code (same one as the other parent-facing apps) and tracks each kid's reading: start a book (title, optional total pages), log the page they're up to for a given date (pages read that entry is computed automatically as the delta from the last log), mark books finished, and set a per-kid nightly pages goal plus a per-kid "bonus spin every N cumulative pages" threshold - crossing it grants a Reward Tracker bonus spin automatically (same `bonus_spins` mechanic Bedroom Reset's AI auto-approve already uses).
 
 ## Shared
 
@@ -23,7 +24,8 @@ Data lives in a dedicated Supabase project ("homelife", `ap-southeast-2`).
 Every family-data table (`families`, `kids`, `kid_checklist_state`,
 `kid_streaks`, `kid_progress_log`, `sessions`, `kid_reference_photos`,
 `family_reward_categories`, `family_reward_notes`, `kid_reward_log`,
-`kid_reward_trades`, `kid_big_rewards`) has
+`kid_reward_trades`, `kid_big_rewards`, `kid_reading_books`,
+`kid_reading_log`) has
 Row Level Security enabled with **zero policies** - meaning nothing is
 reachable through the public API key at all, from any family. Reference
 photos live in a private Storage bucket (`reference-photos`) with the same
@@ -45,7 +47,7 @@ is comparing families against each other.
 Tables:
 
 - `families` - name, public display name, parent_code, parent_pin, icon, is_public (leaderboard opt-in), ai_score_mode (`off`/`informational`/`nudge`/`auto_approve`), ai_score_auto_threshold (1-10)
-- `kids` - name, avatar, kid_code, theme_color (identity colour used by the reward tracker; randomly assigned when added, customizable), belongs to a family
+- `kids` - name, avatar, kid_code, theme_color (identity colour used by the reward tracker; randomly assigned when added, customizable), belongs to a family. Also carries the reading tracker's per-kid settings: `reading_daily_goal_pages` (nightly pages goal, display only), `reading_spin_threshold_pages` (grant a Reward Tracker bonus spin every this-many cumulative pages read - null means off), `reading_pages_credited_for_spin` (how many of those pages have already been cashed in, so the same pages never grant twice)
 - `family_bedroom_items` - the family's own bedroom checklist (category + label per item), fully editable by a parent from the dashboard. Seeded with a 17-item default checklist automatically when a family is created (a database trigger, so it works even though families themselves are created by raw SQL - see "Onboarding a new family" below); a kid's checklist total is however many items their family currently has, not a fixed number
 - `kid_checklist_state` - today's checkbox state per kid (bedroom only - personal), keyed against the family's current `family_bedroom_items`
 - `kid_streaks` - current streak, best streak, total points, total passes, last parent-check result (bedroom only)
@@ -60,6 +62,8 @@ Tables:
 - `kid_reward_trades` - a kid-to-kid trade proposal (from_kid, to_kid, what's given, what's wanted back, status). Accepting writes four `kid_reward_log` rows (each kid loses what they gave, gains what they received); declining/cancelling just changes status, no ledger writes. `kids.verify_image`/`verify_fail_count`/`verify_locked_until` back the picture-grid verification a kid does to accept - see [`apps/my-rewards`](apps/my-rewards)
 - `kid_big_rewards` - ad-hoc "big" rewards (1-2/month/kid), separate from the category tap tally: a reason and earned date recorded when earned (`status: pending`), then what it was spent on and a spent date recorded later (`status: spent`). Unlike `kid_reward_log`, a row is updated in place rather than only ever inserted/deleted, since "still waiting to be spent" is itself worth showing
 - `photo_score_requests` - a kid's "score my room" submission for the self-hosted AI photo-scoring feature: family_id, kid_id or room_id, storage_path, status (`pending`/`scored`/`failed`), score (1-10), comment, timestamps. A partial unique index caps it at one pending request per kid/room at a time. See [`docs/TASK_BOARD.md`](docs/TASK_BOARD.md) for the full design
+- `kid_reading_books` - one row per book a kid is reading or has finished: title, optional total_pages, status (`reading`/`finished`), started_date, finished_date
+- `kid_reading_log` - one row per "what page are you up to" entry for a book, on an explicit date a parent enters. `pages_read` is computed by the edge function as the delta from that book's most recent earlier entry (0 baseline if it's the first), so a parent only ever types the page reached, never a page count. Crossing a kid's `reading_spin_threshold_pages` on insert grants a Reward Tracker bonus spin via the same `bonus_spins` column/atomic-increment pattern as the AI auto-approve spin trigger
 
 The actual reference photo images (both kids' and shared rooms') live in one private Storage bucket, `reference-photos`.
 

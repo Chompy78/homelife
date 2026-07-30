@@ -138,14 +138,15 @@ older entry.
 ## Spin wheel
 
 A 🎡 Spin mode alongside Quick Tap: a wheel with one wedge per reward
-category (same colours as everywhere else), spun for whichever kid is
-selected. Landing logs a real earn exactly like tapping + does, no
-backend changes needed - it's `adjust_reward` under the hood, with an
-automatic note ("🎡 Spinner: <category>") so History shows why the
-balance moved. Landing on "Spin twice" (the seeded default category)
-doesn't tally a literal reward - it triggers two more spins instead,
-since that's what the category actually represents. See
-`D-2026-07-18-reward-tracker-spin-wheel`.
+category (same colours as everywhere else). Unlike Quick Tap, Spin has no
+kid picker in the header - pressing SPIN asks which kid it's for first,
+then spins for them (see `D-2026-07-30-spin-tab-ask-kid-on-spin`). Landing
+logs a real earn exactly like tapping + does, no backend changes needed -
+it's `adjust_reward` under the hood, with an automatic note ("🎡 Spinner:
+<category>") so History shows why the balance moved. Landing on "Spin
+twice" (the seeded default category) doesn't tally a literal reward - it
+triggers two more spins instead, since that's what the category actually
+represents. See `D-2026-07-18-reward-tracker-spin-wheel`.
 
 Each category has a spin weight (1-5, editable in "Manage reward
 categories" - `family_reward_categories.spin_weight`, defaults to 1).

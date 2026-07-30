@@ -98,6 +98,9 @@ const spinBtn = document.getElementById("spinBtn");
 const spinResult = document.getElementById("spinResult");
 const bonusSpinRow = document.getElementById("bonusSpinRow");
 const bonusSpinText = document.getElementById("bonusSpinText");
+const spinKidModal = document.getElementById("spinKidModal");
+const spinKidGrid = document.getElementById("spinKidGrid");
+const spinKidModalCancel = document.getElementById("spinKidModalCancel");
 const rewardTable = document.getElementById("rewardTable");
 const insightsContent = document.getElementById("insightsContent");
 const historyList = document.getElementById("historyList");
@@ -515,11 +518,13 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
   });
 });
 
-// The sticky app bar's kid picker only makes sense for Quick Tap/Spin
-// (one active kid at a time); Table view shows every kid as its own
-// column instead, so it gets Edit/Done there rather than a kid picker.
+// The sticky app bar's kid picker is Quick Tap-only. Table view shows every
+// kid as its own column instead, so it gets Edit/Done there rather than a
+// kid picker. Spin also acts on one kid at a time, but doesn't get a header
+// picker either - pressing SPIN asks which kid via spinKidModal instead (see
+// spin()), so the header stays clear of kid chips on that tab.
 function updateHeaderForMode() {
-  kidPickerRow.classList.toggle("hidden", mode !== "quick" && mode !== "spin");
+  kidPickerRow.classList.toggle("hidden", mode !== "quick");
   editModeBtn.classList.toggle("hidden", mode !== "table");
 }
 
@@ -670,6 +675,42 @@ function renderWheel() {
 
 spinBtn.addEventListener("click", () => spin());
 
+// "Spin for who?" modal - opened on every SPIN press instead of a sticky
+// header kid picker (see updateHeaderForMode). Resolves with the chosen
+// kid's id, or null if cancelled.
+let spinKidResolve = null;
+
+function renderSpinKidGrid() {
+  spinKidGrid.innerHTML = "";
+  state.kids.forEach((kid) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "spinKidBtn" + (kid.id === selectedKidId ? " selected" : "");
+    btn.style.setProperty("--kid-colour", kidColour(kid.id));
+    btn.innerHTML = `<span class="spinKidAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span>`;
+    btn.addEventListener("click", () => {
+      spinKidModal.classList.add("hidden");
+      if (spinKidResolve) spinKidResolve(kid.id);
+      spinKidResolve = null;
+    });
+    spinKidGrid.appendChild(btn);
+  });
+}
+
+function askWhichKidToSpin() {
+  renderSpinKidGrid();
+  spinKidModal.classList.remove("hidden");
+  return new Promise((resolve) => {
+    spinKidResolve = resolve;
+  });
+}
+
+spinKidModalCancel.addEventListener("click", () => {
+  spinKidModal.classList.add("hidden");
+  if (spinKidResolve) spinKidResolve(null);
+  spinKidResolve = null;
+});
+
 function renderBonusSpinRow() {
   const kid = state.kids.find((k) => k.id === selectedKidId);
   const count = kid?.bonus_spins || 0;
@@ -725,6 +766,17 @@ function renderSpinReasonsList() {
 
 async function spin() {
   if (spinning || !selectedKidId) return;
+  spinBtn.disabled = true;
+  const chosenKidId = await askWhichKidToSpin();
+  if (!chosenKidId) {
+    spinBtn.disabled = spinning;
+    return;
+  }
+  selectedKidId = chosenKidId;
+  renderActiveKidBanner();
+  renderBonusSpinRow();
+  renderSpinReasonsList();
+
   const kidId = selectedKidId;
   spinning = true;
   spinBtn.disabled = true;

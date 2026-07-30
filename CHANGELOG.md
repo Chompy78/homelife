@@ -18,6 +18,12 @@ on `TASK_BOARD.md`.
   `reading_pages_credited_for_spin`; new family-api actions `get_reading_state`, `set_reading_settings`,
   `start_book`, `finish_book`, `reopen_book`, `delete_book`, `log_reading_pages`, `undo_reading_log`. See
   `DECISIONS.md` D-2026-07-30-reading-tracker-new-app.
+- Reward Tracker: the Spin tab no longer shows the kid picker in the sticky header - pressing SPIN
+  now opens a "Spin for who?" modal first, then spins for the chosen kid. Quick Tap's header kid
+  picker is unchanged. See `DECISIONS.md` D-2026-07-30-spin-tab-ask-kid-on-spin.
+- Fixed Reward Tracker's app version tag being invisible: it was nested inside the Settings modal
+  instead of sitting at the bottom of the page like every other app (e.g. `parent-dashboard`) -
+  moved it to the bottom of the main app view.
 - Expanded `apps/reading-tracker`: books and individual page-log entries are now editable in place
   (`edit_book`, `edit_reading_log`) alongside delete, with a per-book expandable log history; "Currently
   reading" moved above the Setup section; Setup gained a goal start date, which weekdays count toward the

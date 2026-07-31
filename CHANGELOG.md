@@ -6,6 +6,49 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-07-31
+
+- Ran a full-repo code review (5 parallel passes covering `family-api`, reward-tracker/my-rewards,
+  bedroom-reset/leaderboard, reading-tracker/parent-dashboard, and shared helpers/infra) and fixed
+  all 17 confirmed findings:
+  - **Security:** stored XSS in `leaderboard`, `bedroom-reset`, and `parent-dashboard` (none
+    imported `escapeHtml()`, unlike every other app) - now escaped throughout. `respond_to_trade`
+    could be double-accepted, duplicating a reward-point transfer between kids - fixed by claiming
+    the trade atomically before its side effects, not after. reward-tracker's PIN-lock UI (delete
+    category, delete spin reason, Reset) was client-side only - the edge function now independently
+    re-verifies, and PIN protection became a real per-family server setting instead of a
+    server-blind per-device toggle. A kid locked out of trade-verification could bypass the lockout
+    by changing their secret picture (which silently cleared it) - now blocked server-side. See
+    `DECISIONS.md` D-2026-07-31-reward-tracker-pin-server-enforcement and
+    D-2026-07-31-kid-trade-security-fixes.
+  - **Correctness/races:** `update_checklist_item`/`update_family_room_item`/`awardBedroomPass`/
+    `awardRoomPass` had non-atomic read-modify-write races on points/streak totals (lost awards,
+    double-awarded daily completion bonus) - replaced with 4 new row-locked Postgres functions. See
+    `DECISIONS.md` D-2026-07-31-atomic-points-streak-updates. `my-rewards` `loadState()`/
+    `refreshTradeState()` gained the same request-sequencing guard reward-tracker already had, for
+    the same out-of-order-response bug. `reading-tracker`'s `todayStr()` used UTC instead of local
+    date, corrupting the ahead/behind goal banner near local midnight - fixed. `reading-tracker`
+    never called `navigator.serviceWorker.register()` at all - its service worker (and every past
+    `CACHE_NAME` bump) had never actually taken effect. `parent-dashboard`'s "Copy kid link" button
+    was broken when launched as an installed PWA (regex didn't match `/index.html` paths). A badge
+    earned in the same tick as a level-up in bedroom-reset was silently dropped instead of shown
+    (guaranteed for the "Level 5" badge) - now queued and shown in sequence. bedroom-reset's cached
+    bedroom-item labels were stored under an unscoped, cross-family localStorage key - now
+    token-scoped like its sibling caches. Saving zero selected reading-goal days-of-week silently
+    reverted to "all 7 days" on reload - now blocked client-side. parent-dashboard's 45s
+    auto-refresh could silently revert an unsaved "share on public leaderboard" toggle - added to
+    its edit-guard.
+  - **Minor:** unescaped-but-backend-validated color values in reward-tracker/my-rewards escaped
+    for defense in depth; a cosmetic "++16 points" typo in bedroom-reset's parent-check toast fixed
+    to "+16"; `apps/shared/config.js` was missing the `POINTS` export `scripts/compare-points.js`
+    expects (now added, matching the backend exactly); `.github/workflows/compare-points.yml` had
+    been invalid YAML since creation (flattened `on:`/`jobs:` blocks) - the CI check had never
+    actually run - reformatted to valid YAML.
+  - Two new Supabase migrations (`add_pin_protection_enabled_to_families`,
+    `add_atomic_points_streak_functions`); `supabase/functions/family-api/index.ts` redeployed and
+    smoke-tested live against a disposable test family. Bumped service worker caches: bedroom-reset
+    v25, parent-dashboard v8, reward-tracker v20, my-rewards v7, reading-tracker v5.
+
 ## 2026-07-30
 
 - Gave `apps/reading-tracker` its own distinct favicon/PWA icon (open book with a purple bookmark, on

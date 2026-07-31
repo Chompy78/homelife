@@ -2,6 +2,7 @@ import { BADGES, levelForPoints, earnedBadges } from "../shared/config.js";
 import { callApi } from "../shared/api.js";
 import { compressImage } from "../shared/image.js";
 import { showAppVersion } from "../shared/version.js";
+import { escapeHtml } from "../shared/escape.js";
 
 const TOKEN_KEY = "homelife_parent_token";
 const REFRESH_INTERVAL_MS = 45000;
@@ -323,7 +324,12 @@ async function removeKid(kid) {
 }
 
 function copyKidLink(kid) {
-  const url = `${location.origin}${location.pathname.replace(/parent-dashboard\/?$/, "bedroom-reset/")}?code=${encodeURIComponent(kid.kid_code)}`;
+  // Matches "parent-dashboard", "parent-dashboard/", and
+  // "parent-dashboard/index.html" (location.pathname ends in the latter
+  // when launched from an installed PWA's start_url, which the old
+  // /parent-dashboard\/?$/ regex never matched - the .replace() was a
+  // silent no-op there, producing a broken link).
+  const url = `${location.origin}${location.pathname.replace(/parent-dashboard(\/.*)?$/, "bedroom-reset/")}?code=${encodeURIComponent(kid.kid_code)}`;
   navigator.clipboard?.writeText(url).catch(() => {});
 }
 
@@ -601,9 +607,9 @@ function renderKidCard(data) {
   card.className = "kidCard";
   card.innerHTML = `
     <div class="kidCardHead">
-      <span class="kidCardAvatar">${data.kid.avatar_emoji}</span>
+      <span class="kidCardAvatar">${escapeHtml(data.kid.avatar_emoji)}</span>
       <div>
-        <div class="kidCardName">${data.kid.name}</div>
+        <div class="kidCardName">${escapeHtml(data.kid.name)}</div>
         <div class="kidCardLevel">Level ${level.level} - ${level.title} · ${data.totalPoints} pts</div>
       </div>
     </div>
@@ -716,7 +722,7 @@ function renderBedroomItemsAdmin(items) {
     map.get(cat).forEach((item) => {
       const row = document.createElement("div");
       row.className = "roomItemRow";
-      row.innerHTML = `<span>${item.label}</span><button type="button" class="removeItemBtn">✕</button>`;
+      row.innerHTML = `<span>${escapeHtml(item.label)}</span><button type="button" class="removeItemBtn">✕</button>`;
       row.querySelector(".removeItemBtn").addEventListener("click", () => deleteBedroomItem(item));
       list.appendChild(row);
     });
@@ -818,16 +824,16 @@ function renderRoomCard(data) {
   const addPhotoTileHtml = photos.length < MAX_PHOTOS ? `<button type="button" class="addPhotoTile">+</button>` : "";
 
   const itemRows = room.items
-    .map((item) => `<div class="roomItemRow" data-item-id="${item.id}"><span>${item.label}</span><button type="button" class="removeItemBtn">✕</button></div>`)
+    .map((item) => `<div class="roomItemRow" data-item-id="${item.id}"><span>${escapeHtml(item.label)}</span><button type="button" class="removeItemBtn">✕</button></div>`)
     .join("");
 
   const card = document.createElement("div");
   card.className = "kidCard";
   card.innerHTML = `
     <div class="kidCardHead">
-      <span class="kidCardAvatar">${room.icon}</span>
+      <span class="kidCardAvatar">${escapeHtml(room.icon)}</span>
       <div>
-        <div class="kidCardName">${room.name}</div>
+        <div class="kidCardName">${escapeHtml(room.name)}</div>
         <div class="kidCardLevel">Level ${level.level} - ${level.title} · ${data.totalPoints} pts (family)</div>
       </div>
     </div>
@@ -901,8 +907,9 @@ async function render(showLoading) {
   renderBedroomItemsAdmin(bedroom_items || []);
   // Don't clobber the settings fields while someone's mid-edit on an auto-refresh tick.
   const editingSettings =
-    [displayNameInput, pinInput, familyIconInput, aiScoreModeInput, aiScoreThresholdInput, authMethodPin, authMethodIcons].includes(document.activeElement) ||
-    iconPickerGrid.contains(document.activeElement);
+    [displayNameInput, pinInput, familyIconInput, publicToggle, aiScoreModeInput, aiScoreThresholdInput, authMethodPin, authMethodIcons].includes(
+      document.activeElement
+    ) || iconPickerGrid.contains(document.activeElement);
   if (!editingSettings) {
     displayNameInput.value = family.display_name;
     pinInput.value = family.parent_pin;

@@ -6,6 +6,37 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-07-31-atomic-points-streak-updates
+
+**Status:** Done
+
+**Summary:** Fixed non-atomic read-modify-write races on `kid_streaks`/`family_room_progress`
+  (lost point awards, double-awarded once-per-day completion bonus under concurrent requests) with
+  four new row-locked Postgres functions, mirroring `grant_spin_credit_atomic`'s existing pattern.
+
+**Record:** decisions/2026/D-2026-07-31-atomic-points-streak-updates.md
+
+## D-2026-07-31-reward-tracker-pin-server-enforcement
+
+**Status:** Done
+
+**Summary:** reward-tracker's PIN-lock UI (delete category, delete spin reason, Reset) was
+  client-side only - the edge function now independently re-verifies the PIN/icons proof, and PIN
+  protection became a real per-family server setting (was a per-device localStorage toggle the
+  server never saw) instead of silently trusting a bare parent token.
+
+**Record:** decisions/2026/D-2026-07-31-reward-tracker-pin-server-enforcement.md
+
+## D-2026-07-31-kid-trade-security-fixes
+
+**Status:** Done
+
+**Summary:** Fixed a `respond_to_trade` double-accept race (duplicated point transfer) by moving
+  the atomic status claim before its side effects, and closed a real lockout bypass where changing
+  a kid's secret picture silently cleared an active trade-verification lockout.
+
+**Record:** decisions/2026/D-2026-07-31-kid-trade-security-fixes.md
+
 ## D-2026-07-30-reading-tracker-goal-start-date-default
 
 **Status:** Done

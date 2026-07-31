@@ -1,4 +1,5 @@
 import { callApi } from "../shared/api.js";
+import { escapeHtml } from "../shared/escape.js";
 
 const boardEl = document.getElementById("board");
 
@@ -20,9 +21,9 @@ async function render() {
       (f, i) => `
       <div class="row">
         <span class="rank">${MEDALS[i] || `#${i + 1}`}</span>
-        <span class="rowIcon">${f.icon || "🏠"}</span>
+        <span class="rowIcon">${escapeHtml(f.icon || "🏠")}</span>
         <div class="rowMain">
-          <div class="rowName">${f.display_name}</div>
+          <div class="rowName">${escapeHtml(f.display_name)}</div>
           <div class="rowSub">${f.kid_count} kid${f.kid_count === 1 ? "" : "s"} · best streak 🔥 ${f.best_streak} · ${f.total_passes} room${f.total_passes === 1 ? "" : "s"} passed</div>
         </div>
         <div class="rowPoints">${f.total_points}<span>pts</span></div>

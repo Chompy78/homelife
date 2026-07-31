@@ -74,6 +74,22 @@ async function verifyParentSecret(familyId: string, body: Record<string, unknown
   return String(body.pin || "") === family.parent_pin;
 }
 
+// reward-tracker's requirePin() client-side gate (delete a category, delete
+// a spin reason, Reset) used to be enforced only by that UI - the mutating
+// actions themselves accepted any valid parent session token, so a caller
+// that skipped the UI (e.g. a kid with access to an already-unlocked parent
+// device, calling the API directly) could bypass the PIN entirely. Every
+// destructive action guarded by requirePin() must call this instead of just
+// checking session.role === "parent". `pin_protection_enabled` is a real
+// per-family opt-out (mirrors reward-tracker's own "friction, not a hard
+// boundary" toggle) - defaults to true, so it only weakens enforcement when
+// a family has explicitly turned the feature off, never silently.
+async function requireRecentPinIfEnabled(familyId: string, body: Record<string, unknown>) {
+  const { data: family } = await db.from("families").select("pin_protection_enabled").eq("id", familyId).maybeSingle();
+  if (family?.pin_protection_enabled === false) return true;
+  return await verifyParentSecret(familyId, body);
+}
+
 const PHOTO_BUCKET = "reference-photos";
 const MAX_PHOTOS_PER_ROOM = 3;
 const MAX_PHOTO_BYTES = 6 * 1024 * 1024; // sanity cap; client compresses well below this
@@ -151,9 +167,6 @@ function randomToken() {
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
-}
-function yesterdayStr() {
-  return new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 }
 
 const CORS_HEADERS = {
@@ -241,52 +254,22 @@ async function awardBedroomPass(
   familyId: string,
   opts: { eventType: string; emoji: string; label: string; points: number }
 ) {
-  const streakRow = await freshStreak(kidId);
-  const today = todayStr();
-  const yesterday = yesterdayStr();
-
-  let current = streakRow?.current_streak || 0;
-  let best = streakRow?.best_streak || 0;
-  let totalPoints = streakRow?.total_points || 0;
-  let totalPasses = streakRow?.total_passes || 0;
-  let lastPassDate = streakRow?.last_pass_date ?? null;
-  let parentResult: string;
-  let awarded = 0;
-
-  if (lastPassDate === today) {
-    parentResult = `${opts.emoji} ${opts.label} Already counted for today.`;
-  } else {
-    current = lastPassDate === yesterday ? current + 1 : 1;
-    best = Math.max(best, current);
-    totalPasses += 1;
-    awarded = opts.points;
-    totalPoints += opts.points;
-    lastPassDate = today;
-    parentResult = `${opts.emoji} ${opts.label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
-  }
-
-  await db.from("kid_streaks").upsert({
-    kid_id: kidId,
-    current_streak: current,
-    best_streak: best,
-    last_pass_date: lastPassDate,
-    parent_result: parentResult,
-    total_points: totalPoints,
-    total_passes: totalPasses,
-    updated_at: new Date().toISOString(),
+  // The streak/points read-decide-write (same-day idempotency, current/best
+  // streak, total_points/total_passes) and the progress-log insert all
+  // happen inside one row-locked Postgres function, so a concurrent pass
+  // for the same kid (e.g. a PIN-confirmed Parent Check landing at the same
+  // moment as an AI auto-approval) can't interleave and lose or duplicate
+  // an award - see award_bedroom_pass_atomic's own migration comment.
+  const { data, error } = await db.rpc("award_bedroom_pass_atomic", {
+    p_kid_id: kidId,
+    p_family_id: familyId,
+    p_event_type: opts.eventType,
+    p_emoji: opts.emoji,
+    p_label: opts.label,
+    p_points: opts.points,
   });
-
-  const { done, total } = await bedroomProgressCounts(familyId, kidId);
-  await db.from("kid_progress_log").insert({
-    kid_id: kidId,
-    items_done: done,
-    items_total: total,
-    percent_complete: total ? Math.round((done / total) * 100) : 0,
-    event_type: opts.eventType,
-    parent_result: parentResult,
-    streak_at_time: current,
-  });
-
+  if (error) throw error;
+  const awarded = data?.awarded || 0;
   const streak = await freshStreak(kidId);
   return { awarded, streak };
 }
@@ -298,59 +281,18 @@ async function awardRoomPass(
   triggeredByKidId: string | null,
   opts: { eventType: string; emoji: string; label: string; points: number }
 ) {
-  const progressRow = await freshRoomProgress(roomId);
-  const today = todayStr();
-  const yesterday = yesterdayStr();
-
-  let current = progressRow?.current_streak || 0;
-  let best = progressRow?.best_streak || 0;
-  let totalPoints = progressRow?.total_points || 0;
-  let totalPasses = progressRow?.total_passes || 0;
-  let lastPassDate = progressRow?.last_pass_date ?? null;
-  let parentResult: string;
-  let awarded = 0;
-
-  if (lastPassDate === today) {
-    parentResult = `${opts.emoji} ${opts.label} Already counted for today.`;
-  } else {
-    current = lastPassDate === yesterday ? current + 1 : 1;
-    best = Math.max(best, current);
-    totalPasses += 1;
-    awarded = opts.points;
-    totalPoints += opts.points;
-    lastPassDate = today;
-    parentResult = `${opts.emoji} ${opts.label} ${current > 1 ? "Streak continued!" : "New streak started!"}`;
-  }
-
-  await db.from("family_room_progress").upsert({
-    room_id: roomId,
-    current_streak: current,
-    best_streak: best,
-    last_pass_date: lastPassDate,
-    parent_result: parentResult,
-    total_points: totalPoints,
-    total_passes: totalPasses,
-    updated_at: new Date().toISOString(),
+  // Same atomicity reasoning as awardBedroomPass - row-locked in Postgres
+  // instead of a separate read/decide/write from this function.
+  const { data, error } = await db.rpc("award_room_pass_atomic", {
+    p_room_id: roomId,
+    p_triggered_by_kid_id: triggeredByKidId,
+    p_event_type: opts.eventType,
+    p_emoji: opts.emoji,
+    p_label: opts.label,
+    p_points: opts.points,
   });
-
-  const { data: allItems } = await db.from("family_room_items").select("id").eq("room_id", roomId);
-  const roomTotal = allItems?.length || 0;
-  const { data: allState } = await db
-    .from("family_room_state")
-    .select("checked")
-    .in("item_id", (allItems || []).map((i) => i.id));
-  const done = (allState || []).filter((s) => s.checked).length;
-  await db.from("family_room_log").insert({
-    room_id: roomId,
-    kid_id: triggeredByKidId,
-    items_done: done,
-    items_total: roomTotal,
-    percent_complete: roomTotal ? Math.round((done / roomTotal) * 100) : 0,
-    event_type: opts.eventType,
-    parent_result: parentResult,
-    streak_at_time: current,
-  });
-
+  if (error) throw error;
+  const awarded = data?.awarded || 0;
   const progress = await freshRoomProgress(roomId);
   return { awarded, progress };
 }
@@ -733,27 +675,29 @@ Deno.serve(async (req) => {
           .upsert({ kid_id: session.kid_id, item_id: itemId, checked, updated_at: new Date().toISOString() });
 
         let pointsAwarded = 0;
-        let completionBonus = 0;
-        if (checked && !wasChecked) pointsAwarded += POINTS.ITEM_CHECK;
+        if (checked && !wasChecked) pointsAwarded = POINTS.ITEM_CHECK;
 
+        let bonusEligible = false;
         if (checked) {
           const { done, total } = await bedroomProgressCounts(session.family_id, session.kid_id);
-          if (total > 0 && done >= total) {
-            const streakRow = await freshStreak(session.kid_id);
-            if (streakRow?.last_bonus_date !== todayStr()) completionBonus = POINTS.DAY_COMPLETE_BONUS;
-          }
+          bonusEligible = total > 0 && done >= total;
         }
 
-        const delta = pointsAwarded + completionBonus;
-        if (delta > 0) {
-          const streakRow = await freshStreak(session.kid_id);
-          const patch: Record<string, unknown> = {
-            kid_id: session.kid_id,
-            total_points: (streakRow?.total_points || 0) + delta,
-            updated_at: new Date().toISOString(),
-          };
-          if (completionBonus > 0) patch.last_bonus_date = todayStr();
-          await db.from("kid_streaks").upsert(patch);
+        // The "was the once-per-day completion bonus already claimed?" check
+        // and the points write both happen inside apply_kid_points_delta_atomic's
+        // row lock, so two requests that both see bonusEligible = true (e.g.
+        // two different items completing the checklist in quick succession)
+        // can't both award the bonus - see that function's migration comment.
+        let completionBonus = 0;
+        if (pointsAwarded > 0 || bonusEligible) {
+          const { data, error } = await db.rpc("apply_kid_points_delta_atomic", {
+            p_kid_id: session.kid_id,
+            p_item_points: pointsAwarded,
+            p_bonus_points: POINTS.DAY_COMPLETE_BONUS,
+            p_bonus_eligible: bonusEligible,
+          });
+          if (error) throw error;
+          completionBonus = data?.completion_bonus || 0;
         }
 
         const streak = await freshStreak(session.kid_id);
@@ -894,6 +838,7 @@ Deno.serve(async (req) => {
           const threshold = Number(body.ai_score_auto_threshold);
           if (Number.isInteger(threshold) && threshold >= 1 && threshold <= 10) patch.ai_score_auto_threshold = threshold;
         }
+        if (typeof body.pin_protection_enabled === "boolean") patch.pin_protection_enabled = body.pin_protection_enabled;
         if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
         await db.from("families").update(patch).eq("id", session.family_id);
         return json({ ok: true });
@@ -1537,6 +1482,7 @@ Deno.serve(async (req) => {
         }
 
         if (itemAction === "delete") {
+          if (!(await requireRecentPinIfEnabled(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
           const { data: item } = await db
             .from("family_reward_categories")
             .select("id, is_bonus_spin")
@@ -1638,6 +1584,7 @@ Deno.serve(async (req) => {
         }
 
         if (itemAction === "delete") {
+          if (!(await requireRecentPinIfEnabled(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
           const { data: item } = await db
             .from("family_spin_reasons")
             .select("id, trigger_key")
@@ -1717,6 +1664,7 @@ Deno.serve(async (req) => {
       case "reset_reward_history": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        if (!(await requireRecentPinIfEnabled(session.family_id, body))) return json({ ok: false, error: "wrong_pin" }, 403);
         await db.from("kid_reward_log").delete().eq("family_id", session.family_id);
         return json({ ok: true });
       }
@@ -1734,8 +1682,11 @@ Deno.serve(async (req) => {
       case "get_family_auth_method": {
         const session = await getSession(body.token);
         if (!session) return json({ ok: false, error: "session_expired" }, 401);
-        const { data: family } = await db.from("families").select("parent_auth_method").eq("id", session.family_id).single();
-        return json({ ok: true, data: { method: family?.parent_auth_method || "pin" } });
+        const { data: family } = await db.from("families").select("parent_auth_method, pin_protection_enabled").eq("id", session.family_id).single();
+        return json({
+          ok: true,
+          data: { method: family?.parent_auth_method || "pin", pin_protection_enabled: family?.pin_protection_enabled !== false },
+        });
       }
 
       // Weekly/monthly earned-per-kid, all-time balance and top category -
@@ -1836,6 +1787,15 @@ Deno.serve(async (req) => {
       case "set_kid_verify_image": {
         const session = await getSession(body.token);
         if (!session || session.role !== "kid") return json({ ok: false, error: "session_expired" }, 401);
+        // Setting a new secret used to unconditionally clear
+        // verify_fail_count/verify_locked_until below - a kid locked out
+        // from wrong guesses on respond_to_trade could immediately pick a
+        // new secret to wipe the lockout and retry, defeating it entirely.
+        // Block changing the secret at all while locked, instead.
+        const { data: me } = await db.from("kids").select("verify_locked_until").eq("id", session.kid_id).single();
+        if (me?.verify_locked_until && new Date(me.verify_locked_until) > new Date()) {
+          return json({ ok: false, error: "locked", locked_until: me.verify_locked_until }, 403);
+        }
         const image = String(body.image || "");
         if (!VERIFY_IMAGE_POOL.includes(image)) return json({ ok: false, error: "bad_image" }, 400);
         await db.from("kids").update({ verify_image: image, verify_fail_count: 0, verify_locked_until: null }).eq("id", session.kid_id);
@@ -1957,6 +1917,24 @@ Deno.serve(async (req) => {
 
         await db.from("kids").update({ verify_fail_count: 0, verify_locked_until: null }).eq("id", session.kid_id);
 
+        // Claim the trade atomically BEFORE applying its side effects, not
+        // after. The .eq("status", "pending") guard means only one of two
+        // concurrent accepts can ever match this UPDATE's WHERE clause -
+        // the loser gets claimed === null and returns here, never reaching
+        // the reward-log inserts below. Doing the guarded update last (like
+        // submit_photo_score does) doesn't work for this action specifically,
+        // because the side effect lives on a different table (kid_reward_log)
+        // than the guarded row - a losing request would already have
+        // inserted its ledger rows before finding out it lost the race.
+        const { data: claimed } = await db
+          .from("kid_reward_trades")
+          .update({ status: "accepted", resolved_at: new Date().toISOString() })
+          .eq("id", trade.id)
+          .eq("status", "pending")
+          .select()
+          .maybeSingle();
+        if (!claimed) return json({ ok: false, error: "already_resolved" }, 409);
+
         const [{ data: fromKid }, { data: toKid }] = await Promise.all([
           db.from("kids").select("name").eq("id", trade.from_kid_id).single(),
           db.from("kids").select("name").eq("id", trade.to_kid_id).single(),
@@ -1969,7 +1947,6 @@ Deno.serve(async (req) => {
           { family_id: session.family_id, kid_id: trade.from_kid_id, category_id: trade.receive_category_id, delta: trade.receive_qty, note: `🔁 Traded from ${toKid?.name || "sibling"}` },
         ]);
 
-        await db.from("kid_reward_trades").update({ status: "accepted", resolved_at: new Date().toISOString() }).eq("id", trade.id);
         return json({ ok: true, data: { status: "accepted" } });
       }
 
@@ -2112,23 +2089,24 @@ Deno.serve(async (req) => {
         const doneCount = (allState || []).filter((s) => s.checked).length;
 
         let pointsAwarded = 0;
-        let completionBonus = 0;
-        if (checked && !wasChecked) pointsAwarded += POINTS.ITEM_CHECK;
-        if (checked && roomTotal > 0 && doneCount >= roomTotal) {
-          const progressRow = await freshRoomProgress(room.id);
-          if (progressRow?.last_bonus_date !== todayStr()) completionBonus = POINTS.DAY_COMPLETE_BONUS;
-        }
+        if (checked && !wasChecked) pointsAwarded = POINTS.ITEM_CHECK;
+        const bonusEligible = checked && roomTotal > 0 && doneCount >= roomTotal;
 
-        const delta = pointsAwarded + completionBonus;
-        if (delta > 0) {
-          const progressRow = await freshRoomProgress(room.id);
-          const patch: Record<string, unknown> = {
-            room_id: room.id,
-            total_points: (progressRow?.total_points || 0) + delta,
-            updated_at: new Date().toISOString(),
-          };
-          if (completionBonus > 0) patch.last_bonus_date = todayStr();
-          await db.from("family_room_progress").upsert(patch);
+        // Same reasoning as update_checklist_item - the once-per-day bonus
+        // check and the points write are both inside
+        // apply_room_points_delta_atomic's row lock, so two kids completing
+        // the last two items of a shared room at the same moment can't both
+        // claim the completion bonus.
+        let completionBonus = 0;
+        if (pointsAwarded > 0 || bonusEligible) {
+          const { data, error } = await db.rpc("apply_room_points_delta_atomic", {
+            p_room_id: room.id,
+            p_item_points: pointsAwarded,
+            p_bonus_points: POINTS.DAY_COMPLETE_BONUS,
+            p_bonus_eligible: bonusEligible,
+          });
+          if (error) throw error;
+          completionBonus = data?.completion_bonus || 0;
         }
 
         const progress = await freshRoomProgress(room.id);

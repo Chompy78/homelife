@@ -137,8 +137,16 @@ function kidColour(kidId) {
   return KID_PALETTE[idx % KID_PALETTE.length] || "#888";
 }
 
+// Local calendar date, not UTC - toISOString().slice(0,10) would return
+// yesterday's date for the first several hours of every local day in any
+// UTC+ timezone (this app targets Australia/Sydney), silently mis-dating
+// new log entries and corrupting the ahead/behind goal calculation below.
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 // Parsed as local midnight, not UTC - so date-range comparisons (holidays,
@@ -289,8 +297,16 @@ function renderSettings() {
 saveSettingsBtn.addEventListener("click", async () => {
   if (!selectedKidId) return;
   settingsSaved.classList.add("hidden");
-  saveSettingsBtn.disabled = true;
   const checkedDays = [...daysOfWeekChecks.querySelectorAll("input[type=checkbox]:checked")].map((cb) => Number(cb.value));
+  // An empty selection is indistinguishable from "never configured" (see
+  // renderSettings()/computeAheadBehind(), both treat a stored [] the same
+  // as null - "all 7 days") - saving it would silently revert to all 7 days
+  // on the next load instead of the "no days count" the parent just chose.
+  if (!checkedDays.length) {
+    showToast("Pick at least one day for the reading goal.", true);
+    return;
+  }
+  saveSettingsBtn.disabled = true;
   const res = await callApi("set_reading_settings", {
     token,
     kid_id: selectedKidId,
@@ -667,4 +683,8 @@ if (token) {
   enterApp();
 } else {
   gate.classList.remove("hidden");
+}
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./service-worker.js").catch(() => {});
 }

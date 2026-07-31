@@ -58,6 +58,15 @@ const verifyCancelBtn = document.getElementById("verifyCancelBtn");
 
 let token = null;
 let refreshTimer = null;
+// loadState() has three independent triggers (manual refresh, the 30s
+// interval, and an extra immediate call on visibilitychange) that can
+// overlap - without a sequence guard, an older request's response landing
+// after a newer one's would silently overwrite fresher state. Mirrors
+// reward-tracker's own loadStateSeq fix for the same bug class. A separate
+// counter for trade state specifically, since refreshTradeState() is also
+// called on its own (accept/decline/propose flows), independent of loadState().
+let loadStateSeq = 0;
+let tradeStateSeq = 0;
 let tradeState = { verify_image_set: false, verify_locked_until: null, siblings: [], categories: [], incoming_trades: [], outgoing_trades: [] };
 let selectedSiblingId = null;
 let pendingVerify = null; // { mode: "setup" | "accept", tradeId?: string }
@@ -115,11 +124,13 @@ document.addEventListener("visibilitychange", () => {
 });
 
 async function loadState() {
+  const seq = ++loadStateSeq;
   const [res, tradeRes, bigRewardsRes] = await Promise.all([
     callApi("get_kid_reward_state", { token }),
     refreshTradeState(),
     callApi("get_kid_big_rewards", { token }),
   ]);
+  if (seq !== loadStateSeq) return; // a newer loadState() has since started - drop this stale response
   if (!res.ok) {
     if (res.error === "session_expired") {
       localStorage.removeItem(TOKEN_KEY);
@@ -174,7 +185,7 @@ function render({ kid, categories, balances }) {
     ? withBalance
         .map(
           (c) =>
-            `<div class="categoryRow"><span><span class="catSwatch" style="background:${c.cat.color}"></span>${escapeHtml(c.cat.label)}</span><span>${c.balance}</span></div>`
+            `<div class="categoryRow"><span><span class="catSwatch" style="background:${escapeHtml(c.cat.color)}"></span>${escapeHtml(c.cat.label)}</span><span>${c.balance}</span></div>`
         )
         .join("")
     : `<p class="empty">Nothing yet - go earn some rewards!</p>`;
@@ -183,7 +194,9 @@ function render({ kid, categories, balances }) {
 // --- Trading with a sibling -----------------------------------------------
 
 async function refreshTradeState() {
+  const seq = ++tradeStateSeq;
   const res = await callApi("get_kid_trade_state", { token });
+  if (seq !== tradeStateSeq) return res; // a newer refreshTradeState() has since started - drop this stale response
   if (res.ok) {
     tradeState = res.data;
     const pendingCount = tradeState.incoming_trades.length;
@@ -268,6 +281,15 @@ function renderTradeList() {
 proposeTradeBtn.addEventListener("click", () => openProposeView());
 changeSecretLink.addEventListener("click", (e) => {
   e.preventDefault();
+  // Same lockout check as startAcceptFlow() - the server also blocks
+  // set_kid_verify_image while locked (it used to reset the lockout as a
+  // side effect of picking a new secret, letting a locked-out kid bypass it
+  // entirely), so this is just the matching client-side message instead of
+  // sending a request that's now guaranteed to fail.
+  if (tradeState.verify_locked_until && new Date(tradeState.verify_locked_until) > new Date()) {
+    showLockoutMessage(tradeState.verify_locked_until);
+    return;
+  }
   openVerifySetup(null);
 });
 tradeProposeBack.addEventListener("click", () => showTradeList());
@@ -445,9 +467,11 @@ function openVerifyAccept(tradeId) {
       showLockoutMessage(res.locked_until);
       return;
     }
-    if (res.error === "insufficient_balance") {
-      // Balances shifted since this trade was proposed (server already
-      // cancelled it) - just refresh so it drops off the pending list.
+    if (res.error === "insufficient_balance" || res.error === "already_resolved") {
+      // Either balances shifted since this trade was proposed (server
+      // already cancelled it), or a duplicate accept lost the race to
+      // claim it (e.g. a double-tap) and it's already accepted - either
+      // way just refresh so it drops off the pending list.
       verifyModal.classList.add("hidden");
       await refreshTradeState();
       renderTradeList();

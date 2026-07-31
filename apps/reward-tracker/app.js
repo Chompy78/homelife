@@ -8,7 +8,6 @@ import { showAppVersion } from "../shared/version.js";
 // origin (just a different path) and localStorage is scoped per-origin.
 const TOKEN_KEY = "homelife_parent_token";
 const DARK_MODE_KEY = "homelife_reward_dark_mode";
-const PIN_PROTECTION_KEY = "homelife_reward_pin_protection";
 const PIN_UNLOCK_MS = 5 * 60 * 1000;
 const UNDO_TOAST_MS = 5000;
 const SPIN_SOUND_KEY = "homelife_spin_sound"; // stores a preset name now, not "0"/"1" - see spinSoundPreset()
@@ -189,19 +188,29 @@ let tableEditMode = false; // View Mode is the default; Table view only
 let kidViewOnlyKidId = null; // set when opened via ?kid=name - Kid View then shows just that one card
 let parentAuthMethod = "pin"; // "pin" or "icons" - which the family has chosen, refreshed each loadState()
 let pinSelectedIcons = [];
+// Server-side truth (families.pin_protection_enabled), refreshed each
+// loadState() - this is what the edge function itself checks
+// (requireRecentPinIfEnabled), so the client must follow it, not a local
+// preference, or the two could disagree about whether a PIN is required.
+let familyPinProtectionEnabled = true;
 
 // --- PIN lock ------------------------------------------------------------
 // Gates deleting a category, deleting a spin reason, Reset, and leaving Kid
 // View. Spend and Earn taps are both unlocked (instant tap + Undo toast
 // replaced PIN-gating Spend - see D-2026-07-18-reward-tracker-instant-tap).
 // The unlock is in-memory only (not persisted), so it naturally resets on
-// reload as well as after 5 minutes.
+// reload as well as after 5 minutes. The exact pin/icons payload that
+// unlocked it is remembered too (lastVerifiedProof) so every protected
+// action can re-attach it to its own request - the edge function
+// independently re-verifies it every time (requireRecentPinIfEnabled),
+// rather than trusting that this modal was shown at all.
 
 let pinUnlockedUntil = 0;
 let pinResolve = null;
+let lastVerifiedProof = null;
 
 function pinProtectionOn() {
-  return localStorage.getItem(PIN_PROTECTION_KEY) !== "0"; // on by default
+  return familyPinProtectionEnabled;
 }
 
 // Migrates the old on/off boolean ("0"/"1") to a preset name - anything
@@ -224,9 +233,19 @@ function getSpinDurationSeconds() {
   return Math.min(SPIN_DURATION_MAX, Math.max(SPIN_DURATION_MIN, stored));
 }
 
+// `run` receives the proof to attach to its own callApi(...) call: {} when
+// PIN protection is off (server won't require anything), or the {pin: "..."}
+// / {icons: [...]} payload that most recently passed verify_pin - the
+// destructive action's own server-side check re-verifies this independently,
+// so it must actually be forwarded, not just used to decide whether to show
+// the modal.
 function requirePin(title, run) {
-  if (!pinProtectionOn() || Date.now() < pinUnlockedUntil) {
-    run();
+  if (!pinProtectionOn()) {
+    run({});
+    return;
+  }
+  if (Date.now() < pinUnlockedUntil && lastVerifiedProof) {
+    run(lastVerifiedProof);
     return;
   }
   const usingIcons = parentAuthMethod === "icons";
@@ -253,10 +272,11 @@ async function submitParentSecret(payload) {
   const res = await callApi("verify_pin", { token, ...payload });
   if (!res.ok) return false;
   pinUnlockedUntil = Date.now() + PIN_UNLOCK_MS;
+  lastVerifiedProof = payload;
   pinModal.classList.add("hidden");
   const run = pinResolve;
   pinResolve = null;
-  if (run) run();
+  if (run) run(payload);
   return true;
 }
 
@@ -435,7 +455,10 @@ async function loadState() {
   }
   state = stateRes.data;
   insights = insightsRes.ok ? insightsRes.data.insights : [];
-  if (authRes.ok) parentAuthMethod = authRes.data.method;
+  if (authRes.ok) {
+    parentAuthMethod = authRes.data.method;
+    familyPinProtectionEnabled = authRes.data.pin_protection_enabled !== false;
+  }
   bigRewards = bigRewardsRes.ok ? bigRewardsRes.data.big_rewards : [];
   if (!selectedKidId || !state.kids.some((k) => k.id === selectedKidId)) {
     selectedKidId = state.kids[0]?.id || null;
@@ -666,7 +689,7 @@ function renderWheel() {
     const item = document.createElement("span");
     item.className = "wheelLegendItem" + (cat.id === winningCategoryId ? " winning" : "");
     item.dataset.cat = cat.id;
-    item.innerHTML = `<span class="catSwatch" style="background:${cat.color}"></span>${escapeHtml(cat.label)}`;
+    item.innerHTML = `<span class="catSwatch" style="background:${escapeHtml(cat.color)}"></span>${escapeHtml(cat.label)}`;
     wheelLegend.appendChild(item);
   });
   spinBtn.disabled = !selectedKidId || spinning;
@@ -868,11 +891,11 @@ function renderTable() {
   }
   let html = "<thead><tr><th>Category</th>";
   state.kids.forEach((kid) => {
-    html += `<th style="color:${kidColour(kid.id)}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</th>`;
+    html += `<th style="color:${escapeHtml(kidColour(kid.id))}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</th>`;
   });
   html += "</tr></thead><tbody>";
   state.categories.forEach((cat) => {
-    html += `<tr><td><span class="catSwatch" style="background:${cat.color}"></span>${escapeHtml(cat.label)}</td>`;
+    html += `<tr><td><span class="catSwatch" style="background:${escapeHtml(cat.color)}"></span>${escapeHtml(cat.label)}</td>`;
     state.kids.forEach((kid) => {
       const cell = state.balances[kid.id]?.[cat.id] || { earned: 0, spent: 0, balance: 0 };
       // View Mode (default) shows just the number - Edit Mode adds the
@@ -919,7 +942,7 @@ function renderBarChart(title, key) {
       (b) => `
       <div class="barGroup">
         <div class="barValue">${b.value}</div>
-        <div class="bar" style="--kid-colour:${kidColour(b.kidId)};height:${Math.max(4, Math.round((b.value / max) * 100))}%"></div>
+        <div class="bar" style="--kid-colour:${escapeHtml(kidColour(b.kidId))};height:${Math.max(4, Math.round((b.value / max) * 100))}%"></div>
         <div class="barLabel">${b.avatar} ${escapeHtml(b.name)}</div>
       </div>`
     )
@@ -939,7 +962,7 @@ function renderInsights() {
       if (!kid) return "";
       return `
       <div class="insightsStatRow">
-        <div class="insightsStatKid" style="color:${kidColour(kid.id)}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</div>
+        <div class="insightsStatKid" style="color:${escapeHtml(kidColour(kid.id))}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</div>
         <div>
           <div class="insightsStatValue">${i.all_time_balance}</div>
           ${i.top_category ? `<div class="insightsTopCat">Top: ${escapeHtml(i.top_category.label)} (${i.top_category.amount})</div>` : ""}
@@ -990,8 +1013,8 @@ function renderHistory() {
     const sign = entry.delta > 0 ? "+" : "−";
     row.innerHTML = `
       <div class="historyMain">
-        <div class="historyLine1" style="color:${kid ? kidColour(kid.id) : "#888"}">${kid?.avatar_emoji || "⭐"} ${escapeHtml(kid?.name || "Unknown")}</div>
-        <div class="historyLine2"><span style="color:${cat?.color || "#888"};font-weight:700">${escapeHtml(cat?.label || "Unknown")}</span> ${sign}1 · ${formatWhen(entry.created_at)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</div>
+        <div class="historyLine1" style="color:${escapeHtml(kid ? kidColour(kid.id) : "#888")}">${kid?.avatar_emoji || "⭐"} ${escapeHtml(kid?.name || "Unknown")}</div>
+        <div class="historyLine2"><span style="color:${escapeHtml(cat?.color || "#888")};font-weight:700">${escapeHtml(cat?.label || "Unknown")}</span> ${sign}1 · ${formatWhen(entry.created_at)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</div>
       </div>
       <button type="button" class="undoBtn" data-log="${entry.id}">Undo</button>
     `;
@@ -1070,7 +1093,7 @@ function renderBigRewards() {
           .join("")
       : `<p class="empty">No big rewards yet.</p>`;
     card.innerHTML = `
-      <div class="bigRewardKidHeader" style="color:${kidColour(kid.id)}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</div>
+      <div class="bigRewardKidHeader" style="color:${escapeHtml(kidColour(kid.id))}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</div>
       ${itemsHtml}
     `;
     bigRewardsList.appendChild(card);
@@ -1371,7 +1394,7 @@ function renderCatList() {
       ? `<span class="catUnusedBadge" title="Landing on this category triggers the double-spin bonus - can't be deleted">🔒 Spin mechanic</span>`
       : `<button type="button" class="catDeleteBtn" data-id="${cat.id}">🗑</button>`;
     row.innerHTML = `
-      <input type="color" value="${cat.color}" data-id="${cat.id}" class="catColorInput" />
+      <input type="color" value="${escapeHtml(cat.color)}" data-id="${cat.id}" class="catColorInput" />
       <input type="text" value="${escapeHtml(cat.label)}" data-id="${cat.id}" class="catLabelInput" maxlength="60" />
       <select class="catWeightSelect" data-id="${cat.id}" title="Spin wheel odds - higher means more likely to land on this">
         ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}"${n === weight ? " selected" : ""}>${n}× spin odds</option>`).join("")}
@@ -1396,10 +1419,10 @@ function renderCatList() {
   });
   catList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      requirePin("PIN needed to delete a category", async () => {
+      requirePin("PIN needed to delete a category", async (proof) => {
         const ok = await askConfirm("Delete this category? Its history will also be removed.");
         if (!ok) return;
-        const res = await callApi("manage_reward_categories", { token, itemAction: "delete", item_id: btn.dataset.id });
+        const res = await callApi("manage_reward_categories", { token, itemAction: "delete", item_id: btn.dataset.id, ...proof });
         if (!res.ok) {
           showErrorToast("Couldn't delete that category - try again.");
           return;
@@ -1485,10 +1508,10 @@ function renderSpinReasonsManageList() {
   });
   spinReasonsManageList.querySelectorAll(".catDeleteBtn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      requirePin("PIN needed to delete a bonus spin reason", async () => {
+      requirePin("PIN needed to delete a bonus spin reason", async (proof) => {
         const ok = await askConfirm("Delete this bonus spin reason?");
         if (!ok) return;
-        const res = await callApi("manage_spin_reasons", { token, itemAction: "delete", item_id: btn.dataset.id });
+        const res = await callApi("manage_spin_reasons", { token, itemAction: "delete", item_id: btn.dataset.id, ...proof });
         if (!res.ok) {
           showErrorToast("Couldn't delete that reason - try again.");
           return;
@@ -1542,8 +1565,21 @@ settingsBtn.addEventListener("click", () => {
 });
 settingsModalClose.addEventListener("click", () => settingsModal.classList.add("hidden"));
 
-pinProtectionToggle.addEventListener("change", () => {
-  localStorage.setItem(PIN_PROTECTION_KEY, pinProtectionToggle.checked ? "1" : "0");
+// Family-wide (server-side), not per-device - the edge function itself
+// enforces this (requireRecentPinIfEnabled), so it has to be the same
+// source of truth the client reads via pinProtectionOn(), not a separate
+// local preference the two could disagree about.
+pinProtectionToggle.addEventListener("change", async () => {
+  const enabled = pinProtectionToggle.checked;
+  pinProtectionToggle.disabled = true;
+  const res = await callApi("update_family_settings", { token, pin_protection_enabled: enabled });
+  pinProtectionToggle.disabled = false;
+  if (!res.ok) {
+    pinProtectionToggle.checked = !enabled; // revert the visible toggle - the save failed
+    showErrorToast("Couldn't save that - try again.");
+    return;
+  }
+  familyPinProtectionEnabled = enabled;
 });
 
 spinSoundPresetSelect.addEventListener("change", () => {
@@ -1563,7 +1599,7 @@ function renderAvatarList() {
     row.innerHTML = `
       <div class="avatarCurrentBtn">${kid.avatar_emoji || "⭐"}</div>
       <div class="avatarRowName">${escapeHtml(kid.name)}</div>
-      <input type="color" class="kidColourInput" value="${kidColour(kid.id)}" data-kid="${kid.id}" title="${escapeHtml(kid.name)}'s colour" />
+      <input type="color" class="kidColourInput" value="${escapeHtml(kidColour(kid.id))}" data-kid="${kid.id}" title="${escapeHtml(kid.name)}'s colour" />
       <div class="avatarPicker" data-kid="${kid.id}"></div>
     `;
     row.querySelector(".kidColourInput").addEventListener("change", async (e) => {
@@ -1589,10 +1625,10 @@ function renderAvatarList() {
 }
 
 resetHistoryBtn.addEventListener("click", () => {
-  requirePin("PIN needed to reset", async () => {
+  requirePin("PIN needed to reset", async (proof) => {
     const ok = await askConfirm("Reset ALL reward history for every kid? Categories are kept. This can't be undone.");
     if (!ok) return;
-    await callApi("reset_reward_history", { token });
+    await callApi("reset_reward_history", { token, ...proof });
     await loadState();
   });
 });
@@ -1608,13 +1644,13 @@ function renderKidView() {
     card.className = "kidViewCard";
     card.innerHTML = `
       <div class="kidViewAvatar">${kid.avatar_emoji || "⭐"}</div>
-      <div class="kidViewName" style="color:${kidColour(kid.id)}">${escapeHtml(kid.name)}</div>
+      <div class="kidViewName" style="color:${escapeHtml(kidColour(kid.id))}">${escapeHtml(kid.name)}</div>
       <div class="kidViewBalance">${totalFor(kid.id)}</div>
       <div class="kidViewCategories">
         ${byCategory
           .map(
             (c) =>
-              `<div class="kidViewCatRow"><span><span class="catSwatch" style="background:${c.cat.color}"></span>${escapeHtml(c.cat.label)}</span><span>${c.balance}</span></div>`
+              `<div class="kidViewCatRow"><span><span class="catSwatch" style="background:${escapeHtml(c.cat.color)}"></span>${escapeHtml(c.cat.label)}</span><span>${c.balance}</span></div>`
           )
           .join("") || '<p class="empty">No activity yet.</p>'}
       </div>

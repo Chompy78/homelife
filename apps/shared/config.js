@@ -1,6 +1,18 @@
 export const SUPABASE_URL = "https://wumlrhswsyazbvmajhxg.supabase.co";
 export const FAMILY_API_URL = "https://wumlrhswsyazbvmajhxg.supabase.co/functions/v1/family-api";
 
+// Points are computed and returned server-side (supabase/functions/family-api/index.ts's
+// own POINTS constant is authoritative) - no client code reads this copy today.
+// It exists only so scripts/compare-points.js has something to diff against,
+// per AGENTS.md's "keep POINTS in sync" convention. Keep these two literally
+// identical whenever either changes.
+export const POINTS = {
+  ITEM_CHECK: 2,
+  DAY_COMPLETE_BONUS: 10,
+  PARENT_PASS: 20,
+  PARENT_GREAT_JOB: 35,
+};
+
 // Kid identity and the family's confirmation PIN are no longer known to the
 // client at all - they live behind a parent_code / kid_code redeemed through
 // the family-api edge function, which is the only thing with access to the

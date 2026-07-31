@@ -4,13 +4,19 @@ import { compressImage } from "../shared/image.js";
 import { askConfirm } from "../shared/confirm.js";
 import { openLightbox } from "../shared/lightbox.js";
 import { showAppVersion } from "../shared/version.js";
+import { escapeHtml } from "../shared/escape.js";
 
 const DEVICE_TOKEN_KEY = "homelife_kid_token";
 const DEVICE_NAME_KEY = "homelife_kid_name";
 const DEVICE_AVATAR_KEY = "homelife_kid_avatar";
 const CHECKLIST_KEY_PREFIX = "bedroom-reset-checklist-v8:";
 const STREAK_CACHE_KEY_PREFIX = "bedroom-reset-streak-cache-v7:";
-const BEDROOM_ITEMS_CACHE_KEY = "bedroom-reset-items-cache-v1";
+// Scoped by token via roomStorageKey() (bumped to v2, was a single unscoped
+// global key) - unscoped, it could render one family's cached checklist item
+// labels onto a different family's device for a moment on a shared tablet,
+// the same bug CHECKLIST_KEY_PREFIX/STREAK_CACHE_KEY_PREFIX were already
+// fixed for above.
+const BEDROOM_ITEMS_CACHE_KEY_PREFIX = "bedroom-reset-items-cache-v2:";
 
 // Same fixed 9-icon set the backend validates against - an alternative to
 // the 4-digit PIN a family can choose instead (set up in Parent Dashboard).
@@ -190,7 +196,7 @@ function renderRoomSwitcher() {
     const pill = document.createElement("button");
     pill.type = "button";
     pill.className = "roomPill" + (r.type === activeRoom.type && r.id === activeRoom.id ? " active" : "");
-    pill.innerHTML = `<span class="roomPillIcon">${r.icon}</span><span>${r.name}</span>`;
+    pill.innerHTML = `<span class="roomPillIcon">${escapeHtml(r.icon)}</span><span>${escapeHtml(r.name)}</span>`;
     pill.addEventListener("click", () => {
       if (r.type === activeRoom.type && r.id === activeRoom.id) return;
       switchRoom(r);
@@ -241,13 +247,13 @@ function renderChecklist() {
     const section = document.createElement("section");
     section.className = "category";
     const h2 = document.createElement("h2");
-    h2.innerHTML = `${cat.category} <span class="catBadge"></span>`;
+    h2.innerHTML = `${escapeHtml(cat.category)} <span class="catBadge"></span>`;
     section.appendChild(h2);
     catBadgeEls.push(h2.querySelector(".catBadge"));
     cat.items.forEach((item) => {
       const label = document.createElement("label");
       label.className = "item";
-      label.innerHTML = `<input type="checkbox" data-id="${item.id}"><span class="itemText">${item.label}</span>`;
+      label.innerHTML = `<input type="checkbox" data-id="${item.id}"><span class="itemText">${escapeHtml(item.label)}</span>`;
       section.appendChild(label);
     });
     checklistEl.appendChild(section);
@@ -395,7 +401,7 @@ async function fetchAndReconcile() {
   // A bedroom's item definitions/state map live under different field names
   // than a shared room's (see progressOf() for the same split on streak data).
   activeRoom.items = (isBedroom ? res.data.bedroom_items : res.data.items) || [];
-  if (isBedroom) localStorage.setItem(BEDROOM_ITEMS_CACHE_KEY, JSON.stringify(activeRoom.items));
+  if (isBedroom) localStorage.setItem(roomStorageKey(BEDROOM_ITEMS_CACHE_KEY_PREFIX), JSON.stringify(activeRoom.items));
   renderChecklist();
   loadLocalChecklist();
   const stateMap = Object.fromEntries(((isBedroom ? res.data.items : res.data.state) || []).map((s) => [s.item_id, s.checked]));
@@ -487,28 +493,36 @@ function applyStreak(streak, { celebrate = true } = {}) {
   saveLocalStreakCache();
   const level = levelForPoints(streak.total_points || 0);
   const leveledUp = celebrate && level.level > lastKnownLevel;
-  if (leveledUp) {
-    showToast("🎉", `Level up! You're now a ${level.title}`, 3200);
-    confettiBurst(36);
-  }
   lastKnownLevel = level.level;
   updateProgress();
   updateLevelUI();
   const earnedIds = updateBadgesUI();
-  // Only one celebration per update - a level-up already earned its confetti
-  // above, so a badge unlocked in the very same tick doesn't pile a second
-  // burst on top of it.
-  let badgeEarned = false;
-  if (celebrate && !leveledUp && knownBadgeIds) {
-    const newBadge = BADGES.find((b) => earnedIds.has(b.id) && !knownBadgeIds.has(b.id));
-    if (newBadge) {
-      showToast(newBadge.emoji, `Badge earned: ${newBadge.label}!`, 3200);
-      confettiBurst(30);
-      badgeEarned = true;
-    }
-  }
+  const newBadges = celebrate && knownBadgeIds ? BADGES.filter((b) => earnedIds.has(b.id) && !knownBadgeIds.has(b.id)) : [];
   knownBadgeIds = earnedIds;
-  return leveledUp || badgeEarned;
+
+  // showToast has a single slot (a second call overwrites the first, mid-
+  // animation) - so celebrations are queued and staggered instead of fired
+  // simultaneously. A badge unlocked in the very same tick as a level-up
+  // (e.g. the "level-5" badge, which by construction always lands the same
+  // update as reaching Level 5) used to be silently dropped here - folded
+  // into knownBadgeIds without ever toasting - instead of shown after the
+  // level-up toast. Same fix covers two ordinary badges unlocking at once.
+  const celebrations = [];
+  if (leveledUp) {
+    celebrations.push(() => {
+      showToast("🎉", `Level up! You're now a ${level.title}`, 3200);
+      confettiBurst(36);
+    });
+  }
+  newBadges.forEach((b) => {
+    celebrations.push(() => {
+      showToast(b.emoji, `Badge earned: ${b.label}!`, 3200);
+      confettiBurst(30);
+    });
+  });
+  celebrations.forEach((fire, i) => setTimeout(fire, i * 3600));
+
+  return celebrations.length > 0;
 }
 
 function updateLevelUI() {
@@ -984,7 +998,7 @@ function wireParentCheckButton(button, eventType, title, emoji, verb, confettiCo
       if (res.ok) {
         const alreadyCelebrated = applyStreak(progressOf(res.data));
         if (!alreadyCelebrated && res.data.awarded_points > 0) {
-          showToast(emoji, `${verb} ++${res.data.awarded_points} points`);
+          showToast(emoji, `${verb} +${res.data.awarded_points} points`);
           confettiBurst(confettiCount);
         }
         updateEverything();
@@ -1052,7 +1066,7 @@ function bootRoom() {
   loadLocalStreakCache();
   renderSyncStatus();
   if (activeRoom.type === "bedroom") {
-    activeRoom.items = JSON.parse(localStorage.getItem(BEDROOM_ITEMS_CACHE_KEY) || "[]");
+    activeRoom.items = JSON.parse(localStorage.getItem(roomStorageKey(BEDROOM_ITEMS_CACHE_KEY_PREFIX)) || "[]");
     renderChecklist();
     loadLocalChecklist();
     updateEverything();

@@ -13,7 +13,10 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 **Summary:** Server-side "today" date computation (3 column DEFAULTs plus `todayStr()`) was UTC, and
   the DEFAULTs were even hardcoded to the wrong city (`Australia/Sydney`) for a Perth-based family.
   Fixed all go-forward date logic (column defaults, `todayStr()`, all 4 atomic functions' day-boundary
-  check) to use `Australia/Perth`; deliberately left already-stored historical date values unchanged.
+  check) to use `Australia/Perth`. Same-day follow-up: audited every date column across all 6 real
+  families and corrected the only 2 rows actually wrong (a single mis-dated Gallaghers event); every
+  streak field was already correct by coincidence, and legitimate parent-entered reading dates were
+  left untouched.
 
 **Record:** decisions/2026/D-2026-08-01-day-boundary-timezone-perth.md
 

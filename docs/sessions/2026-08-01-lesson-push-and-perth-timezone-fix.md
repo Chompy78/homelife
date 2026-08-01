@@ -1,9 +1,10 @@
-# 2026-08-01 — Push the cross-project lesson, fix the Perth timezone bug
+# 2026-08-01 — Push the cross-project lesson, fix the Perth timezone bug, correct history
 
 **Focus:** Two follow-ups carried over from closing out the 2026-07-31 full-repo review session:
 actually push the drafted cross-project lesson (not just draft it), and actually fix the UTC/timezone
 day-boundary bug found during that close-out (using Australia/Perth, the family's real timezone),
-rather than just logging it as a future task.
+rather than just logging it as a future task. Then a same-day follow-up: the user asked to also
+correct the historical data that had been left alone in the initial fix.
 
 ## Timeline
 
@@ -29,17 +30,31 @@ rather than just logging it as a future task.
   all returned the correct current Perth-local date with no errors. Cleaned up the test family;
   cascade delete left no orphaned rows.
 - Deliberately did not rewrite already-stored historical date values under the old (UTC/Sydney)
-  assumption - only the go-forward computation logic. Documented as a scope decision in
-  `D-2026-08-01-day-boundary-timezone-perth`; flagged to the user in case historical correction is
+  assumption at first - only the go-forward computation logic. Documented as a scope decision in
+  `D-2026-08-01-day-boundary-timezone-perth`; flagged to the user in case historical correction was
   actually wanted as a separate follow-up.
 - Also carried forward and committed the `docs/sessions/2026-07-31-full-repo-code-review-and-fixes.md`
   edit from the prior session's close-out, which had been left uncommitted after a permission denial
   on a direct `git commit` attempt during that session.
+- User confirmed they did want the historical data corrected too. Audited every `date`-typed column
+  with a `now()`-derived DEFAULT (confirmed exactly 3 exist: `family_room_log.log_date`,
+  `kid_reading_books.started_date`, `kid_progress_log.log_date`) across all 6 real families, comparing
+  each row's stored date against the Perth-local date of its own `created_at` instant. Found: zero
+  wrongly-defaulted rows in the reading-tracker tables (differences there are legitimate
+  parent-entered backfill dates, left alone); every `kid_streaks`/`family_room_progress` streak field
+  already correct by coincidence (no real pass/bonus event happened to land in the UTC/Perth
+  day-boundary drift window); and exactly 2 rows genuinely wrong - the same real-world event (a
+  Gallaghers `parent_pass` on 2026-07-13) double-logged under the old `Australia/Sydney` default as
+  the 14th in both `kid_progress_log` and `family_room_log`. Corrected both via migration
+  `correct_historical_sydney_default_dates_to_perth`, scoped by exact row id + expected old value.
+  Verified zero remaining mismatches afterward. Full audit trail in the decision record's follow-up
+  section.
 
 ## Files touched
 
 - `supabase/functions/family-api/index.ts` - `todayStr()` rewritten for Perth, redeployed (v40)
-- Supabase migration: `fix_day_boundary_timezone_to_perth`
+- Supabase migrations: `fix_day_boundary_timezone_to_perth`,
+  `correct_historical_sydney_default_dates_to_perth`
 - `CHANGELOG.md`, `DECISIONS.md`, `decisions/2026/D-2026-08-01-day-boundary-timezone-perth.md`
 - `docs/sessions/2026-07-31-full-repo-code-review-and-fixes.md` - carried-forward commit from the
   prior session's close-out
@@ -52,6 +67,5 @@ rather than just logging it as a future task.
 
 ## Carried forward
 
-- Historical stored date values computed before this fix (under UTC or `Australia/Sydney`) were not
-  retroactively corrected - see the decision record's Why. Revisit only if the user explicitly wants
-  that data corrected too.
+- Nothing open - the historical-data question raised during A2 was resolved same-day once the user
+  confirmed they wanted it corrected (see Timeline above).

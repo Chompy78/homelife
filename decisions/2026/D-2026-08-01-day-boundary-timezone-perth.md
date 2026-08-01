@@ -62,3 +62,47 @@ Changes made:
 **Status:** Done. Historical stored date values from before this fix were deliberately left
 unmodified - see Why above. If the user later wants those corrected too, that's a separate, explicit
 follow-up, not assumed here.
+
+## Follow-up: historical correction (2026-08-01, same day)
+
+The user explicitly asked to correct the historical data too, closing the option left open above.
+
+**Audit method:** every `date`-typed column in the schema with a `now()`-derived DEFAULT was
+identified via `information_schema.columns` (confirmed exactly 3: `family_room_log.log_date`,
+`kid_reading_books.started_date`, `kid_progress_log.log_date` - no others exist). For each, every row
+across all 6 real families (test families excluded by name prefix) was compared against the Perth-local
+date of that row's own `created_at` (a `timestamptz`, unaffected by the app-logic bug - it's always the
+real UTC instant). A row was only a correction candidate if its stored date was auto-defaulted, not
+user-entered - `kid_reading_books.started_date`/`kid_reading_log.log_date` can be explicitly supplied by
+a parent, so those were additionally checked against the *old buggy default's* output (UTC-date-of-
+`created_at`, the value the bug would actually have produced) before touching anything, to avoid
+overwriting a parent's intentionally-backfilled date that merely happens to differ from Perth-today.
+
+`kid_streaks.last_pass_date`/`last_bonus_date` and `family_room_progress`'s equivalents don't have
+their own `created_at` (single row per kid/room, updated in place), so were checked by confirming they
+already matched the corresponding (corrected) progress-log event's Perth date - i.e. derived from the
+same real-world instant, not independently recomputed.
+
+**Findings:**
+- `kid_reading_books`, `kid_reading_log`: zero defaulted-and-wrong rows. The few rows that differ from
+  today's Perth-date logic are legitimate parent-entered historical dates (backfilled log entries) -
+  left untouched, correcting them would have overwritten real data with a wrong guess.
+- `kid_streaks`, `family_room_progress`: every stored `last_pass_date`/`last_bonus_date` across all 6
+  real families was already correct - by coincidence, every actual pass/bonus event in production
+  history happened at a UTC instant where the UTC calendar date and the Perth calendar date were the
+  same (none landed in the UTC 16:00-23:59 window where Perth is already the next day). Nothing to
+  correct.
+- `kid_progress_log`, `family_room_log`: exactly 2 rows total needed correction, both the *same*
+  real-world event for The Gallaghers (`kid_progress_log` id 15, `family_room_log` id 4) - a
+  `parent_pass` logged at `2026-07-13 15:39:00 UTC`. Under the old `Australia/Sydney` column default
+  that was in effect at the time, `15:39 UTC + 10h (AEST) = 01:39 on 2026-07-14 Sydney` → wrongly
+  stored as `2026-07-14`. Correct Perth date: `15:39 UTC + 8h = 23:39 on 2026-07-13` → `2026-07-13`.
+
+**Correction applied:** migration `correct_historical_sydney_default_dates_to_perth` - two `UPDATE`
+statements, each scoped by exact row `id` *and* the expected old value (`log_date = '2026-07-14'`) so
+it's a safe no-op if re-run. Verified post-migration: both rows now read `2026-07-13`, and a repeat of
+the full mismatch-detection query across both tables returns zero remaining mismatches for all 6 real
+families.
+
+No `kid_streaks`/`family_room_progress` row needed a corresponding change (see Findings above), so
+`current_streak`/`best_streak` were never at risk of being thrown out of sync by this correction.

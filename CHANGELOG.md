@@ -8,13 +8,21 @@ on `TASK_BOARD.md`.
 
 ## 2026-08-01
 
+- Corrected the 2 historical rows actually affected by the timezone bug below: audited every
+  date-bearing column across all 6 real families against each row's own `created_at` instant, and
+  found exactly one real-world event (a Gallaghers `parent_pass` on 2026-07-13) had been double-logged
+  under the old `Australia/Sydney` default as the wrong calendar day in both `kid_progress_log` and
+  `family_room_log`. Fixed both (migration `correct_historical_sydney_default_dates_to_perth`).
+  Everything else needed no change: every `kid_streaks`/`family_room_progress` streak field was
+  already correct by coincidence (no real pass event landed in the UTC/Perth drift window), and
+  reading-tracker's differing dates are legitimate parent-entered backfills, left untouched. See the
+  follow-up section of `D-2026-08-01-day-boundary-timezone-perth`.
 - Fixed a day-boundary timezone bug in `family-api`: server-side "today" date logic (3 column
   DEFAULTs, `todayStr()`, and all 4 atomic points/streak functions added the day before) was UTC, and
   the column DEFAULTs were even hardcoded to `Australia/Sydney` - the wrong city for this Perth-based
   family. Fixed all of it to use `Australia/Perth` (migration `fix_day_boundary_timezone_to_perth`,
   `todayStr()` rewritten with `Intl.DateTimeFormat`), redeployed `family-api` (v40, verified
-  byte-identical to the local source), and live-smoke-tested against a disposable test family.
-  Historical stored dates were deliberately left unmodified - see
+  byte-identical to the local source), and live-smoke-tested against a disposable test family. See
   `D-2026-08-01-day-boundary-timezone-perth`.
 - Pushed a cross-project lesson to `ai-lessons-learned` (`grep-the-mechanism-not-field-names`)
   distilled from the 2026-07-31 review's own follow-up misses: sweeping for a recurring bug pattern

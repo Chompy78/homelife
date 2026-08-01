@@ -233,7 +233,7 @@ function renderKidPicker() {
     const btn = document.createElement("button");
     btn.className = "kidChip" + (kid.id === selectedKidId ? " selected" : "");
     btn.style.setProperty("--kid-colour", kidColour(kid.id));
-    btn.innerHTML = `<span class="kidChipAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span>`;
+    btn.innerHTML = `<span class="kidChipAvatar">${escapeHtml(kid.avatar_emoji || "⭐")}</span><span>${escapeHtml(kid.name)}</span>`;
     btn.addEventListener("click", () => {
       selectedKidId = kid.id;
       expandedBookIds = new Set();

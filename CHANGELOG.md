@@ -8,6 +8,15 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-31
 
+- Swept the whole repo for the same missing-`escapeHtml()` pattern one more time: `reading-tracker`'s
+  kid picker had unescaped `avatar_emoji` (same fix as reward-tracker's follow-up below), and
+  `parent-dashboard`'s AI-score displays (`aiScoreLineHtml`, the AI history modal) rendered the
+  vision model's `comment`/`rejection_reason` text unescaped into `innerHTML` - a lower-probability
+  vector (would need a prompt-injected model response, not direct user input) but fixed for
+  consistency with every other field. Re-verified every other app (bedroom-reset, my-rewards,
+  leaderboard) line by line - everything else already goes through `escapeHtml()`, `.textContent`,
+  or is server-validated/hardcoded data (badge/level titles, signed photo URLs, weekday labels).
+  Bumped `reading-tracker` service worker to v6, `parent-dashboard` to v9.
 - Follow-up to the review below: `apps/reward-tracker/app.js` also had unescaped `kid.avatar_emoji`
   at ~10 more `innerHTML` sites (kid chips, active-kid banner, spin-kid picker, table headers,
   insights bars/stats, history rows, big-reward headers, undo toast, avatar settings row, Kid

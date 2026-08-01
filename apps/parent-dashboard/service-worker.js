@@ -1,4 +1,4 @@
-const CACHE_NAME = "parent-dashboard-pwa-v8";
+const CACHE_NAME = "parent-dashboard-pwa-v9";
 const ASSETS = [
   "./",
   "./index.html",

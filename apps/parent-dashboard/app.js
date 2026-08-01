@@ -132,9 +132,9 @@ function aiScoreLineHtml(aiScore) {
   if (!aiScore) return "";
   if (aiScore.status === "pending") return `<div class="aiScoreLine">🤖 Waiting for AI score...</div>`;
   if (aiScore.status === "failed") {
-    return `<div class="aiScoreLine aiScoreLineRejected">${aiScoreThumbHtml(aiScore.photo_url)}<span>🤔 Not scored${aiScore.rejection_reason ? ` - ${aiScore.rejection_reason}` : ""}</span></div>`;
+    return `<div class="aiScoreLine aiScoreLineRejected">${aiScoreThumbHtml(aiScore.photo_url)}<span>🤔 Not scored${aiScore.rejection_reason ? ` - ${escapeHtml(aiScore.rejection_reason)}` : ""}</span></div>`;
   }
-  return `<div class="aiScoreLine">${aiScoreThumbHtml(aiScore.photo_url)}<span>🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${aiScore.comment}` : ""}</span></div>`;
+  return `<div class="aiScoreLine">${aiScoreThumbHtml(aiScore.photo_url)}<span>🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${escapeHtml(aiScore.comment)}` : ""}</span></div>`;
 }
 
 function aiScoreButtonHtml(aiScoreMode) {
@@ -397,7 +397,7 @@ function renderAiHistoryList() {
   aiHistoryList.innerHTML = rows
     .map((row) => {
       const badge = (AI_HISTORY_LABELS[row.status] || (() => ""))(row);
-      const detail = row.status === "scored" ? row.comment || "" : row.rejection_reason || "";
+      const detail = escapeHtml(row.status === "scored" ? row.comment || "" : row.rejection_reason || "");
       return `<div class="aiHistoryRow"><span class="aiHistoryThumbSlot">${aiScoreThumbHtml(row.photo_url)}</span>${badge}<span class="aiHistoryDetail">${detail}</span><span class="aiHistoryWhen">${formatWhenFull(row.created_at)}</span></div>`;
     })
     .join("");

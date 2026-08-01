@@ -8,6 +8,11 @@ on `TASK_BOARD.md`.
 
 ## 2026-07-31
 
+- Follow-up to the review below: `apps/reward-tracker/app.js` also had unescaped `kid.avatar_emoji`
+  at ~10 more `innerHTML` sites (kid chips, active-kid banner, spin-kid picker, table headers,
+  insights bars/stats, history rows, big-reward headers, undo toast, avatar settings row, Kid
+  View) - noticed while fixing the color-escaping finding but out of scope at the time, now fixed
+  too. Bumped `reward-tracker` service worker to v21.
 - Ran a full-repo code review (5 parallel passes covering `family-api`, reward-tracker/my-rewards,
   bedroom-reset/leaderboard, reading-tracker/parent-dashboard, and shared helpers/infra) and fixed
   all 17 confirmed findings:

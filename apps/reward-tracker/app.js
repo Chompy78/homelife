@@ -510,7 +510,7 @@ function renderKidPicker() {
     const btn = document.createElement("button");
     btn.className = "kidChip" + (kid.id === selectedKidId ? " selected" : "");
     btn.style.setProperty("--kid-colour", kidColour(kid.id));
-    btn.innerHTML = `<span class="kidChipAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span>`;
+    btn.innerHTML = `<span class="kidChipAvatar">${escapeHtml(kid.avatar_emoji || "⭐")}</span><span>${escapeHtml(kid.name)}</span>`;
     btn.addEventListener("click", () => {
       selectedKidId = kid.id;
       renderAll();
@@ -560,7 +560,7 @@ function renderActiveKidBanner() {
   activeKidBanner.classList.toggle("hidden", !kid || (mode !== "quick" && mode !== "spin"));
   if (!kid) return;
   const verb = mode === "spin" ? "Spinning for" : "Now tapping rewards for";
-  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${kid.avatar_emoji || "⭐"}</span> ${verb} <strong>${escapeHtml(kid.name)}</strong>`;
+  activeKidBanner.innerHTML = `<span class="activeKidAvatar">${escapeHtml(kid.avatar_emoji || "⭐")}</span> ${verb} <strong>${escapeHtml(kid.name)}</strong>`;
 }
 
 // Each row has its own +/- so a tap is one click instead of toggling an
@@ -710,7 +710,7 @@ function renderSpinKidGrid() {
     btn.type = "button";
     btn.className = "spinKidBtn" + (kid.id === selectedKidId ? " selected" : "");
     btn.style.setProperty("--kid-colour", kidColour(kid.id));
-    btn.innerHTML = `<span class="spinKidAvatar">${kid.avatar_emoji || "⭐"}</span><span>${escapeHtml(kid.name)}</span>`;
+    btn.innerHTML = `<span class="spinKidAvatar">${escapeHtml(kid.avatar_emoji || "⭐")}</span><span>${escapeHtml(kid.name)}</span>`;
     btn.addEventListener("click", () => {
       spinKidModal.classList.add("hidden");
       if (spinKidResolve) spinKidResolve(kid.id);
@@ -891,7 +891,7 @@ function renderTable() {
   }
   let html = "<thead><tr><th>Category</th>";
   state.kids.forEach((kid) => {
-    html += `<th style="color:${escapeHtml(kidColour(kid.id))}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</th>`;
+    html += `<th style="color:${escapeHtml(kidColour(kid.id))}">${escapeHtml(kid.avatar_emoji || "⭐")} ${escapeHtml(kid.name)}</th>`;
   });
   html += "</tr></thead><tbody>";
   state.categories.forEach((cat) => {
@@ -943,7 +943,7 @@ function renderBarChart(title, key) {
       <div class="barGroup">
         <div class="barValue">${b.value}</div>
         <div class="bar" style="--kid-colour:${escapeHtml(kidColour(b.kidId))};height:${Math.max(4, Math.round((b.value / max) * 100))}%"></div>
-        <div class="barLabel">${b.avatar} ${escapeHtml(b.name)}</div>
+        <div class="barLabel">${escapeHtml(b.avatar)} ${escapeHtml(b.name)}</div>
       </div>`
     )
     .join("");
@@ -962,7 +962,7 @@ function renderInsights() {
       if (!kid) return "";
       return `
       <div class="insightsStatRow">
-        <div class="insightsStatKid" style="color:${escapeHtml(kidColour(kid.id))}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</div>
+        <div class="insightsStatKid" style="color:${escapeHtml(kidColour(kid.id))}">${escapeHtml(kid.avatar_emoji || "⭐")} ${escapeHtml(kid.name)}</div>
         <div>
           <div class="insightsStatValue">${i.all_time_balance}</div>
           ${i.top_category ? `<div class="insightsTopCat">Top: ${escapeHtml(i.top_category.label)} (${i.top_category.amount})</div>` : ""}
@@ -1013,7 +1013,7 @@ function renderHistory() {
     const sign = entry.delta > 0 ? "+" : "−";
     row.innerHTML = `
       <div class="historyMain">
-        <div class="historyLine1" style="color:${escapeHtml(kid ? kidColour(kid.id) : "#888")}">${kid?.avatar_emoji || "⭐"} ${escapeHtml(kid?.name || "Unknown")}</div>
+        <div class="historyLine1" style="color:${escapeHtml(kid ? kidColour(kid.id) : "#888")}">${escapeHtml(kid?.avatar_emoji || "⭐")} ${escapeHtml(kid?.name || "Unknown")}</div>
         <div class="historyLine2"><span style="color:${escapeHtml(cat?.color || "#888")};font-weight:700">${escapeHtml(cat?.label || "Unknown")}</span> ${sign}1 · ${formatWhen(entry.created_at)}${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}</div>
       </div>
       <button type="button" class="undoBtn" data-log="${entry.id}">Undo</button>
@@ -1093,7 +1093,7 @@ function renderBigRewards() {
           .join("")
       : `<p class="empty">No big rewards yet.</p>`;
     card.innerHTML = `
-      <div class="bigRewardKidHeader" style="color:${escapeHtml(kidColour(kid.id))}">${kid.avatar_emoji || "⭐"} ${escapeHtml(kid.name)}</div>
+      <div class="bigRewardKidHeader" style="color:${escapeHtml(kidColour(kid.id))}">${escapeHtml(kid.avatar_emoji || "⭐")} ${escapeHtml(kid.name)}</div>
       ${itemsHtml}
     `;
     bigRewardsList.appendChild(card);
@@ -1323,7 +1323,7 @@ function showUndoToast(entry, kidId, categoryId, type) {
   toast.className = "toast";
   toast.innerHTML = `
     <div>
-      <div>${kidAvatar(kidId)} ${escapeHtml(kidName(kidId))} ${sign} ${escapeHtml(categoryLabel(categoryId))}</div>
+      <div>${escapeHtml(kidAvatar(kidId))} ${escapeHtml(kidName(kidId))} ${sign} ${escapeHtml(categoryLabel(categoryId))}</div>
       <div class="toastBar"></div>
     </div>
     <button type="button" class="toastUndoBtn">Undo</button>
@@ -1597,7 +1597,7 @@ function renderAvatarList() {
     const row = document.createElement("div");
     row.className = "avatarRow";
     row.innerHTML = `
-      <div class="avatarCurrentBtn">${kid.avatar_emoji || "⭐"}</div>
+      <div class="avatarCurrentBtn">${escapeHtml(kid.avatar_emoji || "⭐")}</div>
       <div class="avatarRowName">${escapeHtml(kid.name)}</div>
       <input type="color" class="kidColourInput" value="${escapeHtml(kidColour(kid.id))}" data-kid="${kid.id}" title="${escapeHtml(kid.name)}'s colour" />
       <div class="avatarPicker" data-kid="${kid.id}"></div>
@@ -1643,7 +1643,7 @@ function renderKidView() {
     const card = document.createElement("div");
     card.className = "kidViewCard";
     card.innerHTML = `
-      <div class="kidViewAvatar">${kid.avatar_emoji || "⭐"}</div>
+      <div class="kidViewAvatar">${escapeHtml(kid.avatar_emoji || "⭐")}</div>
       <div class="kidViewName" style="color:${escapeHtml(kidColour(kid.id))}">${escapeHtml(kid.name)}</div>
       <div class="kidViewBalance">${totalFor(kid.id)}</div>
       <div class="kidViewCategories">

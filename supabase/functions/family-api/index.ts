@@ -165,8 +165,20 @@ function randomToken() {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// The family is in Perth (Australia/Perth, UTC+8, no daylight saving) - not UTC. Used for
+// reading-tracker date defaults (start_book/finish_book/log_reading_pages). Built via
+// Intl.DateTimeFormat rather than a fixed UTC+8 offset so it stays correct if Perth's offset
+// ever changes, matching the timezone now used consistently across this file's date-default
+// columns and the atomic RPCs (see D-2026-08-01-day-boundary-timezone-perth).
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Australia/Perth",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const map = Object.fromEntries(parts.map((p) => [p.type, p.value]));
+  return `${map.year}-${map.month}-${map.day}`;
 }
 
 const CORS_HEADERS = {

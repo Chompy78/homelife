@@ -6,6 +6,17 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-01-day-boundary-timezone-perth
+
+**Status:** Done
+
+**Summary:** Server-side "today" date computation (3 column DEFAULTs plus `todayStr()`) was UTC, and
+  the DEFAULTs were even hardcoded to the wrong city (`Australia/Sydney`) for a Perth-based family.
+  Fixed all go-forward date logic (column defaults, `todayStr()`, all 4 atomic functions' day-boundary
+  check) to use `Australia/Perth`; deliberately left already-stored historical date values unchanged.
+
+**Record:** decisions/2026/D-2026-08-01-day-boundary-timezone-perth.md
+
 ## D-2026-07-31-atomic-points-streak-updates
 
 **Status:** Done

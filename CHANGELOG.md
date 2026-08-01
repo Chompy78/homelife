@@ -6,6 +6,21 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-08-01
+
+- Fixed a day-boundary timezone bug in `family-api`: server-side "today" date logic (3 column
+  DEFAULTs, `todayStr()`, and all 4 atomic points/streak functions added the day before) was UTC, and
+  the column DEFAULTs were even hardcoded to `Australia/Sydney` - the wrong city for this Perth-based
+  family. Fixed all of it to use `Australia/Perth` (migration `fix_day_boundary_timezone_to_perth`,
+  `todayStr()` rewritten with `Intl.DateTimeFormat`), redeployed `family-api` (v40, verified
+  byte-identical to the local source), and live-smoke-tested against a disposable test family.
+  Historical stored dates were deliberately left unmodified - see
+  `D-2026-08-01-day-boundary-timezone-perth`.
+- Pushed a cross-project lesson to `ai-lessons-learned` (`grep-the-mechanism-not-field-names`)
+  distilled from the 2026-07-31 review's own follow-up misses: sweeping for a recurring bug pattern
+  by grepping known field names misses instances the search never thought to include; grep for the
+  mechanism (every `innerHTML =` site, etc.) instead.
+
 ## 2026-07-31
 
 - Swept the whole repo for the same missing-`escapeHtml()` pattern one more time: `reading-tracker`'s

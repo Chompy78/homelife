@@ -70,15 +70,30 @@ redeploy, live smoke test).
   errors). First few calls hit transient 502s right after deploy (propagation delay, confirmed by
   retrying successfully ~20s later - not a code issue). Cleaned up the test family and verified no
   orphaned rows via cascade.
+- User noticed a follow-up while reviewing the summary: `reward-tracker/app.js` still had
+  `kid.avatar_emoji` unescaped at ~10 more `innerHTML` sites (kid chips, active-kid banner,
+  spin-kid picker, table headers, insights, history, big-reward headers, undo toast, avatar
+  settings, Kid View) - same bug class as finding #16, spotted but out of scope at the time. Fixed
+  all of them; bumped `reward-tracker` service worker to v21.
+- User then asked to check the rest of the repo for the same pattern. Walked every `innerHTML` call
+  site in all 6 apps by hand (not just grepping known field names) rather than re-running the
+  agents. Found two more: `reading-tracker`'s kid picker had the same unescaped `avatar_emoji`, and
+  `parent-dashboard`'s AI-score displays (`aiScoreLineHtml`, the AI history modal) rendered the
+  vision model's `comment`/`rejection_reason` unescaped - a much lower-probability vector (would
+  need the model itself prompt-injected into emitting markup) but fixed for consistency. Confirmed
+  everything else already escapes correctly, uses `.textContent`, or is server-validated/hardcoded
+  data (badge/level titles from `shared/config.js`, signed Storage URLs, browser-generated weekday
+  labels). Bumped `reading-tracker` to v6, `parent-dashboard` to v9.
 
 ## Files touched
 
 - `apps/leaderboard/app.js`, `apps/bedroom-reset/app.js`, `apps/parent-dashboard/app.js`,
   `apps/reward-tracker/app.js`, `apps/my-rewards/app.js`, `apps/reading-tracker/app.js` - all the
-  frontend fixes above
+  frontend fixes above, plus the two follow-up escaping passes
 - `apps/bedroom-reset/service-worker.js`, `apps/parent-dashboard/service-worker.js`,
   `apps/reward-tracker/service-worker.js`, `apps/my-rewards/service-worker.js`,
-  `apps/reading-tracker/service-worker.js` - `CACHE_NAME` bumps
+  `apps/reading-tracker/service-worker.js` - `CACHE_NAME` bumps (reward-tracker to v21,
+  parent-dashboard to v9, reading-tracker to v6 after the follow-ups)
 - `apps/shared/config.js` - added `POINTS`
 - `.github/workflows/compare-points.yml` - fixed YAML
 - `supabase/functions/family-api/index.ts` - all backend fixes above, redeployed

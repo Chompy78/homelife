@@ -96,7 +96,6 @@ fingerprints for at least one real kid/room (existing cached ones
 won't self-correct - `room_fingerprint` must be reset to `null` or
 regenerated via the "Regenerate now" flow), and confirms the new
 fingerprint text describes floor/curtains/furniture type instead of
-bedding. Separately - not part of this fix - the underlying scorer
-room-match step still does raw-photo comparison; whether to actually
-wire the fingerprint into scoring (the original `D-2026-07-16-room-fingerprint`
-intent) is an open question for a future task, not resolved here.
+bedding. The separate question raised here - whether to actually wire
+the fingerprint into the scorer's room-match step - was picked up the
+same session, see `D-2026-08-02-wire-fingerprint-into-scorer`.

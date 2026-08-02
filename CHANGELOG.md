@@ -8,6 +8,14 @@ on `TASK_BOARD.md`.
 
 ## 2026-08-02
 
+- Wired the room fingerprint into the scorer's room-match step for real: `llava_score()` now compares
+  the submitted photo against the cached fingerprint text (generated lazily on a target's first scored
+  submission if missing) instead of raw reference photos, closing a gap where
+  `D-2026-07-16-room-fingerprint`'s original fix had never actually been connected to scoring
+  (`D-2026-07-17-poller-fingerprint-generation`'s drift). Tidiness scoring still compares against the
+  raw reference photos, unchanged. No edge function change needed - `get_pending_photo_scores` already
+  returned `room_fingerprint` per job. See `D-2026-08-02-wire-fingerprint-into-scorer`. Applied directly
+  to the user's `poller.py` and delivered back to them; live confirmation pending.
 - Fixed the room fingerprint prompt leaning on changeable details (bed cover) instead of permanent
   identity markers (floor, curtains, furniture type): rewrote `FINGERPRINT_PROMPT` with an explicit
   include/exclude checklist and added a deterministic keyword-filter backstop

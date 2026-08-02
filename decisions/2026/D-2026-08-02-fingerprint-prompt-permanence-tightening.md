@@ -60,9 +60,20 @@ without adding a second model call.
 handoff - see `D-2026-07-18-poller-token-out-of-source`), so this
 session could not edit `generate_room_fingerprint()` directly. Revised
 prompt text and a keyword-filter snippet were delivered to the user in
-chat to paste into their copy of `poller.py`. Needs: user applies the
-change, regenerates fingerprints for at least one real kid/room
-(existing cached fingerprints won't self-correct - `room_fingerprint`
-must be reset to `null` or regenerated via the "Regenerate now" flow),
-and live-confirms the new fingerprints describe floor/curtains/furniture
-type instead of bedding before this closes out.
+chat to paste into their copy of `poller.py`.
+
+**2026-08-02 follow-up:** traced `poller.py`'s actual current location
+- `/data/projects/home-server/tidy-homelife-poller/scripts/poller.py`,
+backed by its own private git repo `jrc-homelab/hs-homelife-poller`
+(not `chompy78`). Attempted to `add_repo` it into this session to edit
+directly; failed - a session scoped to `chompy78/*` repos cannot
+cross-add a `jrc-homelab/*` repo mid-session ("cross-tier adds are not
+supported"). Documented this repo boundary in this project's own
+`AGENTS.md` so future sessions don't have to rediscover it. Still
+needs: a session with `jrc-homelab/hs-homelife-poller` as its initial
+repo source (or a Home AI Server session) to actually apply the
+prompt/filter change, then regenerate fingerprints for at least one
+real kid/room (existing cached ones won't self-correct -
+`room_fingerprint` must be reset to `null` or regenerated via the
+"Regenerate now" flow) and live-confirm the new fingerprints describe
+floor/curtains/furniture type instead of bedding.

@@ -107,6 +107,18 @@ This file (NOW) is always read; see `TASK_BOARD_NEXT.md`/`TASK_BOARD_LATER.md` f
    also still serves the dashboard's on-demand regeneration flow
    (`get_pending_fingerprint_regenerations`) - one function, two
    trigger paths.
+   **2026-08-02 speed update**
+   (`D-2026-08-02-poller-speed-improvements`): those same 4 upload/delete
+   actions now also set `room_fingerprint_regen_requested_at`, so a
+   fingerprint is usually generated eagerly (via the worker's existing
+   regeneration poll) well before a kid's first submission, instead of
+   the lazy path above always paying the extra AI call. The lazy path
+   stays as a fallback for the rare race where a kid submits before that
+   poll catches up. Reference photos themselves are now also cached on
+   disk in `poller.py` (`fetch_reference_photo_b64()`, keyed by each
+   photo's stable id) instead of being re-fetched from storage on every
+   job - used by both this step and the scorer's tidiness comparison
+   below.
    **2026-08-02 update:** the fingerprint text itself was also leaning
    on changeable details (bed cover) instead of permanent ones (floor,
    curtains, furniture type) - a plain "not bedding/linens" negative

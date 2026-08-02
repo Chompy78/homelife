@@ -73,28 +73,64 @@ details (bed cover) instead of truly permanent identity markers (floor, curtains
   describe the real, now-fixed wiring, kept as a brief history note rather than deleting the drift
   story entirely. Updated the "Known open risk" paragraph. Added a `DECISIONS.md` index entry and a
   `CHANGELOG.md` line.
+- User asked if anything could make the system faster. Recommended two changes: caching reference
+  photos (currently re-fetched/re-encoded from Supabase storage on every scoring job) and generating
+  the fingerprint eagerly on reference-photo upload instead of lazily on a kid's first submission.
+  User also asked whether tidiness's reference-photo comparison could be converted to text like the
+  fingerprint was - explained why not: tidiness needs the actual visual detail to score accurately,
+  unlike room identity, which is a small set of describable structural facts. User asked to build both
+  approved speed fixes.
+- Wrote `D-2026-08-02-poller-speed-improvements`. Added `fetch_reference_photo_b64()` to `poller.py` -
+  an id-keyed disk cache under `~/.cache/homelife-poller/reference_photos`
+  (`HOMELIFE_POLLER_CACHE_DIR`-overridable), wired into both `llava_score()` and
+  `generate_room_fingerprint()`. Verified with a stubbed-network unit test (2 lookups of the same photo
+  id with a deliberately different URL produced exactly 1 network call). Delivered the updated file
+  back to the user via `SendUserFile`.
+- For eager fingerprint generation, edited `supabase/functions/family-api/index.ts` directly (this
+  repo's own code, unlike `poller.py`): `upload_reference_photo` / `delete_reference_photo` /
+  `upload_family_room_photo` / `delete_family_room_photo` now also set
+  `room_fingerprint_regen_requested_at`, reusing the exact signal/poll/column
+  `request_fingerprint_regeneration` already relies on - zero new mechanism, same
+  `room_fingerprint_locked` guard preserved.
+- Read the full 2659-line `index.ts` (unavoidable - the deploy tool needs literal file content, no
+  path-based deploy option) and deployed via `mcp__Supabase__deploy_edge_function` as v41. Verified the
+  deploy byte-for-byte via `get_edge_function` (md5 match against the local file), following the same
+  safety-net pattern used in the 2026-08-01 session's redeploy.
+- Live-smoke-tested against a fresh disposable test family (`ZZTEST_FingerprintEager`): created via SQL,
+  called `upload_reference_photo` through the real HTTP endpoint with a 1x1 PNG, confirmed
+  `room_fingerprint_regen_requested_at` was set on the kid row; cleared it, called
+  `delete_reference_photo`, confirmed it was set again. Cleaned up via the API's own
+  `delete_reference_photo` (proper storage cleanup) followed by deleting the test family (cascade
+  removed the test kid too, confirmed by a 0-row follow-up query).
 
 ## Files touched
 
 - `DECISIONS.md`, `decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md`,
-  `decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md`
+  `decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md`,
+  `decisions/2026/D-2026-08-02-poller-speed-improvements.md`
 - `docs/TASK_BOARD_NOW.md` - corrected fingerprint-pipeline design notes to match live code, twice
-  (once to describe the drift, once to describe the fix)
-- `CHANGELOG.md` - two 2026-08-02 entries
+  (once to describe the drift, once to describe the fix), then a third update for the speed changes
+- `CHANGELOG.md` - three 2026-08-02 entries
 - `AGENTS.md` - new section on `poller.py`'s real location and the cross-repo boundary
-- `poller.py` (user's own copy, not in this repo) - fingerprint prompt/filter fix and scorer wiring
-  both applied directly and delivered back to the user; not yet dropped in or confirmed live
+- `poller.py` (user's own copy, not in this repo) - fingerprint prompt/filter fix, scorer wiring, and
+  reference-photo caching all applied directly and delivered back to the user; not yet dropped in or
+  confirmed live
+- `supabase/functions/family-api/index.ts` - eager fingerprint-regen flag on 4 actions; deployed (v41)
+  and live-tested
 
 ## Related
 
 - `DECISIONS.md` → `decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md`,
-  `decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md`
+  `decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md`,
+  `decisions/2026/D-2026-08-02-poller-speed-improvements.md`
 - Builds on `D-2026-07-16-room-fingerprint`, `D-2026-07-17-poller-fingerprint-generation`
 
 ## Carried forward
 
-- User needs to drop the delivered `poller.py` in over their real copy, then live-confirm: (a) a first
-  scored submission for a target with no cached fingerprint generates one and scores correctly, (b) a
-  real photo of the kid's own room with different bedding than the reference photos is not falsely
-  rejected, (c) a genuinely different room is still rejected, and (d) new fingerprint text describes
-  floor/curtains/furniture type instead of bedding.
+- User needs to drop the latest delivered `poller.py` in over their real copy (it now includes the
+  fingerprint prompt fix, the scorer wiring, and the reference-photo cache all together), then
+  live-confirm: (a) a first scored submission for a target with no cached fingerprint generates one and
+  scores correctly, (b) a real photo of the kid's own room with different bedding than the reference
+  photos is not falsely rejected, (c) a genuinely different room is still rejected, (d) new fingerprint
+  text describes floor/curtains/furniture type instead of bedding, and (e) a fingerprint now appears
+  shortly after uploading reference photos, before any kid submission.

@@ -6,6 +6,22 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-02-poller-speed-improvements
+
+**Status:** Done
+
+**Summary:** Two speed fixes for the photo-scoring pipeline: (1) reference photos are now cached on
+  disk in `poller.py` (keyed by stable photo id, not the rotating signed URL) instead of being
+  re-downloaded/re-encoded on every scoring job; (2) `family-api`'s upload/delete reference-photo
+  actions now flag a target for eager fingerprint regeneration (reusing
+  `request_fingerprint_regeneration`'s existing signal), so a fingerprint is usually ready before a
+  kid's first submission instead of adding an extra AI call to it. Declined converting tidiness's
+  reference-photo comparison to text (unlike the room fingerprint) - tidiness needs the actual visual
+  detail to score accurately. Edge function change deployed (v41, verified byte-identical) and
+  live-smoke-tested against a disposable test family.
+
+**Record:** decisions/2026/D-2026-08-02-poller-speed-improvements.md
+
 ## D-2026-08-02-wire-fingerprint-into-scorer
 
 **Status:** Done, pending live confirmation

@@ -8,6 +8,14 @@ on `TASK_BOARD.md`.
 
 ## 2026-08-02
 
+- Sped up the photo-scoring pipeline two ways: reference photos are now cached to disk in `poller.py`
+  (keyed by stable photo id, not the rotating signed URL) instead of being re-fetched from Supabase
+  storage on every scoring job; and `family-api`'s upload/delete reference-photo actions now flag a
+  target for eager fingerprint regeneration (reusing `request_fingerprint_regeneration`'s existing
+  signal) instead of only generating one lazily on a kid's first submission. Considered and declined
+  converting tidiness's reference-photo comparison to text - unlike the room fingerprint, tidiness needs
+  the actual visual detail to score accurately. Edge function deployed as v41 (verified byte-identical)
+  and live-smoke-tested against a disposable test family. See `D-2026-08-02-poller-speed-improvements`.
 - Wired the room fingerprint into the scorer's room-match step for real: `llava_score()` now compares
   the submitted photo against the cached fingerprint text (generated lazily on a target's first scored
   submission if missing) instead of raw reference photos, closing a gap where

@@ -640,8 +640,15 @@ Deno.serve(async (req) => {
           uploaded_by: session.role,
         });
         // The stored fingerprint (if any) was generated from the old photo
-        // set - invalidate it so the worker regenerates on next use.
-        await db.from("kids").update({ room_fingerprint: null }).eq("id", kidId).eq("room_fingerprint_locked", false);
+        // set - invalidate it, and also flag it for eager regeneration (the
+        // same signal request_fingerprint_regeneration uses) so the worker
+        // generates a fresh one on its next poll instead of waiting for a
+        // kid to submit a photo first.
+        await db
+          .from("kids")
+          .update({ room_fingerprint: null, room_fingerprint_regen_requested_at: new Date().toISOString() })
+          .eq("id", kidId)
+          .eq("room_fingerprint_locked", false);
 
         const photos = await getPhotosWithUrls(kidId);
         return json({ ok: true, data: { photos } });
@@ -659,7 +666,12 @@ Deno.serve(async (req) => {
 
         await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
         await db.from("kid_reference_photos").delete().eq("id", photo.id);
-        await db.from("kids").update({ room_fingerprint: null }).eq("id", photo.kid_id).eq("room_fingerprint_locked", false);
+        // Same eager-regeneration flag as upload_reference_photo above.
+        await db
+          .from("kids")
+          .update({ room_fingerprint: null, room_fingerprint_regen_requested_at: new Date().toISOString() })
+          .eq("id", photo.kid_id)
+          .eq("room_fingerprint_locked", false);
         const photos = await getPhotosWithUrls(photo.kid_id);
         return json({ ok: true, data: { photos } });
       }
@@ -2262,8 +2274,15 @@ Deno.serve(async (req) => {
           storage_path: path,
         });
         // The stored fingerprint (if any) was generated from the old photo
-        // set - invalidate it so the worker regenerates on next use.
-        await db.from("family_rooms").update({ room_fingerprint: null }).eq("id", room.id).eq("room_fingerprint_locked", false);
+        // set - invalidate it, and also flag it for eager regeneration (the
+        // same signal request_fingerprint_regeneration uses) so the worker
+        // generates a fresh one on its next poll instead of waiting for a
+        // kid to submit a photo first.
+        await db
+          .from("family_rooms")
+          .update({ room_fingerprint: null, room_fingerprint_regen_requested_at: new Date().toISOString() })
+          .eq("id", room.id)
+          .eq("room_fingerprint_locked", false);
 
         const photos = await getRoomPhotosWithUrls(room.id);
         return json({ ok: true, data: { photos } });
@@ -2280,7 +2299,12 @@ Deno.serve(async (req) => {
 
         await db.storage.from(PHOTO_BUCKET).remove([photo.storage_path]);
         await db.from("family_room_photos").delete().eq("id", photo.id);
-        await db.from("family_rooms").update({ room_fingerprint: null }).eq("id", photo.room_id).eq("room_fingerprint_locked", false);
+        // Same eager-regeneration flag as upload_family_room_photo above.
+        await db
+          .from("family_rooms")
+          .update({ room_fingerprint: null, room_fingerprint_regen_requested_at: new Date().toISOString() })
+          .eq("id", photo.room_id)
+          .eq("room_fingerprint_locked", false);
         const photos = await getRoomPhotosWithUrls(photo.room_id);
         return json({ ok: true, data: { photos } });
       }

@@ -27,6 +27,17 @@ details (bed cover) instead of truly permanent identity markers (floor, curtains
   `poller.py`. Updated `docs/TASK_BOARD_NOW.md`'s existing fingerprint-pipeline task with a
   2026-08-02 note pointing at the new decision, since confirming this fix live is part of that task's
   existing "done when" criteria (a real photo not falsely rejected over bedding differences).
+- Also opened and merged PR #5 on this repo carrying the doc-only updates above.
+- User then asked whether the `home-server-mcp` connector was active (yes), then asked to read
+  `poller.py`'s actual path (`\data\projects\home-server\tidy-homelife-poller\scripts`). Traced it via
+  `home-server-mcp`'s `home-ai-server` project docs: the poller was moved into its own git repo,
+  renamed `hs-homelife-poller`, and transferred to the `jrc-homelab` GitHub org
+  (`D-2026-07-26-github-org-for-project-repos` in that project). Attempted `add_repo` for
+  `jrc-homelab/hs-homelife-poller` to edit it directly - failed, since this session is scoped to
+  `chompy78/*` and cross-owner repo adds aren't supported mid-session. Documented the repo boundary
+  and poller's real location in this repo's own `AGENTS.md` (new section) and amended
+  `D-2026-08-02-fingerprint-prompt-permanence-tightening`'s Status with the same finding, so this
+  doesn't need rediscovering next time.
 
 ## Files touched
 

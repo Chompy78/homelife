@@ -147,6 +147,35 @@ see AI_templates' `D-2026-07-28-technical-access-not-scope`.
   blocks it) — use the Storage API or dashboard for that part of
   cleanup.
 
+## The AI photo-scoring worker (`poller.py`) lives outside this repo
+
+The Ollama-based worker that polls `get_pending_photo_scores` /
+`get_pending_fingerprint_regenerations` and submits results via
+`submit_photo_score` / `submit_room_fingerprint` is **not** part of
+this repo and never has been — it embeds `WORKER_TOKEN`, so every
+version has been delivered directly to the user rather than committed
+here (see `D-2026-07-17-poller-fingerprint-generation`,
+`D-2026-07-18-poller-token-out-of-source`).
+
+- **Current location:** `/data/projects/home-server/tidy-homelife-poller/scripts/poller.py`
+  on the user's home AI server (renamed from `homelife-poller` on
+  2026-07-31 — see that project's own `D-2026-07-31-homelife-poller-renamed-tidy-homelife-poller`).
+- **It has its own git repo:** `jrc-homelab/hs-homelife-poller` — private,
+  under the `jrc-homelab` GitHub organization, not `chompy78`. Its own
+  history/decisions live in the separate **Home AI Server** project
+  (reachable via the `home-server-mcp` connector's `home-ai-server`
+  project key — see its `AGENTS.md`/`DECISIONS.md`/`CHANGELOG.md`),
+  not in this repo's docs.
+- **Cross-repo boundary confirmed 2026-08-02:** a Claude Code session
+  scoped to `chompy78/*` repos cannot cross-add a `jrc-homelab/*` repo
+  mid-session (`add_repo` fails: "cross-tier adds are not supported").
+  To edit `poller.py` directly, either start a fresh session with
+  `jrc-homelab/hs-homelife-poller` as the initial repo source, or work
+  through a Home AI Server session instead. A session scoped to this
+  repo can only hand the user prompt/code text to paste in by hand, or
+  document the decision/design side here (`DECISIONS.md`,
+  `TASK_BOARD_*.md`) — not edit the worker's actual source.
+
 ## AI agent workflow shortcuts
 
 `.claude/commands/` has slash-command skills for working `docs/TASK_BOARD_NOW.md`/`_NEXT.md`/`_LATER.md`:

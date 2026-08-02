@@ -8,6 +8,15 @@ on `TASK_BOARD.md`.
 
 ## 2026-08-02
 
+- Fixed a confusing rejection-message bug found while speed-testing against a real submission: the
+  room-validity gate's `reject_reason_if_invalid` field was required and non-nullable, so the model had
+  to write something even when it believed the photo was a valid room - a stricter downstream check
+  (confidence not `"high"`) could still reject it, showing that affirmative room description to the kid
+  as their rejection reason. Made the field nullable (matching how the scorer's `mismatch_reason`
+  already worked) and had `llava_gate()` build the reason from whichever criterion actually failed.
+  Verified via unit tests reproducing the exact real-world case (no live Ollama access from this
+  session). See `D-2026-08-02-gate-rejection-reason-bug`. Applied directly to `poller.py` and delivered
+  back to the user; live confirmation pending.
 - Sped up the photo-scoring pipeline two ways: reference photos are now cached to disk in `poller.py`
   (keyed by stable photo id, not the rotating signed URL) instead of being re-fetched from Supabase
   storage on every scoring job; and `family-api`'s upload/delete reference-photo actions now flag a

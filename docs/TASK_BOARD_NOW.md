@@ -87,6 +87,17 @@ This file (NOW) is always read; see `TASK_BOARD_NEXT.md`/`TASK_BOARD_LATER.md` f
    a dog, a close-up object, *and* a stylized fantasy-creature
    illustration (added after one slipped through - see below). Runs at
    `temperature: 0`.
+   **2026-08-02 fix** (`D-2026-08-02-gate-rejection-reason-bug`): the
+   model's `reject_reason_if_invalid` field was required and
+   non-nullable, so it had to write *something* even when it believed
+   `setting` was `indoor_room` - if a stricter check (confidence not
+   `high`, evidence count) then still failed, that affirmative
+   room description got shown to the kid as their rejection reason,
+   reading like a compliment instead of an explanation. Made the field
+   nullable (matching `mismatch_reason` in the scorer below, which
+   already did this correctly) and had `llava_gate()` build the reason
+   from whichever specific criterion actually failed instead of trusting
+   the model's freeform text whenever `setting == indoor_room`.
 5. **Room fingerprint** (generated lazily, cached) - **history, kept for
    context:** for a stretch this was drift-disconnected from scoring -
    `D-2026-07-17-poller-fingerprint-generation` added generation as

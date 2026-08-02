@@ -102,19 +102,55 @@ details (bed cover) instead of truly permanent identity markers (floor, curtains
   `delete_reference_photo`, confirmed it was set again. Cleaned up via the API's own
   `delete_reference_photo` (proper storage cleanup) followed by deleting the test family (cascade
   removed the test kid too, confirmed by a 0-row follow-up query).
+- User asked to actually test scoring speed on the home server. Explained the limit: `home-server-mcp`
+  only gives file read/write access to registered projects, no command execution - couldn't run
+  `poller.py`/Ollama directly. Delivered a standalone `time_scoring.py` harness instead (fetches Eira's
+  real photos via `family-api`, times each real pipeline stage, never calls `submit_photo_score` so it's
+  read-only) for the user to run themselves.
+- User proposed a better approach: resubmit a real photo through the live system and time how long the
+  actual running poller/cron takes to process it end to end - no home-server execution needed, since I
+  could drive it entirely through the API. Checked first and found Eira's family has
+  `ai_score_mode: "auto_approve"` (threshold 8) - a real score ≥8 would auto-award real points/streak/
+  spin credit with no undo path. Asked the user how to handle that; they said a real reward was fine.
+- Fetched Eira's actual last-submitted photo bytes via her real session, resubmitted it fresh via
+  `submit_photo_for_scoring`, then polled `get_kid_state` every 15s in a background task until it left
+  `pending`. Result: 28s wall-clock (23.0s by `scored_at - created_at`), status `failed`. Pulled a
+  14-day baseline across all families (`scored` avg 86.0s range 14.6-143.5s; `failed` avg 68.9s range
+  13.2-126.8s) for context - explained the wide variance is almost certainly Ollama model warm-up, not
+  the network overhead our caching fix targets, and that this particular run used the user's
+  not-yet-updated `poller.py`, so it wasn't a valid before/after comparison of today's fixes.
+- Flagged a real oddity in that result: the `rejection_reason` text read as an affirmative room
+  description ("This is an indoor bedroom-type room as evidenced by...") rather than an explanation for
+  rejection - and the same exact text had appeared on an earlier historical rejection for the same kid.
+  User asked to dig into it.
+- Diagnosed it via code review (no live Ollama access to reproduce directly): `GATE_SCHEMA`'s
+  `reject_reason_if_invalid` was a required, non-nullable string, forcing the model to write content
+  even when it believed `setting` was `indoor_room` - a stricter check (confidence not `"high"`, most
+  likely) could still fail `valid`, surfacing that affirmative text as the shown rejection reason.
+  `SCORER_SCHEMA`'s analogous `mismatch_reason` was already nullable with an explicit null-for-valid
+  worked example - the gate never got the same fix. Wrote `D-2026-08-02-gate-rejection-reason-bug`.
+- Made `reject_reason_if_invalid` nullable, added a fourth `GATE_PROMPT` worked example (valid room →
+  `null`), and rewrote `llava_gate()` to build the rejection reason from whichever specific criterion
+  failed, only trusting the model's own text when `setting != indoor_room`. Verified with three
+  monkeypatched-`ollama_generate` unit tests: the exact real-world scenario (now gives a coherent,
+  specific message), a genuinely invalid photo (real reason still passes through unchanged), and a
+  genuinely valid photo (still passes cleanly). Diffed the edit to confirm scope, verified it compiles,
+  delivered the updated file back to the user.
 
 ## Files touched
 
 - `DECISIONS.md`, `decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md`,
   `decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md`,
-  `decisions/2026/D-2026-08-02-poller-speed-improvements.md`
+  `decisions/2026/D-2026-08-02-poller-speed-improvements.md`,
+  `decisions/2026/D-2026-08-02-gate-rejection-reason-bug.md`
 - `docs/TASK_BOARD_NOW.md` - corrected fingerprint-pipeline design notes to match live code, twice
-  (once to describe the drift, once to describe the fix), then a third update for the speed changes
-- `CHANGELOG.md` - three 2026-08-02 entries
+  (once to describe the drift, once to describe the fix), then updates for the speed changes and the
+  gate bug fix
+- `CHANGELOG.md` - four 2026-08-02 entries
 - `AGENTS.md` - new section on `poller.py`'s real location and the cross-repo boundary
-- `poller.py` (user's own copy, not in this repo) - fingerprint prompt/filter fix, scorer wiring, and
-  reference-photo caching all applied directly and delivered back to the user; not yet dropped in or
-  confirmed live
+- `poller.py` (user's own copy, not in this repo) - fingerprint prompt/filter fix, scorer wiring,
+  reference-photo caching, and the gate rejection-reason fix all applied directly and delivered back to
+  the user; not yet dropped in or confirmed live
 - `supabase/functions/family-api/index.ts` - eager fingerprint-regen flag on 4 actions; deployed (v41)
   and live-tested
 
@@ -122,15 +158,20 @@ details (bed cover) instead of truly permanent identity markers (floor, curtains
 
 - `DECISIONS.md` → `decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md`,
   `decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md`,
-  `decisions/2026/D-2026-08-02-poller-speed-improvements.md`
+  `decisions/2026/D-2026-08-02-poller-speed-improvements.md`,
+  `decisions/2026/D-2026-08-02-gate-rejection-reason-bug.md`
 - Builds on `D-2026-07-16-room-fingerprint`, `D-2026-07-17-poller-fingerprint-generation`
 
 ## Carried forward
 
 - User needs to drop the latest delivered `poller.py` in over their real copy (it now includes the
-  fingerprint prompt fix, the scorer wiring, and the reference-photo cache all together), then
-  live-confirm: (a) a first scored submission for a target with no cached fingerprint generates one and
-  scores correctly, (b) a real photo of the kid's own room with different bedding than the reference
-  photos is not falsely rejected, (c) a genuinely different room is still rejected, (d) new fingerprint
-  text describes floor/curtains/furniture type instead of bedding, and (e) a fingerprint now appears
-  shortly after uploading reference photos, before any kid submission.
+  fingerprint prompt fix, the scorer wiring, the reference-photo cache, and the gate rejection-reason
+  fix, all together), then live-confirm: (a) a first scored submission for a target with no cached
+  fingerprint generates one and scores correctly, (b) a real photo of the kid's own room with different
+  bedding than the reference photos is not falsely rejected, (c) a genuinely different room is still
+  rejected, (d) new fingerprint text describes floor/curtains/furniture type instead of bedding, (e) a
+  fingerprint now appears shortly after uploading reference photos, before any kid submission, and (f) a
+  rejected photo's reason text is coherent with an actual rejection, not an affirmative room description.
+- A real photo-scoring request was created for Eira during testing (with the user's explicit go-ahead,
+  given the family's `auto_approve` mode) - it's now permanent, real history for that kid, same as any
+  normal submission.

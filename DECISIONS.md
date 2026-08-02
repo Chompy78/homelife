@@ -6,6 +6,23 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-02-gate-rejection-reason-bug
+
+**Status:** Done
+
+**Summary:** A live speed test surfaced a real bug: rejected photos could show a confusing
+  rejection reason that actually *describes a valid room* ("This is an indoor bedroom-type room as
+  evidenced by..."). Root cause: `GATE_SCHEMA`'s `reject_reason_if_invalid` was a required, non-nullable
+  string, forcing the model to write something even when it believed the photo was a valid room; a
+  stricter code-side check (e.g. `confidence != "high"`) could still reject it, surfacing that
+  affirmative text as the "reason." `SCORER_SCHEMA`'s analogous `mismatch_reason` already handled this
+  correctly (nullable, explicit null-for-valid example) - the gate just never got the same fix. Made
+  `reject_reason_if_invalid` nullable, updated the prompt to match, and had `llava_gate()` build the
+  reason from whichever specific criterion actually failed. Verified via unit tests reproducing the
+  exact real-world case (no live Ollama access from this session).
+
+**Record:** decisions/2026/D-2026-08-02-gate-rejection-reason-bug.md
+
 ## D-2026-08-02-poller-speed-improvements
 
 **Status:** Done

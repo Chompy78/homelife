@@ -53,27 +53,48 @@ details (bed cover) instead of truly permanent identity markers (floor, curtains
 - Corrected `TASK_BOARD_NOW.md`'s fingerprint-pipeline design notes (steps 5 and 6, plus the "Known
   open risk" paragraph) to accurately describe the fingerprint as parent-facing-only and the scorer's
   room-match step as still doing raw-photo comparison, and updated
-  `D-2026-08-02-fingerprint-prompt-permanence-tightening` to Done (pending live confirmation).
+  `D-2026-08-02-fingerprint-prompt-permanence-tightening` to Done (pending live confirmation). Opened
+  and merged PR #7 carrying that batch.
+- User asked to close the remaining gap: wire the fingerprint into the scorer's room-match step for
+  real, finally delivering on what `D-2026-07-16-room-fingerprint` originally intended. Confirmed via
+  `family-api/index.ts` that `get_pending_photo_scores` already returns `room_fingerprint` per job, so
+  this was purely a `poller.py`-side change - no edge function/schema work needed.
+- Wrote `D-2026-08-02-wire-fingerprint-into-scorer`. Changed `llava_score()` to accept a `fingerprint`
+  argument and substitute it into `SCORER_PROMPT` via `str.replace()` (not `.format()` - the prompt's
+  JSON examples contain literal `{ }` that would collide with format-string syntax); Step 1 (room
+  match) now compares the submitted photo against the fingerprint text instead of the reference photos,
+  Step 2 (tidiness) still uses the reference photos, unchanged. Changed `process_job()` to read
+  `job["room_fingerprint"]`, generate one lazily via the existing `generate_room_fingerprint()` if
+  missing (rejecting with "ask a parent to add reference photos first" if none exist to generate one
+  from), and cache it via `submit_room_fingerprint`.
+- Diffed the edited file against the version delivered earlier this session to confirm the scope of the
+  change, verified it compiles (`py_compile`), and delivered it back to the user via `SendUserFile`.
+- Flipped `TASK_BOARD_NOW.md`'s "not wired in" correction (written earlier this session) back to
+  describe the real, now-fixed wiring, kept as a brief history note rather than deleting the drift
+  story entirely. Updated the "Known open risk" paragraph. Added a `DECISIONS.md` index entry and a
+  `CHANGELOG.md` line.
 
 ## Files touched
 
-- `DECISIONS.md`, `decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md`
-- `docs/TASK_BOARD_NOW.md` - corrected fingerprint-pipeline design notes to match live code
+- `DECISIONS.md`, `decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md`,
+  `decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md`
+- `docs/TASK_BOARD_NOW.md` - corrected fingerprint-pipeline design notes to match live code, twice
+  (once to describe the drift, once to describe the fix)
+- `CHANGELOG.md` - two 2026-08-02 entries
 - `AGENTS.md` - new section on `poller.py`'s real location and the cross-repo boundary
-- `poller.py` (user's own copy, not in this repo) - fingerprint prompt/filter fix applied directly
-  and delivered back to the user; not yet dropped in or confirmed live
+- `poller.py` (user's own copy, not in this repo) - fingerprint prompt/filter fix and scorer wiring
+  both applied directly and delivered back to the user; not yet dropped in or confirmed live
 
 ## Related
 
-- `DECISIONS.md` → `decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md`
+- `DECISIONS.md` → `decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md`,
+  `decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md`
 - Builds on `D-2026-07-16-room-fingerprint`, `D-2026-07-17-poller-fingerprint-generation`
 
 ## Carried forward
 
-- User needs to drop the delivered `poller.py` in over their real copy, regenerate fingerprints for at
-  least one real kid/room (existing cached ones won't self-correct), and confirm live that new
-  fingerprints describe floor/curtains/furniture type instead of bedding.
-- Separately, not part of this fix: the scorer's room-match step still does raw-photo comparison and
-  never reads the fingerprint, so the original bedding-false-rejection problem
-  `D-2026-07-16-room-fingerprint` set out to fix may still occur during scoring itself. Whether to wire
-  the fingerprint into `SCORER_PROMPT` for real is an open question, not yet a task.
+- User needs to drop the delivered `poller.py` in over their real copy, then live-confirm: (a) a first
+  scored submission for a target with no cached fingerprint generates one and scores correctly, (b) a
+  real photo of the kid's own room with different bedding than the reference photos is not falsely
+  rejected, (c) a genuinely different room is still rejected, and (d) new fingerprint text describes
+  floor/curtains/furniture type instead of bedding.

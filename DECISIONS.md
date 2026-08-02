@@ -6,16 +6,31 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-02-wire-fingerprint-into-scorer
+
+**Status:** Done, pending live confirmation
+
+**Summary:** `D-2026-07-16-room-fingerprint` originally intended the scorer's room-match step to
+  compare against fingerprint text instead of raw reference photos, but that wiring never actually
+  landed (per `D-2026-07-17-poller-fingerprint-generation`'s drift) - the scorer kept comparing raw
+  photos directly, leaving the original bedding-false-rejection risk live in real scoring. Wired it
+  in for real: `llava_score()` now takes the fingerprint text and uses it for room-match, generating
+  one lazily on a target's first scored submission if none is cached yet. No edge function change
+  needed - `get_pending_photo_scores` already returns `room_fingerprint` per job. Applied directly to
+  the user's `poller.py` and delivered back to them; live confirmation pending.
+
+**Record:** decisions/2026/D-2026-08-02-wire-fingerprint-into-scorer.md
+
 ## D-2026-08-02-fingerprint-prompt-permanence-tightening
 
-**Status:** Open
+**Status:** Done
 
 **Summary:** The room fingerprint's "structural-only, not bedding/linens" instruction wasn't strict
   enough - generated fingerprints still leaned on the current bed cover instead of truly permanent
-  markers (floor, curtains, wall, furniture type). Decided to rewrite the prompt with an explicit
-  include/exclude checklist plus a deterministic keyword-filter backstop in `poller.py`. Revised
-  prompt delivered to the user in chat (not committed - `poller.py` embeds `WORKER_TOKEN` and is
-  never pushed to this repo); needs the user to apply it and regenerate fingerprints to confirm.
+  markers (floor, curtains, wall, furniture type). Rewrote the prompt with an explicit include/exclude
+  checklist plus a deterministic keyword-filter backstop in `poller.py`, applied directly to the
+  user's file after they pasted it into chat, and delivered back to them (see the follow-on
+  `D-2026-08-02-wire-fingerprint-into-scorer` for the related scoring-pipeline gap this surfaced).
 
 **Record:** decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md
 

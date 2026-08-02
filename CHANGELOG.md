@@ -6,6 +6,18 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-08-02
+
+- Fixed the room fingerprint prompt leaning on changeable details (bed cover) instead of permanent
+  identity markers (floor, curtains, furniture type): rewrote `FINGERPRINT_PROMPT` with an explicit
+  include/exclude checklist and added a deterministic keyword-filter backstop
+  (`strip_changeable_mentions()`) in `poller.py`. Also corrected `TASK_BOARD_NOW.md`'s fingerprint
+  pipeline design notes, which had drifted from the live code - confirmed the scorer's room-match step
+  still compares raw reference photos directly and never actually reads the fingerprint. See
+  `D-2026-08-02-fingerprint-prompt-permanence-tightening`. Applied directly to the user's `poller.py`
+  and delivered back to them (not committed - lives in the separate `jrc-homelab/hs-homelife-poller`
+  repo); live confirmation pending.
+
 ## 2026-08-01
 
 - Corrected the 2 historical rows actually affected by the timezone bug below: audited every

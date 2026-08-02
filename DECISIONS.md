@@ -6,6 +6,19 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-02-fingerprint-prompt-permanence-tightening
+
+**Status:** Open
+
+**Summary:** The room fingerprint's "structural-only, not bedding/linens" instruction wasn't strict
+  enough - generated fingerprints still leaned on the current bed cover instead of truly permanent
+  markers (floor, curtains, wall, furniture type). Decided to rewrite the prompt with an explicit
+  include/exclude checklist plus a deterministic keyword-filter backstop in `poller.py`. Revised
+  prompt delivered to the user in chat (not committed - `poller.py` embeds `WORKER_TOKEN` and is
+  never pushed to this repo); needs the user to apply it and regenerate fingerprints to confirm.
+
+**Record:** decisions/2026/D-2026-08-02-fingerprint-prompt-permanence-tightening.md
+
 ## D-2026-08-01-day-boundary-timezone-perth
 
 **Status:** Done

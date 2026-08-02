@@ -97,6 +97,14 @@ This file (NOW) is always read; see `TASK_BOARD_NEXT.md`/`TASK_BOARD_LATER.md` f
    `upload_family_room_photo` / `delete_family_room_photo`). If no
    reference photos exist at all, the submission is rejected with a
    message to ask a parent to add some first.
+   **2026-08-02 update:** live fingerprints were still leaning on
+   changeable details (bed cover) instead of permanent ones (floor,
+   curtains, furniture type) - a plain "not bedding/linens" negative
+   instruction wasn't strict enough. See
+   `D-2026-08-02-fingerprint-prompt-permanence-tightening`: revised
+   prompt (explicit include/exclude checklist) plus a keyword-filter
+   backstop in `poller.py` delivered to the user in chat, not yet
+   applied/confirmed live.
 6. **`llava:13b` scorer** - only reached if all above pass. Compares
    the submission against the fingerprint text (room-identity, ignoring
    bedding/clutter) and, separately, against the raw reference photos

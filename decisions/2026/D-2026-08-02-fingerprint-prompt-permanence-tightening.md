@@ -1,7 +1,7 @@
 # D-2026-08-02-fingerprint-prompt-permanence-tightening
 
 Date: 2026-08-02
-Status: Open
+Status: Done
 
 **Context:** `D-2026-07-16-room-fingerprint` introduced a one-time,
 cached "fingerprint" description (via `generate_room_fingerprint()` in
@@ -55,25 +55,48 @@ strip is intentionally crude but catches the exact failure already
 observed (bedding/comforter language leaking into the fingerprint)
 without adding a second model call.
 
-**Status:** Open. `poller.py` is not committed to this repo (embeds
+**Status history:** `poller.py` is not committed to this repo (embeds
 `WORKER_TOKEN`, delivered directly to the user per every prior
 handoff - see `D-2026-07-18-poller-token-out-of-source`), so this
-session could not edit `generate_room_fingerprint()` directly. Revised
-prompt text and a keyword-filter snippet were delivered to the user in
-chat to paste into their copy of `poller.py`.
+session initially could not edit `generate_room_fingerprint()`
+directly and only delivered prompt/filter text in chat for the user to
+paste in by hand.
 
-**2026-08-02 follow-up:** traced `poller.py`'s actual current location
-- `/data/projects/home-server/tidy-homelife-poller/scripts/poller.py`,
+**2026-08-02 follow-up (repo location):** traced `poller.py`'s actual
+current location - `/data/projects/home-server/tidy-homelife-poller/scripts/poller.py`,
 backed by its own private git repo `jrc-homelab/hs-homelife-poller`
 (not `chompy78`). Attempted to `add_repo` it into this session to edit
 directly; failed - a session scoped to `chompy78/*` repos cannot
 cross-add a `jrc-homelab/*` repo mid-session ("cross-tier adds are not
 supported"). Documented this repo boundary in this project's own
-`AGENTS.md` so future sessions don't have to rediscover it. Still
-needs: a session with `jrc-homelab/hs-homelife-poller` as its initial
-repo source (or a Home AI Server session) to actually apply the
-prompt/filter change, then regenerate fingerprints for at least one
-real kid/room (existing cached ones won't self-correct -
-`room_fingerprint` must be reset to `null` or regenerated via the
-"Regenerate now" flow) and live-confirm the new fingerprints describe
-floor/curtains/furniture type instead of bedding.
+`AGENTS.md` so future sessions don't have to rediscover it.
+
+**2026-08-02 follow-up (fix applied):** the user pasted their actual
+current `poller.py` directly into chat. This surfaced an important
+correction to this project's own documentation: `TASK_BOARD_NOW.md`'s
+design notes describe the fingerprint as feeding the scorer's
+room-identity check (per `D-2026-07-16-room-fingerprint`'s original
+intent), but the live code's own docstring and `SCORER_PROMPT` confirm
+the drift already flagged in `D-2026-07-17-poller-fingerprint-generation`:
+scoring's room-match step still compares the submitted photo directly
+against raw reference photos (bedding included); the fingerprint is
+purely a parent-facing description field, unconnected to scoring. So
+this fix corrects what the parent-facing description says, not the
+scorer's actual room-match behavior - see `TASK_BOARD_NOW.md` for the
+now-corrected design notes. Rewrote `FINGERPRINT_PROMPT` with the
+explicit include/exclude checklist and added `CHANGEABLE_KEYWORDS` /
+`strip_changeable_mentions()`, wired into `generate_room_fingerprint()`.
+Diffed the edited file against the user's upload to confirm only the
+fingerprint section changed, verified it compiles (`py_compile`), and
+delivered it back to the user to drop in over their real `poller.py`.
+
+**Status:** Done, pending live confirmation. Still needs: the user
+replaces their `poller.py` with the delivered version, regenerates
+fingerprints for at least one real kid/room (existing cached ones
+won't self-correct - `room_fingerprint` must be reset to `null` or
+regenerated via the "Regenerate now" flow), and confirms the new
+fingerprint text describes floor/curtains/furniture type instead of
+bedding. Separately - not part of this fix - the underlying scorer
+room-match step still does raw-photo comparison; whether to actually
+wire the fingerprint into scoring (the original `D-2026-07-16-room-fingerprint`
+intent) is an open question for a future task, not resolved here.

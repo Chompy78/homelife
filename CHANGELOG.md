@@ -6,6 +6,16 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-08-04
+
+- Fixed the Supabase Storage egress leak behind the account hitting its 5GB/month cap: `parent-dashboard`'s
+  45s auto-refresh (and `bedroom-reset`'s photo/AI-score polling) rebuilt photo grids with a brand-new
+  signed URL every tick, even for unchanged photos, defeating the browser's image cache and forcing a full
+  re-download of every visible photo dozens of times an hour. Added `apps/shared/photo-cache.js` to reuse
+  the same signed URL per photo across renders (falls back to a fresh one before the server-side 1-hour
+  TTL expires). Bumped `CACHE_NAME` in both apps' service workers. See
+  `decisions/2026/D-2026-08-04-photo-url-egress-cache.md`.
+
 ## 2026-08-02
 
 - Fixed a confusing rejection-message bug found while speed-testing against a real submission: the

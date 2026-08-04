@@ -5,6 +5,7 @@ import { askConfirm } from "../shared/confirm.js";
 import { openLightbox } from "../shared/lightbox.js";
 import { showAppVersion } from "../shared/version.js";
 import { escapeHtml } from "../shared/escape.js";
+import { stablePhotoUrl } from "../shared/photo-cache.js";
 
 const DEVICE_TOKEN_KEY = "homelife_kid_token";
 const DEVICE_NAME_KEY = "homelife_kid_name";
@@ -575,8 +576,9 @@ function renderPhotos() {
   photos.forEach((photo) => {
     const tile = document.createElement("div");
     tile.className = "photoTile";
-    tile.innerHTML = `<img src="${photo.url}" alt="Tidy room example" loading="lazy" />`;
-    tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
+    const url = stablePhotoUrl(`refphoto:${photo.id}`, photo.url);
+    tile.innerHTML = `<img src="${url}" alt="Tidy room example" loading="lazy" />`;
+    tile.querySelector("img").addEventListener("click", () => openLightbox({ url }));
     photoGrid.appendChild(tile);
   });
 }
@@ -637,7 +639,7 @@ function renderAiScoreCard() {
 
   if (aiScoreThumb) {
     if (aiScore?.photo_url) {
-      aiScoreThumb.src = aiScore.photo_url;
+      aiScoreThumb.src = stablePhotoUrl(`aiscore:${aiScore.id}`, aiScore.photo_url);
       aiScoreThumb.classList.remove("hidden");
     } else {
       aiScoreThumb.classList.add("hidden");
@@ -679,7 +681,7 @@ function renderAiScoreCard() {
   aiScoreStatus.textContent = text;
 }
 
-if (aiScoreThumb) aiScoreThumb.addEventListener("click", () => openLightbox({ url: aiScore?.photo_url }));
+if (aiScoreThumb) aiScoreThumb.addEventListener("click", () => openLightbox({ url: aiScoreThumb.src }));
 if (aiScoreBtn) aiScoreBtn.addEventListener("click", () => aiScoreInput.click());
 if (aiScoreInput) {
   aiScoreInput.addEventListener("change", async () => {

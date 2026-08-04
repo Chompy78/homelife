@@ -3,6 +3,7 @@ import { callApi } from "../shared/api.js";
 import { compressImage } from "../shared/image.js";
 import { showAppVersion } from "../shared/version.js";
 import { escapeHtml } from "../shared/escape.js";
+import { stablePhotoUrl } from "../shared/photo-cache.js";
 
 const TOKEN_KEY = "homelife_parent_token";
 const REFRESH_INTERVAL_MS = 45000;
@@ -123,18 +124,20 @@ const EVENT_LABELS = {
   ai_auto_pass: "🤖 Auto-approved by AI",
 };
 
-function aiScoreThumbHtml(photoUrl) {
+function aiScoreThumbHtml(key, photoUrl) {
   if (!photoUrl) return "";
-  return `<img class="aiScoreLineThumb" src="${photoUrl}" data-photo-url="${photoUrl}" alt="Submitted photo" />`;
+  const url = stablePhotoUrl(key, photoUrl);
+  return `<img class="aiScoreLineThumb" src="${url}" data-photo-url="${url}" alt="Submitted photo" />`;
 }
 
 function aiScoreLineHtml(aiScore) {
   if (!aiScore) return "";
   if (aiScore.status === "pending") return `<div class="aiScoreLine">🤖 Waiting for AI score...</div>`;
+  const key = `aiscore:${aiScore.id}`;
   if (aiScore.status === "failed") {
-    return `<div class="aiScoreLine aiScoreLineRejected">${aiScoreThumbHtml(aiScore.photo_url)}<span>🤔 Not scored${aiScore.rejection_reason ? ` - ${escapeHtml(aiScore.rejection_reason)}` : ""}</span></div>`;
+    return `<div class="aiScoreLine aiScoreLineRejected">${aiScoreThumbHtml(key, aiScore.photo_url)}<span>🤔 Not scored${aiScore.rejection_reason ? ` - ${escapeHtml(aiScore.rejection_reason)}` : ""}</span></div>`;
   }
-  return `<div class="aiScoreLine">${aiScoreThumbHtml(aiScore.photo_url)}<span>🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${escapeHtml(aiScore.comment)}` : ""}</span></div>`;
+  return `<div class="aiScoreLine">${aiScoreThumbHtml(key, aiScore.photo_url)}<span>🤖 ${aiScore.score}/10${aiScore.comment ? ` - ${escapeHtml(aiScore.comment)}` : ""}</span></div>`;
 }
 
 function aiScoreButtonHtml(aiScoreMode) {
@@ -398,7 +401,7 @@ function renderAiHistoryList() {
     .map((row) => {
       const badge = (AI_HISTORY_LABELS[row.status] || (() => ""))(row);
       const detail = escapeHtml(row.status === "scored" ? row.comment || "" : row.rejection_reason || "");
-      return `<div class="aiHistoryRow"><span class="aiHistoryThumbSlot">${aiScoreThumbHtml(row.photo_url)}</span>${badge}<span class="aiHistoryDetail">${detail}</span><span class="aiHistoryWhen">${formatWhenFull(row.created_at)}</span></div>`;
+      return `<div class="aiHistoryRow"><span class="aiHistoryThumbSlot">${aiScoreThumbHtml(`aiscore:${row.id}`, row.photo_url)}</span>${badge}<span class="aiHistoryDetail">${detail}</span><span class="aiHistoryWhen">${formatWhenFull(row.created_at)}</span></div>`;
     })
     .join("");
   aiHistoryList.querySelectorAll(".aiScoreLineThumb").forEach((thumb) => {
@@ -599,7 +602,7 @@ function renderKidCard(data) {
 
   const photos = data.kid.photos || [];
   const photoTiles = photos
-    .map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${p.url}" alt="Tidy room example" /><button type="button" class="removePhotoBtn" data-photo-id="${p.id}">✕</button></div>`)
+    .map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${stablePhotoUrl(`refphoto:${p.id}`, p.url)}" alt="Tidy room example" /><button type="button" class="removePhotoBtn" data-photo-id="${p.id}">✕</button></div>`)
     .join("");
   const addTile = photos.length < MAX_PHOTOS ? `<button type="button" class="addPhotoTile">+</button>` : "";
 
@@ -651,7 +654,8 @@ function renderKidCard(data) {
   if (aiThumb) aiThumb.addEventListener("click", () => openLightbox({ url: aiThumb.dataset.photoUrl }));
   card.querySelectorAll(".photoTile").forEach((tile) => {
     const photo = photos.find((p) => p.id === tile.dataset.photoId);
-    tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
+    const img = tile.querySelector("img");
+    img.addEventListener("click", () => openLightbox({ url: img.src }));
     tile.querySelector(".removePhotoBtn").addEventListener("click", (e) => {
       e.stopPropagation();
       removePhoto("kid", photo);
@@ -819,7 +823,7 @@ function renderRoomCard(data) {
 
   const photos = room.photos || [];
   const photoTiles = photos
-    .map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${p.url}" alt="Tidy room example" /><button type="button" class="removePhotoBtn" data-photo-id="${p.id}">✕</button></div>`)
+    .map((p) => `<div class="photoTile" data-photo-id="${p.id}"><img src="${stablePhotoUrl(`refphoto:${p.id}`, p.url)}" alt="Tidy room example" /><button type="button" class="removePhotoBtn" data-photo-id="${p.id}">✕</button></div>`)
     .join("");
   const addPhotoTileHtml = photos.length < MAX_PHOTOS ? `<button type="button" class="addPhotoTile">+</button>` : "";
 
@@ -867,7 +871,8 @@ function renderRoomCard(data) {
   `;
   card.querySelectorAll(".photoTile").forEach((tile) => {
     const photo = photos.find((p) => p.id === tile.dataset.photoId);
-    tile.querySelector("img").addEventListener("click", () => openLightbox(photo));
+    const img = tile.querySelector("img");
+    img.addEventListener("click", () => openLightbox({ url: img.src }));
     tile.querySelector(".removePhotoBtn").addEventListener("click", (e) => {
       e.stopPropagation();
       removePhoto("room", photo);

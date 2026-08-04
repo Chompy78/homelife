@@ -6,6 +6,20 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-04-photo-url-egress-cache
+
+**Status:** Done
+
+**Summary:** Root-caused a Supabase Storage egress cap being exceeded to `parent-dashboard`'s 45s
+auto-refresh regenerating a fresh (uncacheable) signed URL for every unchanged photo on every tick,
+forcing full re-downloads instead of reusing the browser's own cache. Added a small client-side cache
+(`apps/shared/photo-cache.js`) that reuses the same signed URL per photo id across renders, wired into
+`parent-dashboard` and `bedroom-reset`.
+
+**Record:** decisions/2026/D-2026-08-04-photo-url-egress-cache.md
+
+---
+
 ## D-2026-08-02-gate-rejection-reason-bug
 
 **Status:** Done

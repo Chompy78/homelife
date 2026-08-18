@@ -6,6 +6,17 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-08-18
+
+- Reworked the reward-tracker Spin flow after the user reported it was hard to use and "kept triggering
+  a spin" on any interaction. Spin now shares Quick Tap's header kid picker again: pick the child (shown
+  as a highlighted chip plus the "🎡 Spinning for <name>" banner), then press SPIN and it spins straight
+  away. Removed the "Spin for who?" modal that had opened on every SPIN press - its centred kid buttons
+  overlapped the SPIN button beneath them, so dismissing it ghost-clicked SPIN and started another spin.
+  Kid chips grey out while the wheel is turning, and `spin()` now claims the `spinning` flag before its
+  first `await` so two fast presses can't both get through. Bumped `CACHE_NAME` (v21 → v22). See
+  `decisions/2026/D-2026-08-18-spin-kid-picker-before-spin.md`.
+
 ## 2026-08-04
 
 - Fixed the Supabase Storage egress leak behind the account hitting its 5GB/month cap: `parent-dashboard`'s

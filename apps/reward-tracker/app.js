@@ -97,9 +97,6 @@ const spinBtn = document.getElementById("spinBtn");
 const spinResult = document.getElementById("spinResult");
 const bonusSpinRow = document.getElementById("bonusSpinRow");
 const bonusSpinText = document.getElementById("bonusSpinText");
-const spinKidModal = document.getElementById("spinKidModal");
-const spinKidGrid = document.getElementById("spinKidGrid");
-const spinKidModalCancel = document.getElementById("spinKidModalCancel");
 const rewardTable = document.getElementById("rewardTable");
 const insightsContent = document.getElementById("insightsContent");
 const historyList = document.getElementById("historyList");
@@ -511,7 +508,12 @@ function renderKidPicker() {
     btn.className = "kidChip" + (kid.id === selectedKidId ? " selected" : "");
     btn.style.setProperty("--kid-colour", kidColour(kid.id));
     btn.innerHTML = `<span class="kidChipAvatar">${escapeHtml(kid.avatar_emoji || "⭐")}</span><span>${escapeHtml(kid.name)}</span>`;
+    // Locked mid-spin: the wheel's result is logged against whichever kid
+    // was chosen when SPIN was pressed, so letting the chip change under a
+    // running spin would just be a way to credit the wrong kid.
+    btn.disabled = spinning;
     btn.addEventListener("click", () => {
+      if (spinning) return;
       selectedKidId = kid.id;
       renderAll();
     });
@@ -541,13 +543,13 @@ modeSwitch.querySelectorAll(".modeBtn").forEach((btn) => {
   });
 });
 
-// The sticky app bar's kid picker is Quick Tap-only. Table view shows every
-// kid as its own column instead, so it gets Edit/Done there rather than a
-// kid picker. Spin also acts on one kid at a time, but doesn't get a header
-// picker either - pressing SPIN asks which kid via spinKidModal instead (see
-// spin()), so the header stays clear of kid chips on that tab.
+// The sticky app bar's kid picker is shared by Quick Tap and Spin - both act
+// on one kid at a time, so both pick that kid the same way, up front. Table
+// view shows every kid as its own column instead, so it gets Edit/Done there
+// rather than a kid picker. (Spin used to ask which kid via a modal on every
+// SPIN press - see D-2026-08-18-spin-kid-picker-before-spin.)
 function updateHeaderForMode() {
-  kidPickerRow.classList.toggle("hidden", mode !== "quick");
+  kidPickerRow.classList.toggle("hidden", mode !== "quick" && mode !== "spin");
   editModeBtn.classList.toggle("hidden", mode !== "table");
 }
 
@@ -698,42 +700,6 @@ function renderWheel() {
 
 spinBtn.addEventListener("click", () => spin());
 
-// "Spin for who?" modal - opened on every SPIN press instead of a sticky
-// header kid picker (see updateHeaderForMode). Resolves with the chosen
-// kid's id, or null if cancelled.
-let spinKidResolve = null;
-
-function renderSpinKidGrid() {
-  spinKidGrid.innerHTML = "";
-  state.kids.forEach((kid) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "spinKidBtn" + (kid.id === selectedKidId ? " selected" : "");
-    btn.style.setProperty("--kid-colour", kidColour(kid.id));
-    btn.innerHTML = `<span class="spinKidAvatar">${escapeHtml(kid.avatar_emoji || "⭐")}</span><span>${escapeHtml(kid.name)}</span>`;
-    btn.addEventListener("click", () => {
-      spinKidModal.classList.add("hidden");
-      if (spinKidResolve) spinKidResolve(kid.id);
-      spinKidResolve = null;
-    });
-    spinKidGrid.appendChild(btn);
-  });
-}
-
-function askWhichKidToSpin() {
-  renderSpinKidGrid();
-  spinKidModal.classList.remove("hidden");
-  return new Promise((resolve) => {
-    spinKidResolve = resolve;
-  });
-}
-
-spinKidModalCancel.addEventListener("click", () => {
-  spinKidModal.classList.add("hidden");
-  if (spinKidResolve) spinKidResolve(null);
-  spinKidResolve = null;
-});
-
 function renderBonusSpinRow() {
   const kid = state.kids.find((k) => k.id === selectedKidId);
   const count = kid?.bonus_spins || 0;
@@ -787,23 +753,16 @@ function renderSpinReasonsList() {
   });
 }
 
+// The kid is already chosen (header kid picker, same as Quick Tap), so SPIN
+// spins straight away - no prompt in between. `spinning` is set synchronously
+// before the first await so a second press can't start a parallel spin.
 async function spin() {
   if (spinning || !selectedKidId) return;
-  spinBtn.disabled = true;
-  const chosenKidId = await askWhichKidToSpin();
-  if (!chosenKidId) {
-    spinBtn.disabled = spinning;
-    return;
-  }
-  selectedKidId = chosenKidId;
-  renderActiveKidBanner();
-  renderBonusSpinRow();
-  renderSpinReasonsList();
-
   const kidId = selectedKidId;
   spinning = true;
   spinBtn.disabled = true;
   spinBtn.classList.add("hidden");
+  renderKidPicker(); // greys the chips out for the duration
   winningCategoryId = null;
   spinResult.classList.add("hidden");
 
@@ -842,6 +801,7 @@ async function spin() {
   spinning = false;
   spinBtn.disabled = !selectedKidId;
   spinBtn.classList.remove("hidden");
+  renderKidPicker();
 }
 
 // One physical wheel rotation - always spins forward from wherever it

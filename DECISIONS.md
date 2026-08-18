@@ -6,6 +6,17 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-18-spin-kid-picker-before-spin
+
+**Status:** Done
+
+**Summary:** Reversed the reward-tracker Spin flow back to pick-kid-then-press-SPIN: Spin rejoins Quick
+Tap on the sticky header's kid picker and SPIN spins immediately, replacing the "Spin for who?" modal
+from `D-2026-07-30-spin-tab-ask-kid-on-spin`. That modal's centred kid buttons sat on top of the SPIN
+button, so dismissing it ghost-clicked SPIN and kept re-triggering spins.
+
+**Record:** decisions/2026/D-2026-08-18-spin-kid-picker-before-spin.md
+
 ## D-2026-08-04-photo-url-egress-cache
 
 **Status:** Done
@@ -138,7 +149,7 @@ forcing full re-downloads instead of reusing the browser's own cache. Added a sm
 
 ## D-2026-07-30-spin-tab-ask-kid-on-spin
 
-**Status:** Done
+**Status:** Superseded by D-2026-08-18-spin-kid-picker-before-spin
 
 **Summary:** Removed the shared header kid picker from the reward-tracker Spin tab; pressing SPIN
   now opens a "Spin for who?" modal first and sets `selectedKidId` from that choice, instead of

@@ -138,9 +138,13 @@ older entry.
 ## Spin wheel
 
 A 🎡 Spin mode alongside Quick Tap: a wheel with one wedge per reward
-category (same colours as everywhere else). Unlike Quick Tap, Spin has no
-kid picker in the header - pressing SPIN asks which kid it's for first,
-then spins for them (see `D-2026-07-30-spin-tab-ask-kid-on-spin`). Landing
+category (same colours as everywhere else). Spin shares Quick Tap's header
+kid picker: pick the kid first (the banner under the tabs confirms who
+you're spinning for), then press SPIN and it spins straight away - the
+chips grey out until the wheel stops, so the result can't be credited to
+the wrong kid (see `D-2026-08-18-spin-kid-picker-before-spin`, which
+replaced the "Spin for who?" prompt from
+`D-2026-07-30-spin-tab-ask-kid-on-spin`). Landing
 logs a real earn exactly like tapping + does, no backend changes needed -
 it's `adjust_reward` under the hood, with an automatic note ("🎡 Spinner:
 <category>") so History shows why the balance moved. Landing on "Spin

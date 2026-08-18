@@ -1,7 +1,7 @@
 # D-2026-07-30-spin-tab-ask-kid-on-spin
 
 Date: 2026-07-30
-Status: Done
+Status: Superseded
 
 **Context:** The user asked for a tweak to the reward spinner: on the Spin tab, kids should not
 appear in the sticky header's kid picker (`kidPickerRow`) the way they do on Quick Tap. Instead,
@@ -29,4 +29,6 @@ second parallel "which kid" concept. The modal pre-highlights whichever kid is c
 re-spinning for the same kid can just tap the same button again instead of hunting for them.
 Quick Tap's header picker is untouched - this only changes Spin.
 
-**Status:** Done.
+**Status:** Superseded by `D-2026-08-18-spin-kid-picker-before-spin` - the modal's kid buttons
+landed on top of the SPIN button underneath, so closing it ghost-clicked SPIN and re-triggered a
+spin. Spin is back on the shared header kid picker, with SPIN spinning immediately.

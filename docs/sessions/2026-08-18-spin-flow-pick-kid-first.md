@@ -27,6 +27,12 @@ re-triggering a spin on any interaction.
   `D-2026-07-30-spin-tab-ask-kid-on-spin` Superseded in both its record and the `DECISIONS.md`
   index.
 - Repo-wide grep for `spinKid` after the change: no references left.
+- This session ran with a harness-designated branch (`claude/rewards-app-spin-flow-dqdlbe`) rather
+  than the repo's usual straight-to-`main` convention, so the work was committed and pushed there
+  first. On the user's "merge to main", `main` fast-forwarded `d59e669..83ab955` (the branch was
+  exactly one commit ahead, no conflicts) and was pushed.
+- Both Pages workflows ("Deploy to GitHub Pages" and GitHub's own "pages build and deployment")
+  completed successfully on `83ab955`, so the new flow is live.
 
 ## Files touched
 
@@ -48,7 +54,15 @@ re-triggering a spin on any interaction.
 
 ## Carried forward
 
-- No edge-function or schema change was involved, so nothing to redeploy beyond the normal Pages
-  push. Installed devices pick the change up on the `CACHE_NAME` bump.
+- No edge-function or schema change was involved, so nothing to redeploy beyond the Pages push
+  (done — both workflows green). Installed devices pick the change up on the `CACHE_NAME` bump;
+  the in-app version tag should read `reward-tracker-pwa-v22`.
 - Not verified on a physical phone this session — the ghost-click cause is removed structurally
   (no overlay opens over the wheel at all), but worth a quick confirm on the user's device.
+- `claude/rewards-app-spin-flow-dqdlbe` is now fully merged into `main` and stray, local and on the
+  remote. Left in place deliberately — deleting branches is `/cleanup-branches-universal-jc`'s job,
+  not the close-session skill's.
+- A generalizable (non-Homelife) lesson surfaced and hasn't been logged to `ai-lessons-learned`: a
+  centred overlay whose buttons sit over the control that opened it will ghost-click that control
+  when it closes inside the same tap — the repeated-spin bug here. That repo isn't in this session's
+  GitHub scope, so logging it needs an `add_repo` first.

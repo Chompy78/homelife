@@ -136,14 +136,22 @@
         <div class="settingsRow">
           <div>
             <div class="settingsRowTitle">🔊 Spin sound</div>
-            <div class="settingsRowSub">Ticking while the wheel spins, a chime when it lands.</div>
+            <div class="settingsRowSub">A beat that slows with the wheel, then a payoff when it lands. Pick one to hear it.</div>
           </div>
-          <select id="spinSoundPresetSelect" class="catWeightSelect">
-            <option value="off">Off</option>
-            <option value="chimes">Chimes</option>
-            <option value="arcade">Arcade</option>
-            <option value="retro">Retro</option>
-          </select>
+          <!-- Values are preset keys in SPIN_SOUND_PRESETS, not labels - "retro"
+               keeps its old key so an existing stored preference still resolves,
+               even though it's now labelled (and sounds like) a prize wheel. -->
+          <div class="spinSoundControls">
+            <select id="spinSoundPresetSelect" class="catWeightSelect">
+              <option value="off">Off</option>
+              <option value="chimes">Chimes</option>
+              <option value="drums">Drum kit</option>
+              <option value="taiko">Big drums</option>
+              <option value="arcade">Arcade</option>
+              <option value="retro">Prize wheel</option>
+            </select>
+            <button id="spinSoundPreviewBtn" type="button" class="spinSoundPreviewBtn" title="Hear this sound">▶</button>
+          </div>
         </div>
         <div class="settingsRow" style="margin-top: 14px;">
           <div>

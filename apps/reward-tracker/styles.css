@@ -219,6 +219,9 @@ header h1 { margin: 0; font-size: clamp(1.05rem, 3.2vw, 1.35rem); display: flex;
   border-radius: 50%;
   border: 6px solid var(--card);
   box-shadow: var(--shadow);
+  /* The spin sound's tick schedule inverts this exact curve to find when the
+     wheel passes each peg - keep WHEEL_EASING in app.js in step with it. The
+     duration is overwritten per spin from the Settings slider. */
   transition: transform 2.6s cubic-bezier(0.15, 0.85, 0.35, 1);
 }
 .wheelLabel {
@@ -468,6 +471,11 @@ header h1 { margin: 0; font-size: clamp(1.05rem, 3.2vw, 1.35rem); display: flex;
 .toggleSwitch input:checked + .toggleSlider::before { transform: translateX(20px); }
 
 .spinDurationSlider { width: 100%; margin-top: 4px; accent-color: var(--accent); }
+.spinSoundControls { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.spinSoundPreviewBtn {
+  background: var(--accent); color: #fff; border: 0; border-radius: 10px;
+  width: 34px; height: 34px; font-size: 0.8rem; font-weight: 800; cursor: pointer; flex: 0 0 auto;
+}
 
 .avatarList { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
 .avatarRow { display: flex; align-items: center; gap: 10px; }

@@ -225,20 +225,3 @@ served at (e.g. `/homelife/migration/hello-world/`) or the deployed build
 loads a blank page (a classic first-time Vite-on-GH-Pages mistake).
 </details>
 
-### Better spinning sounds for the reward wheel
-- **Tags:** ux
-- **Status:** open
-- The Spin tab's sound presets (`SPIN_SOUND_PRESETS` in `apps/reward-tracker/app.js`, currently
-  `chimes`/`arcade`/`retro`, played via `playTone`/`playSpinTicks`/`playLandingChime`) are basic
-  synthesized square/sawtooth/sine beeps and ticks. Make them sound more satisfying/polished -
-  either by improving the existing synthesized tones (envelope shaping, layering, pitch sweep as
-  the wheel slows) or by adding one or more genuinely nicer-sounding presets. No backend or schema
-  changes - this is scoped entirely to the Web Audio synthesis in `app.js` and the existing
-  `spinSoundPresetSelect` UI (Settings modal) that already lets a parent pick a preset per device.
-- **Done when:** at least one spin sound preset sounds noticeably better than the current three
-  (subjective, but should hold up in a real spin - ticks that speed up/slow with the wheel, a
-  landing sound that feels like a payoff), verified by actually spinning the wheel in a browser
-  with sound on, not just reading the code.
-
----
-

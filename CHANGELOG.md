@@ -6,6 +6,18 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-08-22
+
+- Rebuilt the reward-tracker spin sounds. Five presets instead of three - Chimes (default, now struck
+  bells), **Drum kit** (kick/hat/snare groove), **Big drums** (taiko hits into a gong), Arcade
+  (chiptune) and Prize wheel (wooden peg clicks into a fanfare) - all synthesized, still no audio
+  files. Ticks are now scheduled by inverting the wheel's own CSS easing, so the beat decelerates
+  exactly as the wheel does and the last click lands as it stops; a per-preset `minGap` turns the same
+  peg schedule into dense clicks or a sparse groove. Settings gained a ▶ preview button and plays a
+  preset as soon as it's picked. Per-preset loudness was measured by rendering each one through an
+  `OfflineAudioContext` (peaks were 0.16-0.69 apart; now 0.30-0.41). Bumped `CACHE_NAME` (v22 → v23).
+  See `decisions/2026/D-2026-08-22-spin-sound-redesign.md`.
+
 ## 2026-08-18
 
 - Reworked the reward-tracker Spin flow after the user reported it was hard to use and "kept triggering

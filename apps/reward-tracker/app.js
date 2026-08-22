@@ -20,35 +20,6 @@ const SPIN_DURATION_MAX = 8;
 // it's stable across loads without needing a schema change just for this.
 const KID_PALETTE = ["#ff5c8a", "#009688", "#7d5fff", "#f2994a", "#2196f3", "#8bc34a"];
 
-// Spin sound presets - "off" is handled separately (no config needed), the
-// rest are named tick-tone + landing-tone configs for playTone(). "chimes"
-// is the original sound, kept as the default so nobody's existing
-// preference silently changes.
-const SPIN_SOUND_PRESETS = {
-  chimes: {
-    tick: { freq: 500, type: "square", gain: 0.05 },
-    landing: [
-      { freq: 660, type: "sine", dur: 0.18, gain: 0.16, delay: 0 },
-      { freq: 880, type: "sine", dur: 0.25, gain: 0.16, delay: 0.08 },
-    ],
-  },
-  arcade: {
-    tick: { freq: 720, type: "sawtooth", gain: 0.045 },
-    landing: [
-      { freq: 523, type: "square", dur: 0.12, gain: 0.14, delay: 0 },
-      { freq: 659, type: "square", dur: 0.12, gain: 0.14, delay: 0.1 },
-      { freq: 784, type: "square", dur: 0.2, gain: 0.15, delay: 0.2 },
-    ],
-  },
-  retro: {
-    tick: { freq: 380, type: "square", gain: 0.05 },
-    landing: [
-      { freq: 440, type: "square", dur: 0.1, gain: 0.14, delay: 0 },
-      { freq: 440, type: "square", dur: 0.1, gain: 0.14, delay: 0.14 },
-    ],
-  },
-};
-
 // Same fixed 9-icon set the backend validates against - a family picks any
 // 3 as an alternative to the 4-digit PIN. A parent sets which 3 in Parent
 // Dashboard; this app only ever verifies a guess, never sees the answer.
@@ -162,6 +133,7 @@ const settingsModal = document.getElementById("settingsModal");
 const settingsModalClose = document.getElementById("settingsModalClose");
 const pinProtectionToggle = document.getElementById("pinProtectionToggle");
 const spinSoundPresetSelect = document.getElementById("spinSoundPresetSelect");
+const spinSoundPreviewBtn = document.getElementById("spinSoundPreviewBtn");
 const spinDurationSlider = document.getElementById("spinDurationSlider");
 const spinDurationValue = document.getElementById("spinDurationValue");
 const avatarList = document.getElementById("avatarList");
@@ -600,49 +572,331 @@ let winningCategoryId = null;
 let wheelWedges = []; // [{ cat, start, end }] in degrees - kept in sync with the rendered wheel for weighted landing
 const MAX_SPINS_PER_ROUND = 25; // safety cap against a runaway chain (e.g. a data issue flagging multiple categories is_bonus_spin)
 
-// --- Spin sound - synthesized with Web Audio, no sound files needed. A
-// series of ticks that spread out over the spin (like a wheel clicking
-// past pegs, slowing down), then a two-note chime on landing. ---------
+// --- Spin sound - synthesized with Web Audio, so there are no audio files
+// to ship, cache or keep in step with CACHE_NAME. Two ideas do most of the
+// work here:
+//
+// 1. Ticks are scheduled at equal *angle* increments, not equal time. The
+//    wheel's CSS transition is cubic-bezier(0.15, 0.85, 0.35, 1), so
+//    inverting that curve gives the moment the wheel passes each imaginary
+//    peg - which is why the rhythm decelerates exactly the way the wheel
+//    visibly does, rather than only roughly spreading out.
+// 2. A preset is a pair of functions, not a table of tones, so it can pick
+//    a different voice per beat (the drum kit's kick/hat/snare pattern).
+//    The old data-only shape could only repeat one blip.
+//
+// Everything runs through one master gain: presets layer two or three
+// voices per hit, and without a shared ceiling those sum into clipping. ---
 
 let audioCtx = null;
+let audioMaster = null;
+let noiseBuffer = null;
+
 function getAudioCtx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    audioMaster = audioCtx.createGain();
+    audioMaster.gain.value = SPIN_PRESET_LEVEL_DEFAULT;
+    audioMaster.connect(audioCtx.destination);
+  }
+  // iOS/Safari hold a new context suspended until a user gesture resumes it.
+  // Every path into here is inside a click handler, so this is that gesture.
+  if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
   return audioCtx;
 }
 
-function playTone(ctx, freq, startTime, duration, type, peakGain) {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.type = type;
-  osc.frequency.value = freq;
-  gain.gain.setValueAtTime(0, startTime);
-  gain.gain.linearRampToValueAtTime(peakGain, startTime + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(startTime);
-  osc.stop(startTime + duration);
+// One second of white noise, looped by every noise-based voice. Generating a
+// fresh buffer per hit is what makes naive drum synthesis stutter on a phone.
+function getNoiseBuffer(ctx) {
+  if (!noiseBuffer) {
+    const frames = Math.floor(ctx.sampleRate);
+    noiseBuffer = ctx.createBuffer(1, frames, ctx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+  }
+  return noiseBuffer;
 }
 
+// exponentialRampToValueAtTime can never reach 0, hence the 0.0001 floor -
+// ramping linearly to a true 0 instead leaves an audible click on every tail.
+function envelope(ctx, start, dur, peak, attack = 0.004) {
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.linearRampToValueAtTime(peak, start + attack);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+  gain.connect(audioMaster);
+  return gain;
+}
+
+function playTone(ctx, { freq, freqEnd, type = "sine", start, dur, gain, attack, filterFreq }) {
+  const osc = ctx.createOscillator();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, start);
+  if (freqEnd && freqEnd !== freq) {
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), start + dur);
+  }
+  const env = envelope(ctx, start, dur, gain, attack);
+  // Sawtooth/square voices are harsh unrolled off - a lowpass is the
+  // difference between "brass" and "buzzer".
+  if (filterFreq) {
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = filterFreq;
+    osc.connect(lowpass);
+    lowpass.connect(env);
+  } else {
+    osc.connect(env);
+  }
+  osc.start(start);
+  osc.stop(start + dur + 0.02);
+}
+
+function playNoise(ctx, { start, dur, gain, type = "bandpass", freq, freqEnd, q = 1 }) {
+  const src = ctx.createBufferSource();
+  src.buffer = getNoiseBuffer(ctx);
+  src.loop = true;
+  const filter = ctx.createBiquadFilter();
+  filter.type = type;
+  filter.frequency.setValueAtTime(freq, start);
+  if (freqEnd && freqEnd !== freq) {
+    filter.frequency.exponentialRampToValueAtTime(Math.max(20, freqEnd), start + dur);
+  }
+  filter.Q.value = q;
+  src.connect(filter);
+  filter.connect(envelope(ctx, start, dur, gain, 0.002));
+  src.start(start);
+  src.stop(start + dur + 0.02);
+}
+
+// --- Voices. Each pairs a pitch-swept body with a short transient: the
+// transient is what makes a hit read as a hit rather than as a beep. ------
+
+function hitKick(ctx, at, { gain = 0.5, freq = 150, dur = 0.3 } = {}) {
+  playTone(ctx, { freq, freqEnd: freq * 0.3, type: "sine", start: at, dur, gain, attack: 0.003 });
+  playNoise(ctx, { start: at, dur: 0.025, gain: gain * 0.3, type: "lowpass", freq: 1600 }); // beater click
+}
+
+function hitSnare(ctx, at, { gain = 0.24, dur = 0.16 } = {}) {
+  playNoise(ctx, { start: at, dur, gain, type: "highpass", freq: 1500, q: 0.7 });
+  playTone(ctx, { freq: 210, freqEnd: 140, type: "triangle", start: at, dur: 0.08, gain: gain * 0.6 });
+}
+
+function hitHat(ctx, at, { gain = 0.1, dur = 0.045 } = {}) {
+  playNoise(ctx, { start: at, dur, gain, type: "highpass", freq: 7500, q: 0.9 });
+}
+
+function hitTom(ctx, at, { freq = 220, gain = 0.3, dur = 0.24 } = {}) {
+  playTone(ctx, { freq, freqEnd: freq * 0.55, type: "sine", start: at, dur, gain, attack: 0.004 });
+  playNoise(ctx, { start: at, dur: 0.02, gain: gain * 0.18, type: "bandpass", freq: freq * 6, q: 1.5 });
+}
+
+function hitCrash(ctx, at, { gain = 0.18, dur = 1.1 } = {}) {
+  playNoise(ctx, { start: at, dur, gain, type: "highpass", freq: 4000, q: 0.6 });
+  playNoise(ctx, { start: at, dur: dur * 0.5, gain: gain * 0.5, type: "bandpass", freq: 9000, q: 0.5 });
+}
+
+// The wooden knock a real prize wheel's flapper makes against a peg.
+function hitWood(ctx, at, { gain = 0.16, freq = 1900 } = {}) {
+  playNoise(ctx, { start: at, dur: 0.028, gain, type: "bandpass", freq, q: 6 });
+  playTone(ctx, { freq: freq * 0.35, freqEnd: freq * 0.2, type: "triangle", start: at, dur: 0.05, gain: gain * 0.55, attack: 0.002 });
+}
+
+// Struck metal. The inharmonic partial ratios are spelled out rather than
+// 2x/3x because plain harmonics are exactly what makes a "bell" sound like
+// a sine wave instead; higher partials also decay faster, hence the taper.
+function hitBell(ctx, at, { freq = 880, gain = 0.12, dur = 0.5 } = {}) {
+  [[1, 1], [2.76, 0.4], [5.4, 0.16]].forEach(([ratio, level]) => {
+    playTone(ctx, {
+      freq: freq * ratio,
+      type: "sine",
+      start: at,
+      dur: dur * Math.max(0.3, 1 - 0.13 * ratio),
+      gain: gain * level,
+      attack: 0.002,
+    });
+  });
+}
+
+// Spin sound presets - "off" is handled separately (no config needed). Each
+// preset supplies minGap (how close together its voice can fire before the
+// hits smear), a tick() for one peg passing, a landing() for the payoff, and
+// a level.
+//
+// level is the preset's own loudness on the master gain, and it is measured,
+// not guessed: rendering each preset through an OfflineAudioContext showed a
+// 4x spread in peak amplitude between the quietest (arcade) and the loudest
+// (drums), which as a plain preset switch would be a jarring jump in volume.
+// These numbers pull all five to roughly the same peak. Re-measure if a
+// preset's voices change - see D-2026-08-22-spin-sound-redesign.
+const SPIN_PRESET_LEVEL_DEFAULT = 0.85;
+const SPIN_SOUND_PRESETS = {
+  // Default, and the same key the original two-beep version used, so an
+  // existing stored preference keeps meaning the same thing - now struck
+  // bells rather than a bare sine pair.
+  chimes: {
+    level: 0.85,
+    minGap: 0.055,
+    tick(ctx, at, i, progress) {
+      hitBell(ctx, at, { freq: 1050 + progress * 320, gain: 0.055, dur: 0.16 });
+    },
+    landing(ctx, at) {
+      [784, 988, 1319].forEach((freq, i) => hitBell(ctx, at + i * 0.1, { freq, gain: 0.15, dur: 0.9 }));
+      playTone(ctx, { freq: 392, type: "sine", start: at, dur: 1.4, gain: 0.08, attack: 0.04 });
+    },
+  },
+
+  drums: {
+    level: 0.5,
+    minGap: 0.1,
+    tick(ctx, at, i, progress) {
+      const punch = 0.7 + progress * 0.3; // the groove leans in as the wheel settles
+      if (i % 4 === 0) hitKick(ctx, at, { gain: 0.42 * punch });
+      else if (i % 4 === 2) hitSnare(ctx, at, { gain: 0.2 * punch });
+      else hitHat(ctx, at, { gain: 0.085 * punch });
+    },
+    landing(ctx, at) {
+      [260, 200, 150].forEach((freq, i) => hitTom(ctx, at + i * 0.09, { freq, gain: 0.32 })); // fill
+      hitKick(ctx, at + 0.3, { gain: 0.55, dur: 0.4 });
+      hitCrash(ctx, at + 0.3);
+    },
+  },
+
+  taiko: {
+    level: 0.55,
+    minGap: 0.13,
+    tick(ctx, at, i) {
+      const accent = i % 3 === 0; // dum - dut - dut
+      hitTom(ctx, at, {
+        freq: accent ? 105 : 150,
+        gain: accent ? 0.45 : 0.2,
+        dur: accent ? 0.4 : 0.22,
+      });
+    },
+    landing(ctx, at) {
+      hitTom(ctx, at, { freq: 95, gain: 0.5, dur: 0.7 });
+      hitTom(ctx, at + 0.16, { freq: 80, gain: 0.55, dur: 1.2 });
+      // Gong: a low struck partial under a slow noise swell rolling off.
+      hitBell(ctx, at + 0.16, { freq: 160, gain: 0.13, dur: 1.8 });
+      playNoise(ctx, { start: at + 0.16, dur: 1.6, gain: 0.09, type: "lowpass", freq: 1400, freqEnd: 300 });
+    },
+  },
+
+  arcade: {
+    level: 1.7,
+    minGap: 0.05,
+    tick(ctx, at, i, progress) {
+      const freq = 620 + progress * 520; // rises as the wheel slows, like a coin counter
+      playTone(ctx, { freq, freqEnd: freq * 0.55, type: "square", start: at, dur: 0.05, gain: 0.05, attack: 0.002, filterFreq: 4200 });
+    },
+    landing(ctx, at) {
+      [523, 659, 784, 1047].forEach((freq, i) =>
+        playTone(ctx, { freq, type: "square", start: at + i * 0.07, dur: 0.12, gain: 0.1, attack: 0.002, filterFreq: 5000 })
+      );
+      playTone(ctx, { freq: 1047, type: "square", start: at + 0.28, dur: 0.5, gain: 0.11, attack: 0.003, filterFreq: 5000 });
+      playTone(ctx, { freq: 1568, type: "square", start: at + 0.28, dur: 0.5, gain: 0.055, attack: 0.003, filterFreq: 5000 });
+    },
+  },
+
+  // Keyed "retro" (not "prizewheel") so anyone already on the old preset of
+  // that name keeps a working preference - only the sound and the label in
+  // Settings changed.
+  retro: {
+    level: 1.35,
+    minGap: 0.042,
+    tick(ctx, at, i, progress) {
+      hitWood(ctx, at, { gain: 0.15 + progress * 0.06, freq: 1700 + (i % 2) * 260 });
+    },
+    landing(ctx, at) {
+      [[392, 0], [523, 0.12], [659, 0.24], [784, 0.36]].forEach(([freq, delay]) => {
+        const dur = delay === 0.36 ? 0.75 : 0.16; // the last note of a fanfare is the one that rings
+        playTone(ctx, { freq, type: "sawtooth", start: at + delay, dur, gain: 0.085, attack: 0.012, filterFreq: 2600 });
+        playTone(ctx, { freq: freq * 2, type: "triangle", start: at + delay, dur, gain: 0.04, attack: 0.012 });
+      });
+      hitCrash(ctx, at + 0.36, { gain: 0.12, dur: 0.9 });
+    },
+  },
+};
+
+// The wheel's CSS easing, duplicated here on purpose: the tick schedule is
+// derived from it, so it must stay in step with .wheel's
+// transition-timing-function in styles.css (which carries a matching note).
+const WHEEL_EASING = { x1: 0.15, y1: 0.85, x2: 0.35, y2: 1 };
+const SPIN_TICK_PEGS = 72; // imaginary pegs around the wheel, thinned per preset by minGap
+
+function bezierAxis(p1, p2, s) {
+  const u = 1 - s;
+  return 3 * u * u * s * p1 + 3 * u * s * s * p2 + s * s * s;
+}
+
+// Given how far through its total rotation the wheel is (0..1), return when
+// that happens as a fraction of the spin's duration - i.e. the inverse of the
+// CSS easing. Bisection rather than Newton: 24 halvings is far finer than
+// audio timing needs, and it can't diverge where the curve flattens out at
+// the end (the easing lands at zero velocity, so that tail is very flat).
+function wheelTimeForRotation(rotationFraction) {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (bezierAxis(WHEEL_EASING.y1, WHEEL_EASING.y2, mid) < rotationFraction) lo = mid;
+    else hi = mid;
+  }
+  return bezierAxis(WHEEL_EASING.x1, WHEEL_EASING.x2, (lo + hi) / 2);
+}
+
+// Peg-pass times for one spin. Early on the wheel is turning far too fast for
+// a drum hit per peg, so minGap drops the ones that would smear together -
+// the clicky presets keep nearly every peg, the drum kit keeps roughly every
+// third early one and all of the late ones.
+function tickTimes(durationSeconds, minGap) {
+  const times = [];
+  let last = -Infinity;
+  for (let peg = 1; peg <= SPIN_TICK_PEGS; peg++) {
+    const at = wheelTimeForRotation(peg / SPIN_TICK_PEGS) * durationSeconds;
+    if (at - last < minGap) continue;
+    last = at;
+    times.push(at);
+  }
+  return times;
+}
+
+// Scheduled up front rather than driven by a timer: Web Audio's clock is
+// sample-accurate, so a rhythm laid out ahead of time holds together even
+// while the main thread is busy re-rendering the wheel.
 function playSpinTicks(durationSeconds) {
   const preset = SPIN_SOUND_PRESETS[spinSoundPreset()];
   if (!preset) return; // "off"
   const ctx = getAudioCtx();
   const now = ctx.currentTime;
-  const tickCount = Math.round(10 + durationSeconds * 4); // more ticks for a longer spin
-  for (let i = 0; i < tickCount; i++) {
-    const t = i / tickCount;
-    const eased = 1 - (1 - t) * (1 - t); // spreads ticks out near the end, matching the wheel's own deceleration
-    playTone(ctx, preset.tick.freq, now + eased * durationSeconds, 0.04, preset.tick.type, preset.tick.gain);
-  }
+  audioMaster.gain.setValueAtTime(preset.level, now);
+  tickTimes(durationSeconds, preset.minGap).forEach((at, i) => {
+    preset.tick(ctx, now + at, i, at / durationSeconds);
+  });
 }
 
-function playLandingChime() {
+function playLandingSound() {
   const preset = SPIN_SOUND_PRESETS[spinSoundPreset()];
   if (!preset) return; // "off"
   const ctx = getAudioCtx();
-  const now = ctx.currentTime;
-  preset.landing.forEach((tone) => playTone(ctx, tone.freq, now + tone.delay, tone.dur, tone.type, tone.gain));
+  audioMaster.gain.setValueAtTime(preset.level, ctx.currentTime);
+  preset.landing(ctx, ctx.currentTime + 0.02);
+}
+
+// Settings preview - a spin compressed into ~1.2s, then the landing, so a
+// parent can compare presets without spinning the wheel for real (and
+// without spending a kid's spin to hear one).
+const SPIN_PREVIEW_SECONDS = 1.2;
+
+function previewSpinSound() {
+  const preset = SPIN_SOUND_PRESETS[spinSoundPreset()];
+  if (!preset) return; // "off"
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime + 0.05;
+  audioMaster.gain.setValueAtTime(preset.level, ctx.currentTime);
+  tickTimes(SPIN_PREVIEW_SECONDS, preset.minGap).forEach((at, i) => {
+    preset.tick(ctx, now + at, i, at / SPIN_PREVIEW_SECONDS);
+  });
+  preset.landing(ctx, now + SPIN_PREVIEW_SECONDS + 0.05);
 }
 
 // Wedge width is proportional to spin_weight, so a plain uniform-random
@@ -840,7 +1094,7 @@ async function runOneSpin() {
 
   winningCategoryId = cat.id;
   wheelLegend.querySelectorAll(".wheelLegendItem").forEach((el) => el.classList.toggle("winning", el.dataset.cat === cat.id));
-  playLandingChime();
+  playLandingSound();
   return cat;
 }
 
@@ -1542,9 +1796,14 @@ pinProtectionToggle.addEventListener("change", async () => {
   familyPinProtectionEnabled = enabled;
 });
 
+// Picking from a list of sounds should play the sound - otherwise choosing
+// between six presets means spinning the wheel six times to compare them.
 spinSoundPresetSelect.addEventListener("change", () => {
   localStorage.setItem(SPIN_SOUND_KEY, spinSoundPresetSelect.value);
+  previewSpinSound();
 });
+
+spinSoundPreviewBtn.addEventListener("click", () => previewSpinSound());
 
 spinDurationSlider.addEventListener("input", () => {
   localStorage.setItem(SPIN_DURATION_KEY, spinDurationSlider.value);

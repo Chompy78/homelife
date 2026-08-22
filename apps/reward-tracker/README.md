@@ -159,9 +159,15 @@ category weighted 5 is both visibly the biggest slice and, since landing
 is just a uniform-random angle, correctly 5x as likely to be hit - no
 separate weighted-random-pick logic needed, the geometry does it.
 
-Spin sound (synthesized with Web Audio, no sound files - ticks that
-spread out as the wheel slows, then a two-note chime on landing) is on by
-default; a parent can turn it off in Settings. Spin duration is also a
-Settings control (2-8 seconds, defaults to 2.6) - both are per-device
+Spin sound is synthesized with Web Audio - no sound files, so nothing
+extra to download or keep in step with `CACHE_NAME`. Five presets, picked
+in Settings with a ▶ button to hear one without spinning: **Chimes**
+(default), **Drum kit**, **Big drums**, **Arcade** and **Prize wheel**,
+plus Off. Ticks are scheduled at equal *angle* increments by inverting the
+wheel's own CSS easing, so the rhythm decelerates exactly as the wheel
+does, and each preset's loudness (`level`) was measured by rendering it
+through an `OfflineAudioContext` rather than guessed. See
+`D-2026-08-22-spin-sound-redesign`. Spin duration is also a Settings
+control (2-8 seconds, defaults to 2.6) - both are per-device
 `localStorage` preferences, same as dark mode and PIN protection, not
 family-wide settings. See `D-2026-07-19-reward-tracker-spin-weighting`.

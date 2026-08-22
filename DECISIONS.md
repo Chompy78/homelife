@@ -6,6 +6,18 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-22-spin-sound-redesign
+
+**Status:** Done
+
+**Summary:** Rebuilt the reward-tracker's spin audio: a small synthesized voice library (kick/snare/hat/
+tom/crash/wood/bell) with presets as `tick`/`landing` *functions* rather than a tone table, five presets
+(Chimes, Drum kit, Big drums, Arcade, Prize wheel) plus a ▶ preview in Settings. Ticks are scheduled by
+inverting the wheel's own CSS easing so the rhythm decelerates exactly as the wheel does, and each
+preset's loudness was measured by offline-rendering it rather than guessed.
+
+**Record:** decisions/2026/D-2026-08-22-spin-sound-redesign.md
+
 ## D-2026-08-18-spin-kid-picker-before-spin
 
 **Status:** Done

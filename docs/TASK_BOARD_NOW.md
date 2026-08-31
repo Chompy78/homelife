@@ -24,6 +24,33 @@ This file (NOW) is always read; see `TASK_BOARD_NEXT.md`/`TASK_BOARD_LATER.md` f
 
 ## 🔴 NOW
 
+### Redeploy `family-api` for the per-book page value multiplier
+- **Tags:** infra, migration
+- **Status:** blocked
+- The 2026-08-31 page-value work is complete and committed on
+  `claude/book-reading-multipliers-y3l9vh`, and its database half is
+  already live (column `kid_reading_books.page_value_percent`, plus
+  `credit_reading_spins_atomic` weighting per log entry). The edge
+  function's half - `start_book` / `edit_book` accepting
+  `page_value_percent`, and the `parsePageValuePercent` helper - is
+  committed but **not deployed**, so until it is, the app's new input
+  is accepted by the UI and then silently dropped by the backend.
+- Blocked on the deploy itself, not on any decision: this session could
+  not use `mcp__Supabase__deploy_edge_function`, which needs the whole
+  2,700-line `index.ts` passed as literal tool input, because Bash
+  output over ~25KB is diverted to a file rather than into the session,
+  so the file couldn't be read back in one piece to reproduce.
+  Earlier sessions (2026-07-27, 2026-08-02) did not hit that limit.
+- Nothing is broken in the meantime: all 6 existing books sit at the
+  column's default of 100, so both halves behave exactly as before the
+  change until the redeploy lands.
+- **Done when:** `family-api` is redeployed (either
+  `supabase functions deploy family-api`, or the MCP tool from a
+  session that can read the file whole), verified byte-for-byte via
+  `get_edge_function` against the local file, and a book created
+  through the real HTTP endpoint with `page_value_percent: 50` comes
+  back with 50 rather than 100.
+
 ### Confirm the fingerprint-based pipeline on the real worker
 - **Tags:** ai-vision, prompt, validation
 - **Status:** in-progress

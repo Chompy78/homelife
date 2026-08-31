@@ -17,7 +17,9 @@ on `TASK_BOARD.md`.
   before/after schedule figures. New column `kid_reading_books.page_value_percent` (NOT NULL, default
   100, 1-1000) and `credit_reading_spins_atomic` now weights per log entry in SQL - a spin already
   earned is never clawed back if a value is lowered afterwards. Bumped `CACHE_NAME` (v6 → v7).
-  See `decisions/2026/D-2026-08-31-book-page-value-multiplier.md`.
+  `family-api` deployed as v44 (via `npx supabase@latest functions deploy` from the user's machine -
+  see the session note for why the MCP deploy path wasn't usable) and smoke-tested end to end against
+  a disposable family. See `decisions/2026/D-2026-08-31-book-page-value-multiplier.md`.
 
 ## 2026-08-22
 

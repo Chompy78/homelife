@@ -61,9 +61,28 @@ read to be worth one normal page.
   commit-straight-to-`main` convention; flagged to the user.
 - User then asked to merge. Fast-forwarded `main` (it hadn't moved since the
   branch point) and pushed; GitHub Pages deploy run #103 triggered. The
-  front end is therefore live *ahead* of the edge function, so the page
-  value input now shows in the real app and is silently ignored on save
-  until the redeploy lands — noted on the task board entry.
+  front end was therefore live *ahead* of the edge function for a while,
+  with the page value input showing in the real app and being silently
+  ignored on save.
+- **Resolved the deploy the same session, from the user's own machine.** The
+  Supabase CLI wasn't installed on Windows, and `npm i -g supabase` is
+  blocked by Supabase, so the working route was
+  `npx supabase@latest login` then
+  `npx supabase@latest functions deploy family-api --project-ref
+  wumlrhswsyazbvmajhxg --no-verify-jwt`. The `--no-verify-jwt` flag matters:
+  this repo has no `supabase/config.toml`, so without it the deploy would
+  have switched JWT verification on and broken every app, since auth here is
+  the function's own opaque token scheme, not Supabase Auth.
+- **First redeploy shipped the wrong code, and the smoke test caught it.**
+  The CLI uploads the local working tree, not `origin/main`, and the user's
+  clone predated the merge — so v43 was the *old* function. Detected within a
+  minute: `start_book` with `page_value_percent: 50` returned 100, and
+  `edit_book` with 1001 returned `nothing_to_update` (an empty patch, i.e.
+  the field wasn't recognised at all) rather than `bad_page_value_percent`.
+  A `git pull` followed by the same deploy command produced v44, correct.
+  Worth remembering: verifying a deploy by its *behaviour* rather than by the
+  CLI's success message is what made this a two-minute detour instead of a
+  silent no-op nobody noticed until a parent tried to set a page value.
 
 ## Files touched
 
@@ -84,10 +103,26 @@ read to be worth one normal page.
 - `CHANGELOG.md` → 2026-08-31 entry
 - `DECISIONS.md` → `D-2026-08-31-book-page-value-multiplier`
 
+## Verification after the deploy (v44, live)
+
+Against a disposable family (`ZZTEST_Deploy43`, parent code `ZZD4-TEST`),
+through the real HTTPS endpoint rather than SQL:
+
+- `start_book` with `page_value_percent: 50` → stored 50; with the field
+  omitted → 100.
+- `edit_book` 50 → 150 → `{"ok":true}`; 1001 and 0 both →
+  `bad_page_value_percent` (not the empty-patch `nothing_to_update` the old
+  build returned).
+- `get_reading_state` returns `page_value_percent` on every book.
+- End to end across both halves: with a 100-page spin threshold, logging to
+  page 60 of a 150% book (90 counted) granted 0 spins, and the next log to
+  page 80 (+20 real, 30 counted, 120 total) granted exactly 1 — where the
+  raw total of 80 pages would have granted none.
+
+Test family deleted afterwards; cascade confirmed, zero orphan log rows, and
+all 6 real books still at the default 100.
+
 ## Carried forward
 
-- **The `family-api` redeploy** (task on `TASK_BOARD_NOW.md`). This is now
-  the only outstanding piece, and it's more visible than before the merge:
-  the input is live in the app and silently does nothing on save. Nothing
-  regresses in the meantime — every book stays at the column's default of
-  100, which is exactly the pre-change behaviour.
+- Nothing outstanding. The feature is complete: migrations applied, front end
+  live on Pages, `family-api` at v44.

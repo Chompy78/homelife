@@ -41,6 +41,7 @@ const currentlyReadingCard = document.getElementById("currentlyReadingCard");
 const currentBooksList = document.getElementById("currentBooksList");
 const newBookTitle = document.getElementById("newBookTitle");
 const newBookTotalPages = document.getElementById("newBookTotalPages");
+const newBookPageValue = document.getElementById("newBookPageValue");
 const addBookBtn = document.getElementById("addBookBtn");
 const addBookError = document.getElementById("addBookError");
 
@@ -160,6 +161,41 @@ function formatDateStr(dateStr) {
   return parseDateStr(dateStr).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" });
 }
 
+// How much one page of a given book counts against a "normal" page, as a
+// fraction (1 = normal, 0.5 = two of its pages count as one, 1.5 = each page
+// counts for one and a half). Lives on the book row rather than frozen onto
+// each log entry, so changing it re-scores that book's whole history at once
+// - which is why the book editor confirms before saving a change (see
+// D-2026-08-31-book-page-value-multiplier).
+//
+// `overrides` lets a caller ask "what would the numbers look like at this
+// value instead?" without touching state - that's what powers that confirm.
+function pageValueFraction(bookId, overrides) {
+  const override = overrides ? overrides[bookId] : undefined;
+  if (override !== undefined) return override / 100;
+  const book = state.books.find((b) => b.id === bookId);
+  return (book?.page_value_percent ?? 100) / 100;
+}
+
+// Pages that count toward the goal and the bonus-spin threshold, as opposed
+// to entry.pages_read (always real pages of the physical book).
+function countedPages(entry, overrides) {
+  return entry.pages_read * pageValueFraction(entry.book_id, overrides);
+}
+
+// Whether any of this kid's books is weighted at all - purely a wording
+// choice, so "pages ahead" only becomes the wordier "counted pages ahead"
+// for a family actually using multipliers.
+function kidUsesPageValues(kidId) {
+  return state.books.some((b) => b.kid_id === kidId && (b.page_value_percent ?? 100) !== 100);
+}
+
+// Counted pages can land on a fraction (15 real pages at 50%); show one
+// decimal at most, and never a trailing ".0".
+function formatCounted(n) {
+  return Number(n.toFixed(1)).toString();
+}
+
 // Latest logged page and total pages read so far for a book - derived from
 // state.log rather than stored on the book row, same "compute, don't cache"
 // approach as the reward tracker's live balances.
@@ -177,8 +213,10 @@ function bookProgress(bookId) {
 // weekdays not selected and any date inside a reading holiday), compared
 // against what they've actually logged since that start date. Positive =
 // ahead, negative = behind, null = goal isn't set up yet (no start date/
-// goal pages) or starts in the future.
-function computeAheadBehind(kidId) {
+// goal pages) or starts in the future. Actual pages are counted pages, not
+// raw ones - a book set to 50% contributes half of what was logged against
+// it (see pageValueFraction above).
+function computeAheadBehind(kidId, overrides) {
   const kid = state.kids.find((k) => k.id === kidId);
   if (!kid || !kid.reading_daily_goal_pages || !kid.reading_goal_start_date) return null;
   const start = parseDateStr(kid.reading_goal_start_date);
@@ -204,9 +242,11 @@ function computeAheadBehind(kidId) {
   const startStr = kid.reading_goal_start_date;
   const actualPages = state.log
     .filter((l) => l.kid_id === kidId && l.log_date >= startStr)
-    .reduce((sum, l) => sum + l.pages_read, 0);
+    .reduce((sum, l) => sum + countedPages(l, overrides), 0);
 
-  return actualPages - expectedPages;
+  // Rounded before the comparison so the banner never claims a fractional
+  // page - expectedPages is always a whole number, so the diff is too.
+  return Math.round(actualPages) - expectedPages;
 }
 
 // --- Rendering -----------------------------------------------------
@@ -245,6 +285,19 @@ function renderKidPicker() {
   });
 }
 
+// "12 pages ahead of schedule", or "12 counted pages ahead of schedule" for
+// a kid with at least one weighted book - the qualifier only shows up where
+// it means something.
+function describeAheadBehind(diff, kidId, countedWording) {
+  const noun = (countedWording ?? kidUsesPageValues(kidId)) ? "counted page" : "page";
+  if (diff > 0) return `${diff} ${noun}${diff === 1 ? "" : "s"} ahead of schedule`;
+  if (diff < 0) {
+    const behind = Math.abs(diff);
+    return `${behind} ${noun}${behind === 1 ? "" : "s"} behind schedule`;
+  }
+  return "right on schedule";
+}
+
 function renderAheadBehindBanner() {
   const diff = computeAheadBehind(selectedKidId);
   aheadBehindBanner.classList.remove("aheadBanner", "behindBanner", "evenBanner");
@@ -255,11 +308,10 @@ function renderAheadBehindBanner() {
   aheadBehindBanner.classList.remove("hidden");
   if (diff > 0) {
     aheadBehindBanner.classList.add("aheadBanner");
-    aheadBehindBanner.textContent = `🟢 ${diff} page${diff === 1 ? "" : "s"} ahead of schedule`;
+    aheadBehindBanner.textContent = `🟢 ${describeAheadBehind(diff, selectedKidId)}`;
   } else if (diff < 0) {
-    const behind = Math.abs(diff);
     aheadBehindBanner.classList.add("behindBanner");
-    aheadBehindBanner.textContent = `🔴 ${behind} page${behind === 1 ? "" : "s"} behind schedule`;
+    aheadBehindBanner.textContent = `🔴 ${describeAheadBehind(diff, selectedKidId)}`;
   } else {
     aheadBehindBanner.classList.add("evenBanner");
     aheadBehindBanner.textContent = `✅ Right on schedule`;
@@ -412,10 +464,12 @@ function renderLogHistory(book) {
             </div>
           </div>`;
       }
+      const counted = countedPages(entry);
+      const readLabel = counted === entry.pages_read ? `+${entry.pages_read}` : `+${entry.pages_read} → ${formatCounted(counted)} counted`;
       return `
         <div class="logHistoryRow" data-log="${entry.id}">
           <div class="logHistoryMain">
-            ${formatDateStr(entry.log_date)} · page ${entry.page_up_to} (+${entry.pages_read})${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}
+            ${formatDateStr(entry.log_date)} · page ${entry.page_up_to} (${readLabel})${entry.note ? ` · ${escapeHtml(entry.note)}` : ""}
           </div>
           <div class="logHistoryBtns">
             <button type="button" class="logEditBtn" data-id="${entry.id}" title="Edit">✏️</button>
@@ -474,6 +528,39 @@ function bindLogHistoryHandlers(cardEl, book) {
   });
 }
 
+// --- Page value (per-book multiplier) ----------------------------------
+
+// Blank means "a normal book" (100%), not "unset" - the column is NOT NULL.
+// Returns null for anything that isn't a whole 1-1000, matching the edge
+// function's parsePageValuePercent and the column's own CHECK constraint.
+function parsePageValueInput(raw) {
+  const trimmed = String(raw ?? "").trim();
+  if (trimmed === "") return 100;
+  const parsed = Number(trimmed);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000) return null;
+  return parsed;
+}
+
+// The confirm shown before a page-value change lands. Because the value is
+// stored on the book (not frozen per log entry), the change re-scores every
+// page already logged against it - so the prompt states the actual before/
+// after schedule numbers rather than just asking "are you sure?".
+function describePageValueChange(book, fromPct, toPct) {
+  const before = computeAheadBehind(book.kid_id);
+  const after = computeAheadBehind(book.kid_id, { [book.id]: toPct });
+  const lead =
+    `Change "${book.title}" from ${fromPct}% to ${toPct}% page value?\n\n` +
+    `Every page already logged for this book is recounted at the new value.`;
+  const spins = `Progress toward the next bonus spin recounts too - spins already earned are never taken back.`;
+  if (before === null || after === null || before === after) return `${lead} ${spins}`;
+  // "after" may be the kid's first weighted book, so its wording can't be
+  // inferred from the current state the way the "before" half can.
+  const afterWeighted =
+    toPct !== 100 ||
+    state.books.some((b) => b.kid_id === book.kid_id && b.id !== book.id && (b.page_value_percent ?? 100) !== 100);
+  return `${lead} This kid goes from ${describeAheadBehind(before, book.kid_id)} to ${describeAheadBehind(after, book.kid_id, afterWeighted)}. ${spins}`;
+}
+
 // --- Book cards (currently reading + finished) --------------------------
 
 function renderBookCard(book, isFinished) {
@@ -486,11 +573,14 @@ function renderBookCard(book, isFinished) {
   const card = document.createElement("div");
   card.className = "bookCard";
 
+  const pageValuePercent = book.page_value_percent ?? 100;
+
   const headHtml = isEditingBook
     ? `
       <div class="bookEditFields">
         <input type="text" class="bookEditTitle" maxlength="140" value="${escapeHtml(book.title)}" />
         <input type="number" class="bookEditPages" min="1" placeholder="Total pages (optional)" value="${book.total_pages ?? ""}" />
+        <input type="number" class="bookEditPageValue" min="1" max="1000" placeholder="Page value % (100)" value="${pageValuePercent}" />
       </div>
       <div class="bookHeadBtns">
         <button type="button" class="bookEditSaveBtn" data-id="${book.id}">Save</button>
@@ -509,6 +599,7 @@ function renderBookCard(book, isFinished) {
       ${book.total_pages ? `Page ${currentPage} of ${book.total_pages}` : currentPage ? `Page ${currentPage}` : "No pages logged yet"}
       ${lastLogDate ? ` · last logged ${formatDateStr(lastLogDate)}` : ""}
       ${isFinished && book.finished_date ? ` · finished ${formatDateStr(book.finished_date)}` : ""}
+      ${pageValuePercent !== 100 ? ` · <span class="pageValueTag">${pageValuePercent}% page value</span>` : ""}
     </div>
     ${pct !== null ? `<div class="progressTrack"><div class="progressFill" style="width:${pct}%"></div></div>` : ""}
     ${
@@ -535,7 +626,18 @@ function renderBookCard(book, isFinished) {
         return;
       }
       const totalPages = card.querySelector(".bookEditPages").value.trim();
-      const res = await callApi("edit_book", { token, book_id: book.id, title, total_pages: totalPages });
+      const pageValue = parsePageValueInput(card.querySelector(".bookEditPageValue").value);
+      if (pageValue === null) {
+        showToast("Page value must be a whole percentage between 1 and 1000 (100 = a normal page).", true);
+        return;
+      }
+      // Changing this re-scores every page already logged against this book,
+      // so spell out what it does to the kid's schedule before doing it.
+      if (pageValue !== pageValuePercent) {
+        const ok = await askConfirm(describePageValueChange(book, pageValuePercent, pageValue));
+        if (!ok) return;
+      }
+      const res = await callApi("edit_book", { token, book_id: book.id, title, total_pages: totalPages, page_value_percent: pageValue });
       if (!res.ok) {
         showToast("Couldn't save that - try again.", true);
         return;
@@ -644,12 +746,19 @@ addBookBtn.addEventListener("click", async () => {
     return;
   }
   const totalPagesVal = newBookTotalPages.value.trim();
+  const pageValue = parsePageValueInput(newBookPageValue.value);
+  if (pageValue === null) {
+    addBookError.textContent = "Page value must be a whole percentage between 1 and 1000 (100 = a normal page).";
+    addBookError.classList.remove("hidden");
+    return;
+  }
   addBookBtn.disabled = true;
   const res = await callApi("start_book", {
     token,
     kid_id: selectedKidId,
     title,
     total_pages: totalPagesVal,
+    page_value_percent: pageValue,
   });
   addBookBtn.disabled = false;
   if (!res.ok) {
@@ -659,6 +768,7 @@ addBookBtn.addEventListener("click", async () => {
   }
   newBookTitle.value = "";
   newBookTotalPages.value = "";
+  newBookPageValue.value = "";
   await loadState();
 });
 

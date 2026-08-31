@@ -6,6 +6,19 @@ on `TASK_BOARD.md`.
 
 ---
 
+## 2026-08-31
+
+- Reading tracker books can carry a **page value %** - how much one of their pages counts against a
+  normal page (100 = normal, 50 = two of its pages count as one, 150 = each counts for one and a half).
+  Set it when starting a book or edit it later. It weights the ahead/behind schedule banner and the
+  "bonus spin every N pages" threshold; the book's own "page 84 of 312" line and progress bar keep
+  showing real pages, and the log history shows both (`+40 → 20 counted`). Changing a book's value
+  re-scores every page already logged against it, so the editor confirms first with the actual
+  before/after schedule figures. New column `kid_reading_books.page_value_percent` (NOT NULL, default
+  100, 1-1000) and `credit_reading_spins_atomic` now weights per log entry in SQL - a spin already
+  earned is never clawed back if a value is lowered afterwards. Bumped `CACHE_NAME` (v6 → v7).
+  See `decisions/2026/D-2026-08-31-book-page-value-multiplier.md`.
+
 ## 2026-08-22
 
 - Rebuilt the reward-tracker spin sounds. Five presets instead of three - Chimes (default, now struck

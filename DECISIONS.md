@@ -6,6 +6,18 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-31-book-page-value-multiplier
+
+**Status:** Done
+
+**Summary:** Added a per-book `page_value_percent` (100 = a normal page, 50 = two of its pages count as
+one, 150 = each counts for one and a half) that weights the reading goal's ahead/behind banner and the
+bonus-spin threshold, and deliberately nothing else - "page 84 of 312" always shows real pages. Stored on
+the book rather than frozen per log entry, so a change re-scores that book's whole history; the book
+editor confirms first with the actual before/after schedule figures.
+
+**Record:** decisions/2026/D-2026-08-31-book-page-value-multiplier.md
+
 ## D-2026-08-22-spin-sound-redesign
 
 **Status:** Done

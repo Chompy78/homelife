@@ -52,9 +52,11 @@
       <div class="addBookRow">
         <input type="text" id="newBookTitle" placeholder="Book title" maxlength="140" />
         <input type="number" id="newBookTotalPages" placeholder="Total pages (optional)" min="1" />
+        <input type="number" id="newBookPageValue" class="pageValueInput" placeholder="Page value % (100)" min="1" max="1000" />
         <button id="addBookBtn" type="button" class="saveBtn">+ Start book</button>
       </div>
       <p class="addBookError hidden" id="addBookError"></p>
+      <p class="addBookHint">Page value % is how much one page of that book counts toward the goal and bonus spins - leave it blank for a normal book. 50% means two of its pages count as one; 150% means each page counts for one and a half.</p>
     </section>
 
     <section class="card settingsCard hidden" id="settingsCard">

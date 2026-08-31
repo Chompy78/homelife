@@ -462,6 +462,19 @@ async function creditReadingSpins(familyId: string, kidId: string): Promise<numb
   return data || 0;
 }
 
+// A book's page_value_percent: how much one of its pages counts against a
+// "normal" page. Empty/absent means "unchanged/default", which callers turn
+// into 100 - the column is NOT NULL, so there's no such thing as a book with
+// no multiplier, only one set to 100%. Bounds match the column's own CHECK
+// constraint (1-1000) so a bad value is a 400 here rather than a 500 from
+// Postgres.
+function parsePageValuePercent(v: unknown): { ok: true; value: number | null } | { ok: false } {
+  if (v === null || v === undefined || v === "") return { ok: true, value: null };
+  const parsed = Number(v);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000) return { ok: false };
+  return { ok: true, value: parsed };
+}
+
 async function getPhotosWithUrls(kidId: string) {
   const { data: rows } = await db
     .from("kid_reference_photos")
@@ -1163,6 +1176,17 @@ Deno.serve(async (req) => {
       // deleting or backfilling an out-of-order entry doesn't recompute its
       // neighbours - acceptable for a nightly-log use case, not worth the
       // complexity of a full recompute for the rare correction.
+      //
+      // Each book also carries page_value_percent - how much one of its
+      // pages counts against a "normal" page (100 = normal, 50 = two of its
+      // pages equal one normal page, 150 = each page counts for one and a
+      // half). It weights the goal's ahead/behind maths (client-side) and
+      // the bonus-spin threshold (credit_reading_spins_atomic, which does
+      // the same per-entry weighting in SQL), and deliberately nothing else
+      // - "page 84 of 312" describes the physical book and always shows
+      // real pages. Stored on the book rather than frozen onto each log
+      // entry, so changing it re-scores that book's whole history at once
+      // (D-2026-08-31-book-page-value-multiplier).
 
       case "get_reading_state": {
         const session = await getSession(body.token);
@@ -1273,19 +1297,32 @@ Deno.serve(async (req) => {
           if (!Number.isInteger(parsed) || parsed <= 0) return json({ ok: false, error: "bad_total_pages" }, 400);
           totalPages = parsed;
         }
+        const pageValue = parsePageValuePercent(body.page_value_percent);
+        if (!pageValue.ok) return json({ ok: false, error: "bad_page_value_percent" }, 400);
         const startedDate = typeof body.started_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.started_date) ? body.started_date : todayStr();
         const { data: entry, error } = await db
           .from("kid_reading_books")
-          .insert({ family_id: session.family_id, kid_id: kid.id, title, total_pages: totalPages, started_date: startedDate, status: "reading" })
+          .insert({
+            family_id: session.family_id,
+            kid_id: kid.id,
+            title,
+            total_pages: totalPages,
+            page_value_percent: pageValue.value ?? 100,
+            started_date: startedDate,
+            status: "reading",
+          })
           .select()
           .single();
         if (error || !entry) return json({ ok: false, error: "could_not_add" }, 500);
         return json({ ok: true, data: { entry } });
       }
 
-      // Edits an existing book's title and/or total_pages - either can be
-      // patched independently; total_pages can be cleared back to null
-      // (empty/undefined), but title can't (a book always needs one).
+      // Edits an existing book's title, total_pages and/or
+      // page_value_percent - each patched independently; total_pages can be
+      // cleared back to null (empty/undefined), but title can't (a book
+      // always needs one) and page_value_percent falls back to 100 rather
+      // than null (the column is NOT NULL - "no multiplier" is 100%, not
+      // absent).
       case "edit_book": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
@@ -1306,6 +1343,11 @@ Deno.serve(async (req) => {
             if (!Number.isInteger(parsed) || parsed <= 0) return json({ ok: false, error: "bad_total_pages" }, 400);
             patch.total_pages = parsed;
           }
+        }
+        if ("page_value_percent" in body) {
+          const parsed = parsePageValuePercent(body.page_value_percent);
+          if (!parsed.ok) return json({ ok: false, error: "bad_page_value_percent" }, 400);
+          patch.page_value_percent = parsed.value ?? 100;
         }
         if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
         await db.from("kid_reading_books").update(patch).eq("id", book.id);

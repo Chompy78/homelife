@@ -462,6 +462,54 @@ async function creditReadingSpins(familyId: string, kidId: string): Promise<numb
   return data || 0;
 }
 
+// A goal period's days_of_week. A full or empty set both mean "every day",
+// stored as null either way so no reader has to special-case a redundant
+// [0,1,2,3,4,5,6] - the same convention kids.reading_goal_days_of_week has
+// always used. Returns undefined for anything malformed.
+function parseDaysOfWeek(raw: unknown): number[] | null | undefined {
+  if (raw === null || raw === undefined) return null;
+  if (!Array.isArray(raw) || !raw.every((d) => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6)) {
+    return undefined;
+  }
+  const unique = [...new Set(raw as number[])];
+  return unique.length === 0 || unique.length === 7 ? null : unique;
+}
+
+// kids.reading_daily_goal_pages / _start_date / _days_of_week are no longer
+// where a goal is *set* - kid_reading_goal_periods is. They're kept in sync
+// here as a mirror of the period in force today, so anything still reading
+// those columns sees a sane current value instead of a frozen one. This is
+// the only writer, which is why set_reading_settings no longer touches them
+// (D-2026-08-31-reading-goal-periods).
+async function syncKidGoalMirror(kidId: string) {
+  const { data: periods } = await db
+    .from("kid_reading_goal_periods")
+    .select("start_date, daily_goal_pages, days_of_week")
+    .eq("kid_id", kidId)
+    .lte("start_date", todayStr())
+    .order("start_date", { ascending: false })
+    .limit(1);
+  const current = periods?.[0];
+  // No period in force today (none at all, or the earliest starts in the
+  // future) clears the mirror rather than leaving a stale goal behind.
+  const { data: earliest } = await db
+    .from("kid_reading_goal_periods")
+    .select("start_date")
+    .eq("kid_id", kidId)
+    .order("start_date", { ascending: true })
+    .limit(1);
+  await db
+    .from("kids")
+    .update({
+      reading_daily_goal_pages: current?.daily_goal_pages ?? null,
+      reading_goal_days_of_week: current?.days_of_week ?? null,
+      // The mirror's start date stays the *earliest* period, since that's
+      // where goal tracking began - not where the current rate started.
+      reading_goal_start_date: earliest?.[0]?.start_date ?? null,
+    })
+    .eq("id", kidId);
+}
+
 // A book's page_value_percent: how much one of its pages counts against a
 // "normal" page. Empty/absent means "unchanged/default", which callers turn
 // into 100 - the column is NOT NULL, so there's no such thing as a book with
@@ -1191,7 +1239,7 @@ Deno.serve(async (req) => {
       case "get_reading_state": {
         const session = await getSession(body.token);
         if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
-        const [{ data: kids }, { data: books }, { data: log }, { data: holidays }] = await Promise.all([
+        const [{ data: kids }, { data: books }, { data: log }, { data: holidays }, { data: goalPeriods }] = await Promise.all([
           db
             .from("kids")
             .select(
@@ -1208,6 +1256,11 @@ Deno.serve(async (req) => {
             .order("created_at", { ascending: false })
             .limit(300),
           db.from("kid_reading_holidays").select("*").eq("family_id", session.family_id).order("start_date", { ascending: false }),
+          db
+            .from("kid_reading_goal_periods")
+            .select("id, kid_id, start_date, daily_goal_pages, days_of_week")
+            .eq("family_id", session.family_id)
+            .order("start_date", { ascending: true }),
         ]);
         const today = todayStr();
         const pagesToday: Record<string, number> = {};
@@ -1217,10 +1270,26 @@ Deno.serve(async (req) => {
         }
         return json({
           ok: true,
-          data: { kids: kids || [], books: books || [], log: log || [], pages_today: pagesToday, holidays: holidays || [] },
+          data: {
+            kids: kids || [],
+            books: books || [],
+            log: log || [],
+            pages_today: pagesToday,
+            holidays: holidays || [],
+            goal_periods: goalPeriods || [],
+          },
         });
       }
 
+      // Sets the kid's bonus-spin page threshold. The nightly goal itself
+      // used to live here too, but a goal is now a dated period
+      // (manage_reading_goal_periods below) rather than one mutable number,
+      // and syncKidGoalMirror is the single writer of the kids.reading_goal_*
+      // columns - so accepting them here as well would reintroduce exactly
+      // the silent-overwrite this replaced. Legacy callers passing goal_pages
+      // / goal_start_date / goal_days_of_week are rejected rather than
+      // ignored, so a stale client fails loudly instead of appearing to save.
+      // Original combined-settings docs:
       // Sets a kid's reading goal settings together: the nightly pages goal
       // and its start date, which weekdays count toward it, and the
       // bonus-spin page threshold (see creditReadingSpins below). Each field
@@ -1240,48 +1309,111 @@ Deno.serve(async (req) => {
           if (!Number.isInteger(parsed) || parsed <= 0) return { ok: false };
           return { ok: true, value: parsed };
         };
-        const parseOptionalDate = (v: unknown): { ok: true; value: string | null } | { ok: false } => {
-          if (v === null || v === undefined || v === "") return { ok: true, value: null };
-          if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return { ok: true, value: v };
-          return { ok: false };
-        };
+        if ("goal_pages" in body || "goal_start_date" in body || "goal_days_of_week" in body) {
+          return json({ ok: false, error: "goal_moved_to_periods" }, 400);
+        }
 
         const patch: Record<string, unknown> = {};
-        if ("goal_pages" in body) {
-          const parsed = parseOptionalPositiveInt(body.goal_pages);
-          if (!parsed.ok) return json({ ok: false, error: "bad_goal" }, 400);
-          patch.reading_daily_goal_pages = parsed.value;
-        }
         if ("spin_threshold_pages" in body) {
           const parsed = parseOptionalPositiveInt(body.spin_threshold_pages);
           if (!parsed.ok) return json({ ok: false, error: "bad_spin_threshold" }, 400);
           patch.reading_spin_threshold_pages = parsed.value;
         }
-        if ("goal_start_date" in body) {
-          const parsed = parseOptionalDate(body.goal_start_date);
-          if (!parsed.ok) return json({ ok: false, error: "bad_start_date" }, 400);
-          patch.reading_goal_start_date = parsed.value;
-        }
-        if ("goal_days_of_week" in body) {
-          const raw = body.goal_days_of_week;
-          if (raw === null || raw === undefined) {
-            patch.reading_goal_days_of_week = null;
-          } else if (
-            Array.isArray(raw) &&
-            raw.every((d) => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6)
-          ) {
-            // A full or empty set both mean "every day" - store null for
-            // either so get_reading_state's/the client's "every day" default
-            // doesn't have to special-case a redundant [0,1,2,3,4,5,6] value.
-            const unique = [...new Set(raw as number[])];
-            patch.reading_goal_days_of_week = unique.length === 0 || unique.length === 7 ? null : unique;
-          } else {
-            return json({ ok: false, error: "bad_days_of_week" }, 400);
-          }
-        }
         if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
         await db.from("kids").update(patch).eq("id", kid.id);
         return json({ ok: true });
+      }
+
+      // A kid's nightly goal as dated periods: "from this date, N pages a
+      // night on these weekdays", running until the next period starts.
+      // Adding a period is how a goal gets changed - the days already logged
+      // keep whatever goal was in force at the time, instead of being
+      // re-scored at the new rate. Periods are freely editable and can be
+      // back-filled, so a parent can record goals from before the app kept
+      // track (D-2026-08-31-reading-goal-periods).
+      case "manage_reading_goal_periods": {
+        const session = await getSession(body.token);
+        if (!session || session.role !== "parent") return json({ ok: false, error: "session_expired" }, 401);
+        const periodAction = String(body.periodAction || "");
+
+        const parseGoalDate = (v: unknown): string | null =>
+          typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+        const parseGoalPages = (v: unknown): number | null => {
+          const parsed = Number(v);
+          return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+        };
+
+        if (periodAction === "add") {
+          const { data: kid } = await db.from("kids").select("id").eq("id", body.kid_id).eq("family_id", session.family_id).maybeSingle();
+          if (!kid) return json({ ok: false, error: "not_found" }, 404);
+          const startDate = parseGoalDate(body.start_date);
+          if (!startDate) return json({ ok: false, error: "bad_start_date" }, 400);
+          const pages = parseGoalPages(body.daily_goal_pages);
+          if (!pages) return json({ ok: false, error: "bad_goal" }, 400);
+          const days = parseDaysOfWeek(body.days_of_week);
+          if (days === undefined) return json({ ok: false, error: "bad_days_of_week" }, 400);
+
+          const { data: period, error } = await db
+            .from("kid_reading_goal_periods")
+            .insert({ family_id: session.family_id, kid_id: kid.id, start_date: startDate, daily_goal_pages: pages, days_of_week: days })
+            .select()
+            .single();
+          // One period per start date per kid - a second one for the same day
+          // would make "which goal was in force" ambiguous.
+          if (error?.code === "23505") return json({ ok: false, error: "period_already_starts_that_day" }, 400);
+          if (error || !period) return json({ ok: false, error: "could_not_add" }, 500);
+          await syncKidGoalMirror(kid.id);
+          return json({ ok: true, data: { period } });
+        }
+
+        if (periodAction === "update") {
+          const { data: period } = await db
+            .from("kid_reading_goal_periods")
+            .select("id, kid_id")
+            .eq("id", body.period_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!period) return json({ ok: false, error: "not_found" }, 404);
+
+          const patch: Record<string, unknown> = {};
+          if ("start_date" in body) {
+            const startDate = parseGoalDate(body.start_date);
+            if (!startDate) return json({ ok: false, error: "bad_start_date" }, 400);
+            patch.start_date = startDate;
+          }
+          if ("daily_goal_pages" in body) {
+            const pages = parseGoalPages(body.daily_goal_pages);
+            if (!pages) return json({ ok: false, error: "bad_goal" }, 400);
+            patch.daily_goal_pages = pages;
+          }
+          if ("days_of_week" in body) {
+            const days = parseDaysOfWeek(body.days_of_week);
+            if (days === undefined) return json({ ok: false, error: "bad_days_of_week" }, 400);
+            patch.days_of_week = days;
+          }
+          if (Object.keys(patch).length === 0) return json({ ok: false, error: "nothing_to_update" }, 400);
+
+          const { error } = await db.from("kid_reading_goal_periods").update(patch).eq("id", period.id);
+          if (error?.code === "23505") return json({ ok: false, error: "period_already_starts_that_day" }, 400);
+          if (error) return json({ ok: false, error: "could_not_update" }, 500);
+          await syncKidGoalMirror(period.kid_id);
+          return json({ ok: true });
+        }
+
+        if (periodAction === "delete") {
+          const { data: period } = await db
+            .from("kid_reading_goal_periods")
+            .select("id, kid_id")
+            .eq("id", body.period_id)
+            .eq("family_id", session.family_id)
+            .maybeSingle();
+          if (!period) return json({ ok: false, error: "not_found" }, 404);
+          await db.from("kid_reading_goal_periods").delete().eq("id", period.id);
+          await syncKidGoalMirror(period.kid_id);
+          return json({ ok: true });
+        }
+
+        return json({ ok: false, error: "unknown_period_action" }, 400);
       }
 
       case "start_book": {

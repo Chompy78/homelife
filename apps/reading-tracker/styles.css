@@ -103,6 +103,26 @@ header h1 { margin: 0 0 10px; font-size: clamp(1.1rem, 3.2vw, 1.4rem); }
 .bonusSpinRow { margin: 10px 0 0; font-weight: 800; color: var(--accent); }
 .settingsSaved { color: var(--green); font-weight: 700; margin: 8px 0 0; }
 
+.goalPeriodsSection { margin-top: 16px; }
+.goalPeriodsList { margin-top: 6px; }
+.goalPeriodRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.goalPeriodRow:last-child { border-bottom: 0; }
+.goalPeriodMain { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+.goalPeriodMain strong { color: var(--ink); }
+.goalPeriodBtns { display: flex; gap: 6px; flex: 0 0 auto; }
+.goalPeriodBtns button { background: transparent; border: 1px solid var(--line); color: var(--ink); border-radius: 8px; padding: 6px 10px; font-weight: 700; font-size: 0.8rem; cursor: pointer; }
+.periodEditSaveBtn { background: var(--accent) !important; color: #fff !important; border: 0 !important; }
+.goalPeriodEditFields { display: flex; gap: 6px; flex-wrap: wrap; flex: 1 1 auto; align-items: center; }
+.goalPeriodEditFields input[type=date], .goalPeriodEditFields input[type=number] {
+  font-size: 0.85rem; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+.periodEditStart { flex: 1 1 130px; }
+.periodEditPages { flex: 0 1 100px; }
+.periodEditDays { flex: 1 1 100%; }
+.addGoalPeriodRow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.addGoalPeriodRow input { flex: 1 1 130px; font-size: 0.9rem; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.addPeriodError { color: var(--red); font-weight: 700; margin-top: 8px; }
+
 .holidaysSection { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 .holidayRow { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .holidayRow:last-child { border-bottom: 0; }

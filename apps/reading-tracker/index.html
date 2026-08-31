@@ -62,28 +62,9 @@
     <section class="card settingsCard hidden" id="settingsCard">
       <h2>Setup</h2>
       <div class="settingsRow">
-        <label>Pages per night goal
-          <input type="number" id="goalPagesInput" min="1" placeholder="e.g. 20" />
-        </label>
-        <label>Goal start date
-          <input type="date" id="goalStartDateInput" />
-        </label>
         <label>Bonus spin every
           <input type="number" id="spinThresholdInput" min="1" placeholder="e.g. 100 pages" />
         </label>
-      </div>
-
-      <div class="daysOfWeekRow">
-        <div class="settingsRowLabel">Days that count toward the goal</div>
-        <div class="daysOfWeekChecks" id="daysOfWeekChecks">
-          <label><input type="checkbox" value="0" checked />Sun</label>
-          <label><input type="checkbox" value="1" checked />Mon</label>
-          <label><input type="checkbox" value="2" checked />Tue</label>
-          <label><input type="checkbox" value="3" checked />Wed</label>
-          <label><input type="checkbox" value="4" checked />Thu</label>
-          <label><input type="checkbox" value="5" checked />Fri</label>
-          <label><input type="checkbox" value="6" checked />Sat</label>
-        </div>
       </div>
 
       <div class="buttons">
@@ -92,6 +73,27 @@
       <p class="settingsHint">A bonus spin is earned automatically once this many cumulative pages have been read - spin it in the Reward Tracker app.</p>
       <p class="bonusSpinRow hidden" id="bonusSpinRow"></p>
       <p class="settingsSaved hidden" id="settingsSaved">Saved.</p>
+
+      <div class="goalPeriodsSection">
+        <div class="settingsRowLabel">Nightly reading goal</div>
+        <p class="settingsHint">Each row is the goal from that date until the next one starts. Changing the goal means adding a new row - nights already logged keep whatever goal applied at the time. You can add past rows to record goals from before this was tracked.</p>
+        <div class="goalPeriodsList" id="goalPeriodsList"></div>
+        <div class="addGoalPeriodRow">
+          <input type="date" id="newPeriodStart" />
+          <input type="number" id="newPeriodPages" min="1" placeholder="Pages a night" />
+          <button id="addPeriodBtn" type="button" class="saveBtn">+ Add</button>
+        </div>
+        <div class="daysOfWeekChecks" id="newPeriodDays">
+          <label><input type="checkbox" value="0" checked />Sun</label>
+          <label><input type="checkbox" value="1" checked />Mon</label>
+          <label><input type="checkbox" value="2" checked />Tue</label>
+          <label><input type="checkbox" value="3" checked />Wed</label>
+          <label><input type="checkbox" value="4" checked />Thu</label>
+          <label><input type="checkbox" value="5" checked />Fri</label>
+          <label><input type="checkbox" value="6" checked />Sat</label>
+        </div>
+        <p class="addPeriodError hidden" id="addPeriodError"></p>
+      </div>
 
       <div class="holidaysSection">
         <div class="settingsRowLabel">Reading holidays (excluded from the goal)</div>

@@ -151,7 +151,62 @@ all 6 real books still at the default 100.
 - Front-end only: no schema change, no edge function change, so **no Supabase
   redeploy needed** for this one.
 
+## Follow-on 2: goal *history* — the readout was the wrong feature
+
+- The goal readout above turned out to answer the wrong question. What was
+  meant was **historical** targets: what the goal used to be, which the app
+  had never recorded. Re-read the schema before designing anything this time.
+- Investigating surfaced a second, unreported problem sitting behind the
+  first. `kids.reading_daily_goal_pages` is a single mutable number, and
+  `computeAheadBehind` multiplied it across *every* counted day since the
+  start date. So changing a goal silently re-scored the past: raising Iya
+  from 15 to 25 would have re-scored two weeks she genuinely met at 15,
+  inventing a deficit of hundreds of pages. The visibility gap and the
+  correctness bug had the same root cause and the same fix.
+- User chose dated periods (forward-effective), each carrying pages *and*
+  weekday set, fully editable so past goals can be back-filled. Logged as
+  `D-2026-08-31-reading-goal-periods`, which also records why the per-save
+  "forward or retroactive?" prompt used for page values was rejected here:
+  a page value is a property of a book that was always true, so retroactive
+  is a legitimate answer; a nightly goal is a decision made on a date, and
+  offering "re-score the past" as an equal option every time would be
+  offering a wrong answer forever.
+- New table `kid_reading_goal_periods`, RLS on with zero policies per the
+  project's security convention, unique on (kid_id, start_date). Migration
+  seeded one period per kid from existing settings — Eira (25/night from
+  29 Aug, Mon-Sat) and Iya (15/night from 17 Aug, every day) — so no figure
+  moved at the moment of the switch.
+- `set_reading_settings` now **rejects** `goal_pages`/`goal_start_date`/
+  `goal_days_of_week` with `goal_moved_to_periods` rather than ignoring them,
+  so a stale client fails loudly instead of appearing to save. The
+  `kids.reading_goal_*` columns became a mirror of the period in force today,
+  with `syncKidGoalMirror` as their single writer — that single-writer rule is
+  what stops the mirror drifting, and is why rejecting rather than accepting
+  matters.
+- Setup card restructured: the goal fields left the Save form entirely and
+  became a dated list with add/edit/delete, modelled on the existing reading
+  holidays list. The add form defaults its date to today, so "change the goal
+  from now on" is the easy path and back-filling is the deliberate one — the
+  opposite default would make silently rewriting history the easy mistake.
+- Guarded `loadState` with `state = { goal_periods: [], ...res.data }`.
+  GitHub Pages and the edge function deploy separately, so there is always a
+  window where the browser has the new client and the old function; without
+  the default, `kidGoalPeriods` would throw on every render. With it, the app
+  degrades to "no goal set" and books stay fully loggable.
+- 33 assertions against helpers extracted from the shipped `app.js`, replacing
+  the two earlier suites. The load-bearing one: 8 days at 10/night plus 3 at
+  30/night expects 170, where a single flat 30/night period expects 330 — the
+  exact deficit the old model invented. Plus period boundaries, future-dated
+  periods, per-period weekday sets, holidays spanning a period change, page
+  values still weighting the actuals, and tonight's readout following the
+  timeline rather than the newest row. All pass.
+
 ## Carried forward
 
-- Nothing outstanding. Both features are complete: migrations applied, front
-  end live on Pages, `family-api` at v44.
+- **`family-api` needs another redeploy** for the goal-period endpoints
+  (`manage_reading_goal_periods`, and `goal_periods` in `get_reading_state`).
+  Same command as before, from an up-to-date clone:
+  `npx supabase@latest functions deploy family-api --project-ref
+  wumlrhswsyazbvmajhxg --no-verify-jwt`. Until it lands the reading tracker
+  degrades gracefully (no banner, no nightly readout, empty goal list) rather
+  than breaking — but the goal genuinely can't be set until it's deployed.

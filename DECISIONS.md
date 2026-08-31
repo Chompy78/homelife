@@ -6,6 +6,17 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-31-reading-goal-periods
+
+**Status:** Done
+
+**Summary:** Replaced the single mutable nightly-goal columns with a dated `kid_reading_goal_periods`
+table - each row is "from this date, N pages a night on these weekdays". Ahead/behind now scores each
+past day at the goal in force *that* day, fixing a silent bug where changing a goal re-scored every night
+already logged at the new rate. Periods are editable and back-fillable so past targets can be recorded.
+
+**Record:** decisions/2026/D-2026-08-31-reading-goal-periods.md
+
 ## D-2026-08-31-nightly-goal-readout
 
 **Status:** Done

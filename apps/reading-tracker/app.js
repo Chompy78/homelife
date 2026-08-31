@@ -22,13 +22,17 @@ const kidPickerRow = document.getElementById("kidPickerRow");
 const aheadBehindBanner = document.getElementById("aheadBehindBanner");
 
 const settingsCard = document.getElementById("settingsCard");
-const goalPagesInput = document.getElementById("goalPagesInput");
-const goalStartDateInput = document.getElementById("goalStartDateInput");
 const spinThresholdInput = document.getElementById("spinThresholdInput");
-const daysOfWeekChecks = document.getElementById("daysOfWeekChecks");
 const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const settingsSaved = document.getElementById("settingsSaved");
 const bonusSpinRow = document.getElementById("bonusSpinRow");
+
+const goalPeriodsList = document.getElementById("goalPeriodsList");
+const newPeriodStart = document.getElementById("newPeriodStart");
+const newPeriodPages = document.getElementById("newPeriodPages");
+const newPeriodDays = document.getElementById("newPeriodDays");
+const addPeriodBtn = document.getElementById("addPeriodBtn");
+const addPeriodError = document.getElementById("addPeriodError");
 
 const holidaysList = document.getElementById("holidaysList");
 const newHolidayStart = document.getElementById("newHolidayStart");
@@ -49,7 +53,7 @@ const finishedBooksCard = document.getElementById("finishedBooksCard");
 const finishedBooksList = document.getElementById("finishedBooksList");
 
 let token = null;
-let state = { kids: [], books: [], log: [], pages_today: {}, holidays: [] };
+let state = { kids: [], books: [], log: [], pages_today: {}, holidays: [], goal_periods: [] };
 let selectedKidId = null;
 
 // Which book cards have their page-log history expanded, and which single
@@ -59,6 +63,7 @@ let selectedKidId = null;
 let expandedBookIds = new Set();
 let editingBookId = null;
 let editingLogId = null;
+let editingPeriodId = null;
 
 // --- Toasts ---------------------------------------------------------------
 
@@ -122,12 +127,19 @@ async function loadState() {
     showToast("Couldn't refresh - check your connection and try again.", true);
     return;
   }
-  state = res.data;
+  // goal_periods only comes back from a family-api that has the goal-period
+  // endpoints deployed. Defaulting it here means a client that reaches an
+  // older function degrades to "no goal set" - banner and nightly readout
+  // hidden, books still fully loggable - rather than throwing on every
+  // render. Matters because GitHub Pages and the edge function deploy
+  // separately, so there's always a window where the two disagree.
+  state = { goal_periods: [], ...res.data };
   if (!selectedKidId || !state.kids.some((k) => k.id === selectedKidId)) {
     selectedKidId = state.kids[0]?.id || null;
   }
   editingBookId = null;
   editingLogId = null;
+  editingPeriodId = null;
   renderAll();
 }
 
@@ -155,6 +167,17 @@ function todayStr() {
 function parseDateStr(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
   return new Date(y, m - 1, d);
+}
+
+// One day either side of a date string, staying in local calendar terms -
+// used to show a goal period ending the day before the next one starts.
+function shiftDateStr(dateStr, days) {
+  const d = parseDateStr(dateStr);
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function formatDateStr(dateStr) {
@@ -208,38 +231,78 @@ function bookProgress(bookId) {
   return { currentPage: latest.page_up_to, totalRead, lastLogDate: latest.log_date };
 }
 
-// How many pages a kid should have read by today (goal_pages x every
-// included calendar day from their goal start date to today, skipping
-// weekdays not selected and any date inside a reading holiday), compared
-// against what they've actually logged since that start date. Positive =
-// ahead, negative = behind, null = goal isn't set up yet (no start date/
-// goal pages) or starts in the future. Actual pages are counted pages, not
-// raw ones - a book set to 50% contributes half of what was logged against
-// it (see pageValueFraction above).
+// --- Goal periods -------------------------------------------------------
+
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// A kid's goal periods, oldest first. Each runs from its own start_date until
+// the next one begins, so the list order *is* the timeline - every consumer
+// below relies on it being sorted.
+function kidGoalPeriods(kidId) {
+  return state.goal_periods.filter((p) => p.kid_id === kidId).sort((a, b) => a.start_date.localeCompare(b.start_date));
+}
+
+// Which goal was in force on a given date - the latest period starting on or
+// before it. Null when the date predates the first period (goal tracking
+// hadn't started yet), which callers treat as "this day doesn't count".
+function goalPeriodOn(periods, date) {
+  let found = null;
+  for (const period of periods) {
+    if (parseDateStr(period.start_date) <= date) found = period;
+    else break;
+  }
+  return found;
+}
+
+// null/empty days_of_week means every day - same convention the column has
+// always used, so a period saved with all 7 ticked reads back as "every day".
+function periodDaysSet(period) {
+  return new Set(period.days_of_week && period.days_of_week.length ? period.days_of_week : ALL_DAYS);
+}
+
+function periodDaysLabel(period) {
+  if (!period.days_of_week || !period.days_of_week.length || period.days_of_week.length === 7) return "every day";
+  return [...period.days_of_week].sort((a, b) => a - b).map((d) => DAY_NAMES[d]).join(", ");
+}
+
+// How many pages a kid should have read by today, compared against what
+// they've actually logged. Every calendar day from the first goal period's
+// start to today is scored at *the goal that was in force on that day* -
+// not at today's goal - so raising a goal no longer manufactures a deficit
+// out of nights that were genuinely met at the old rate
+// (D-2026-08-31-reading-goal-periods). Days outside that period's weekdays,
+// and any date inside a reading holiday, don't count.
+//
+// Positive = ahead, negative = behind, null = no goal periods yet or the
+// first one starts in the future. Actual pages are counted pages, not raw
+// ones - a book set to 50% contributes half of what was logged against it
+// (see pageValueFraction above).
 function computeAheadBehind(kidId, overrides) {
-  const kid = state.kids.find((k) => k.id === kidId);
-  if (!kid || !kid.reading_daily_goal_pages || !kid.reading_goal_start_date) return null;
-  const start = parseDateStr(kid.reading_goal_start_date);
+  const periods = kidGoalPeriods(kidId);
+  if (!periods.length) return null;
+  const start = parseDateStr(periods[0].start_date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   if (start > today) return null;
 
-  const daysSet =
-    kid.reading_goal_days_of_week && kid.reading_goal_days_of_week.length
-      ? new Set(kid.reading_goal_days_of_week)
-      : new Set([0, 1, 2, 3, 4, 5, 6]);
   const holidayRanges = state.holidays
     .filter((h) => h.kid_id === kidId)
     .map((h) => [parseDateStr(h.start_date), parseDateStr(h.end_date)]);
   const isHoliday = (d) => holidayRanges.some(([s, e]) => d >= s && d <= e);
 
-  let expectedDays = 0;
+  // Walks days and periods together in one pass rather than re-scanning the
+  // period list per day - both are in ascending order, so the pointer only
+  // ever moves forward.
+  let expectedPages = 0;
+  let pi = 0;
   for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
-    if (daysSet.has(d.getDay()) && !isHoliday(d)) expectedDays++;
+    while (pi + 1 < periods.length && parseDateStr(periods[pi + 1].start_date) <= d) pi++;
+    const period = periods[pi];
+    if (periodDaysSet(period).has(d.getDay()) && !isHoliday(d)) expectedPages += period.daily_goal_pages;
   }
-  const expectedPages = expectedDays * kid.reading_daily_goal_pages;
 
-  const startStr = kid.reading_goal_start_date;
+  const startStr = periods[0].start_date;
   const actualPages = state.log
     .filter((l) => l.kid_id === kidId && l.log_date >= startStr)
     .reduce((sum, l) => sum + countedPages(l, overrides), 0);
@@ -279,6 +342,7 @@ function renderKidPicker() {
       expandedBookIds = new Set();
       editingBookId = null;
       editingLogId = null;
+      editingPeriodId = null;
       renderAll();
     });
     kidPickerRow.appendChild(btn);
@@ -321,51 +385,31 @@ function renderAheadBehindBanner() {
 function renderSettings() {
   const kid = state.kids.find((k) => k.id === selectedKidId);
   if (!kid) return;
-  goalPagesInput.value = kid.reading_daily_goal_pages ?? "";
-  // Defaults to today rather than blank (same convention as the log-date
-  // input) - a goal pages value with no start date can never activate the
-  // ahead/behind banner, and that's an easy field to skip since it isn't
-  // required to save the goal at all. Showing today ready-to-confirm means
-  // just hitting Save (without touching this field) still turns tracking on.
-  goalStartDateInput.value = kid.reading_goal_start_date || todayStr();
   spinThresholdInput.value = kid.reading_spin_threshold_pages ?? "";
   settingsSaved.classList.add("hidden");
 
-  const checkedDays =
-    kid.reading_goal_days_of_week && kid.reading_goal_days_of_week.length
-      ? new Set(kid.reading_goal_days_of_week)
-      : new Set([0, 1, 2, 3, 4, 5, 6]);
-  daysOfWeekChecks.querySelectorAll("input[type=checkbox]").forEach((cb) => {
-    cb.checked = checkedDays.has(Number(cb.value));
-  });
+  // The add-period form defaults to today, so "change the goal from now on"
+  // is the path of least resistance and back-filling an older date is the
+  // deliberate act - the opposite way round would make it easy to silently
+  // rewrite history, which is the whole thing periods exist to prevent.
+  if (!newPeriodStart.value) newPeriodStart.value = todayStr();
 
   const spins = kid.bonus_spins || 0;
   bonusSpinRow.classList.toggle("hidden", spins === 0);
   bonusSpinRow.textContent = spins > 0 ? `🎉 ${spins} bonus spin${spins === 1 ? "" : "s"} waiting - spin it in Reward Tracker!` : "";
 
+  renderGoalPeriods();
   renderHolidays();
 }
 
 saveSettingsBtn.addEventListener("click", async () => {
   if (!selectedKidId) return;
   settingsSaved.classList.add("hidden");
-  const checkedDays = [...daysOfWeekChecks.querySelectorAll("input[type=checkbox]:checked")].map((cb) => Number(cb.value));
-  // An empty selection is indistinguishable from "never configured" (see
-  // renderSettings()/computeAheadBehind(), both treat a stored [] the same
-  // as null - "all 7 days") - saving it would silently revert to all 7 days
-  // on the next load instead of the "no days count" the parent just chose.
-  if (!checkedDays.length) {
-    showToast("Pick at least one day for the reading goal.", true);
-    return;
-  }
   saveSettingsBtn.disabled = true;
   const res = await callApi("set_reading_settings", {
     token,
     kid_id: selectedKidId,
-    goal_pages: goalPagesInput.value.trim(),
     spin_threshold_pages: spinThresholdInput.value.trim(),
-    goal_start_date: goalStartDateInput.value,
-    goal_days_of_week: checkedDays,
   });
   saveSettingsBtn.disabled = false;
   if (!res.ok) {
@@ -373,6 +417,150 @@ saveSettingsBtn.addEventListener("click", async () => {
     return;
   }
   settingsSaved.classList.remove("hidden");
+  await loadState();
+});
+
+// The dated goal list. Each row's end is the day before the next row starts,
+// derived rather than stored - so editing one row's start date can never
+// leave a gap or an overlap behind.
+function renderGoalPeriods() {
+  goalPeriodsList.innerHTML = "";
+  const periods = kidGoalPeriods(selectedKidId);
+  if (!periods.length) {
+    goalPeriodsList.innerHTML = `<p class="empty">No reading goal set - add one below to switch on the ahead/behind banner.</p>`;
+    return;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  periods.forEach((period, i) => {
+    const next = periods[i + 1];
+    const startsInFuture = parseDateStr(period.start_date) > today;
+    const rangeLabel = next
+      ? `${formatDateStr(period.start_date)} – ${formatDateStr(shiftDateStr(next.start_date, -1))}`
+      : startsInFuture
+        ? `from ${formatDateStr(period.start_date)}`
+        : `${formatDateStr(period.start_date)} – now`;
+
+    const row = document.createElement("div");
+    row.className = "goalPeriodRow";
+
+    if (String(editingPeriodId) === String(period.id)) {
+      row.innerHTML = `
+        <div class="goalPeriodEditFields">
+          <input type="date" class="periodEditStart" value="${period.start_date}" />
+          <input type="number" class="periodEditPages" min="1" value="${period.daily_goal_pages}" />
+          <div class="daysOfWeekChecks periodEditDays">
+            ${DAY_NAMES.map(
+              (name, d) =>
+                `<label><input type="checkbox" value="${d}" ${periodDaysSet(period).has(d) ? "checked" : ""} />${name}</label>`
+            ).join("")}
+          </div>
+        </div>
+        <div class="goalPeriodBtns">
+          <button type="button" class="periodEditSaveBtn">Save</button>
+          <button type="button" class="periodEditCancelBtn">Cancel</button>
+        </div>`;
+      row.querySelector(".periodEditCancelBtn").addEventListener("click", () => {
+        editingPeriodId = null;
+        renderAll();
+      });
+      row.querySelector(".periodEditSaveBtn").addEventListener("click", async () => {
+        const startDate = row.querySelector(".periodEditStart").value;
+        const pages = Number(row.querySelector(".periodEditPages").value);
+        const days = [...row.querySelectorAll(".periodEditDays input:checked")].map((cb) => Number(cb.value));
+        if (!startDate) return showToast("Pick a start date for this goal.", true);
+        if (!Number.isInteger(pages) || pages < 1) return showToast("Pages a night must be a whole number above zero.", true);
+        if (!days.length) return showToast("Pick at least one day for the goal.", true);
+        const res = await callApi("manage_reading_goal_periods", {
+          token,
+          periodAction: "update",
+          period_id: period.id,
+          start_date: startDate,
+          daily_goal_pages: pages,
+          days_of_week: days,
+        });
+        if (!res.ok) {
+          showToast(
+            res.error === "period_already_starts_that_day"
+              ? "There's already a goal starting on that date."
+              : "Couldn't save that - try again.",
+            true
+          );
+          return;
+        }
+        editingPeriodId = null;
+        await loadState();
+      });
+    } else {
+      row.innerHTML = `
+        <div class="goalPeriodMain">
+          <strong>${escapeHtml(rangeLabel)}</strong><br />
+          ${period.daily_goal_pages} page${period.daily_goal_pages === 1 ? "" : "s"} a night · ${escapeHtml(periodDaysLabel(period))}
+        </div>
+        <div class="goalPeriodBtns">
+          <button type="button" class="periodEditBtn" title="Edit">✏️</button>
+          <button type="button" class="periodDeleteBtn" title="Delete">🗑</button>
+        </div>`;
+      row.querySelector(".periodEditBtn").addEventListener("click", () => {
+        editingPeriodId = period.id;
+        renderAll();
+      });
+      row.querySelector(".periodDeleteBtn").addEventListener("click", async () => {
+        const ok = await askConfirm(
+          `Delete the goal starting ${formatDateStr(period.start_date)}? Nights it covered will be scored at whichever goal comes before it, or not counted at all if it's the earliest.`
+        );
+        if (!ok) return;
+        const res = await callApi("manage_reading_goal_periods", { token, periodAction: "delete", period_id: period.id });
+        if (!res.ok) {
+          showToast("Couldn't delete that - try again.", true);
+          return;
+        }
+        await loadState();
+      });
+    }
+
+    goalPeriodsList.appendChild(row);
+  });
+}
+
+addPeriodBtn.addEventListener("click", async () => {
+  addPeriodError.classList.add("hidden");
+  if (!selectedKidId) return;
+  const startDate = newPeriodStart.value;
+  const pages = Number(newPeriodPages.value);
+  const days = [...newPeriodDays.querySelectorAll("input[type=checkbox]:checked")].map((cb) => Number(cb.value));
+  const fail = (msg) => {
+    addPeriodError.textContent = msg;
+    addPeriodError.classList.remove("hidden");
+  };
+  if (!startDate) return fail("Pick the date this goal starts from.");
+  if (!Number.isInteger(pages) || pages < 1) return fail("Enter how many pages a night this goal is.");
+  // An empty selection would round-trip as null, i.e. "every day" - the exact
+  // opposite of the "no days count" the parent just picked.
+  if (!days.length) return fail("Pick at least one day that counts toward the goal.");
+
+  addPeriodBtn.disabled = true;
+  const res = await callApi("manage_reading_goal_periods", {
+    token,
+    periodAction: "add",
+    kid_id: selectedKidId,
+    start_date: startDate,
+    daily_goal_pages: pages,
+    days_of_week: days,
+  });
+  addPeriodBtn.disabled = false;
+  if (!res.ok) {
+    return fail(
+      res.error === "period_already_starts_that_day"
+        ? "There's already a goal starting on that date - edit that one instead."
+        : "Couldn't add that - try again."
+    );
+  }
+  newPeriodStart.value = todayStr();
+  newPeriodPages.value = "";
+  newPeriodDays.querySelectorAll("input[type=checkbox]").forEach((cb) => (cb.checked = true));
   await loadState();
 });
 
@@ -530,42 +718,38 @@ function bindLogHistoryHandlers(cardEl, book) {
 
 // --- Nightly goal readout ----------------------------------------------
 
-// The kid's pages-per-night goal, shown on every currently-reading book card
-// so it doesn't have to be remembered from the Setup section further down the
+// The goal in force tonight, shown on every currently-reading book card so
+// it doesn't have to be remembered from the Setup section further down the
 // page. Deliberately just the number, not a computed "read to page N" target
-// (D-2026-08-31-nightly-goal-readout) - but it does check whether tonight
-// counts at all, because printing "15 pages a night" on a rest day or a
-// reading holiday would be confidently wrong rather than merely terse.
+// (D-2026-08-31-nightly-goal-readout). Reads the dated goal period covering
+// today, so it tracks a mid-history goal change rather than the latest one.
 // Returns null when there's no goal to show.
 function nightlyGoalLabel(kidId) {
-  const kid = state.kids.find((k) => k.id === kidId);
-  if (!kid || !kid.reading_daily_goal_pages) return null;
-
-  const noun = kidUsesPageValues(kidId) ? "counted pages" : "pages";
-  const goalText = `${kid.reading_daily_goal_pages} ${noun} a night`;
+  const periods = kidGoalPeriods(kidId);
+  if (!periods.length) return null;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // A goal that hasn't started yet isn't tonight's goal - say when it kicks in
-  // rather than implying it's already running (matches computeAheadBehind,
+  const goalText = (period) => {
+    const noun = kidUsesPageValues(kidId) ? "counted pages" : "pages";
+    return `${period.daily_goal_pages} ${noun} a night`;
+  };
+
+  // A goal that hasn't started yet isn't tonight's goal - say when it kicks
+  // in rather than implying it's already running (matches computeAheadBehind,
   // which returns null and hides the banner for exactly this case).
-  if (kid.reading_goal_start_date && parseDateStr(kid.reading_goal_start_date) > today) {
-    return `🎯 Goal starts ${formatDateStr(kid.reading_goal_start_date)}: ${goalText}`;
-  }
+  const period = goalPeriodOn(periods, today);
+  if (!period) return `🎯 Goal starts ${formatDateStr(periods[0].start_date)}: ${goalText(periods[0])}`;
 
   const onHoliday = state.holidays.some(
     (h) => h.kid_id === kidId && today >= parseDateStr(h.start_date) && today <= parseDateStr(h.end_date)
   );
   if (onHoliday) return `🎯 Reading holiday today - no goal tonight`;
 
-  const daysSet =
-    kid.reading_goal_days_of_week && kid.reading_goal_days_of_week.length
-      ? new Set(kid.reading_goal_days_of_week)
-      : new Set([0, 1, 2, 3, 4, 5, 6]);
-  if (!daysSet.has(today.getDay())) return `🎯 Tonight isn't a goal night - ${goalText} otherwise`;
+  if (!periodDaysSet(period).has(today.getDay())) return `🎯 Tonight isn't a goal night - ${goalText(period)} otherwise`;
 
-  return `🎯 Goal: ${goalText}`;
+  return `🎯 Goal: ${goalText(period)}`;
 }
 
 // --- Page value (per-book multiplier) ----------------------------------

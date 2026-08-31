@@ -46,7 +46,12 @@ The `kids.reading_goal_*` columns are kept as a mirror of the period in force
 today, maintained by `syncKidGoalMirror` as the single writer.
 
 A migration seeded one period per kid from their existing settings, so the
-ahead/behind figures were unchanged at the moment of the switch.
+ahead/behind figures were unchanged at the moment of the switch. A follow-up
+migration narrowed `days_of_week` from `integer[]` to `smallint[]` to match
+`kids.reading_goal_days_of_week` — the mismatch was functionally harmless
+(the mirror wrote correctly either way) but made the two impossible to
+compare in SQL without an explicit cast, which is a trap for exactly the
+kind of verification query you'd write to check the mirror.
 
 **Why:** Option 1 gives the visibility that was asked for and leaves the bug
 that wasn't — the banner would still lie after any change, which is the part

@@ -201,12 +201,41 @@ all 6 real books still at the default 100.
   values still weighting the actuals, and tonight's readout following the
   timeline rather than the newest row. All pass.
 
+## Verification after the goal-period deploy (v45, live)
+
+Against a disposable family (`ZZTEST_GoalPeriods`, parent code `ZZGP-TEST`),
+through the real HTTPS endpoint:
+
+- `set_reading_settings` with `goal_pages` → `goal_moved_to_periods` (rejected,
+  not silently ignored); with `spin_threshold_pages` alone → still saves.
+- Add two periods (15/night every day, then 25/night weekdays only); all-seven
+  days stored as null per the existing convention. `get_reading_state` returns
+  the timeline in order.
+- Rejections all correct: duplicate start date → `period_already_starts_that_day`,
+  bad date → `bad_start_date`, zero pages → `bad_goal`, weekday `9` →
+  `bad_days_of_week`, another family's period id → `not_found`, unknown action →
+  `unknown_period_action`.
+- Update 25 → 40 works; updating onto an occupied start date is rejected.
+- **Mirror behaviour**, the part most likely to rot: with two periods the
+  kid row showed 25 pages and weekday set from the *current* period but the
+  start date from the *earliest* — as designed. Deleting the newer period
+  reverted it to 15. Moving the only period into the future cleared
+  `reading_daily_goal_pages` to null while keeping the future start date.
+  Deleting the last period cleared everything.
+- Test family deleted; zero orphan period rows, both real kids' periods intact
+  and their mirrors matching.
+
+A schema wrinkle surfaced during that last check: the new `days_of_week` was
+`integer[]` while `kids.reading_goal_days_of_week` is `smallint[]`, so the two
+couldn't be compared without a cast even though one mirrors the other.
+Harmless at runtime, but a trap for exactly the verification query that found
+it — narrowed to `smallint[]` in a follow-up migration.
+
 ## Carried forward
 
 - **`family-api` needs another redeploy** for the goal-period endpoints
   (`manage_reading_goal_periods`, and `goal_periods` in `get_reading_state`).
   Same command as before, from an up-to-date clone:
   `npx supabase@latest functions deploy family-api --project-ref
-  wumlrhswsyazbvmajhxg --no-verify-jwt`. Until it lands the reading tracker
-  degrades gracefully (no banner, no nightly readout, empty goal list) rather
-  than breaking — but the goal genuinely can't be set until it's deployed.
+  wumlrhswsyazbvmajhxg --no-verify-jwt`. **Done** — deployed as v45 and
+  verified above. Nothing outstanding.

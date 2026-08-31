@@ -528,6 +528,46 @@ function bindLogHistoryHandlers(cardEl, book) {
   });
 }
 
+// --- Nightly goal readout ----------------------------------------------
+
+// The kid's pages-per-night goal, shown on every currently-reading book card
+// so it doesn't have to be remembered from the Setup section further down the
+// page. Deliberately just the number, not a computed "read to page N" target
+// (D-2026-08-31-nightly-goal-readout) - but it does check whether tonight
+// counts at all, because printing "15 pages a night" on a rest day or a
+// reading holiday would be confidently wrong rather than merely terse.
+// Returns null when there's no goal to show.
+function nightlyGoalLabel(kidId) {
+  const kid = state.kids.find((k) => k.id === kidId);
+  if (!kid || !kid.reading_daily_goal_pages) return null;
+
+  const noun = kidUsesPageValues(kidId) ? "counted pages" : "pages";
+  const goalText = `${kid.reading_daily_goal_pages} ${noun} a night`;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // A goal that hasn't started yet isn't tonight's goal - say when it kicks in
+  // rather than implying it's already running (matches computeAheadBehind,
+  // which returns null and hides the banner for exactly this case).
+  if (kid.reading_goal_start_date && parseDateStr(kid.reading_goal_start_date) > today) {
+    return `🎯 Goal starts ${formatDateStr(kid.reading_goal_start_date)}: ${goalText}`;
+  }
+
+  const onHoliday = state.holidays.some(
+    (h) => h.kid_id === kidId && today >= parseDateStr(h.start_date) && today <= parseDateStr(h.end_date)
+  );
+  if (onHoliday) return `🎯 Reading holiday today - no goal tonight`;
+
+  const daysSet =
+    kid.reading_goal_days_of_week && kid.reading_goal_days_of_week.length
+      ? new Set(kid.reading_goal_days_of_week)
+      : new Set([0, 1, 2, 3, 4, 5, 6]);
+  if (!daysSet.has(today.getDay())) return `🎯 Tonight isn't a goal night - ${goalText} otherwise`;
+
+  return `🎯 Goal: ${goalText}`;
+}
+
 // --- Page value (per-book multiplier) ----------------------------------
 
 // Blank means "a normal book" (100%), not "unset" - the column is NOT NULL.
@@ -574,6 +614,7 @@ function renderBookCard(book, isFinished) {
   card.className = "bookCard";
 
   const pageValuePercent = book.page_value_percent ?? 100;
+  const goalLabel = nightlyGoalLabel(book.kid_id);
 
   const headHtml = isEditingBook
     ? `
@@ -602,6 +643,7 @@ function renderBookCard(book, isFinished) {
       ${pageValuePercent !== 100 ? ` · <span class="pageValueTag">${pageValuePercent}% page value</span>` : ""}
     </div>
     ${pct !== null ? `<div class="progressTrack"><div class="progressFill" style="width:${pct}%"></div></div>` : ""}
+    ${!isFinished && goalLabel ? `<div class="goalHint">${escapeHtml(goalLabel)}</div>` : ""}
     ${
       isFinished
         ? ""

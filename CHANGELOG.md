@@ -8,6 +8,13 @@ on `TASK_BOARD.md`.
 
 ## 2026-08-31
 
+- Reading tracker shows each kid's **pages-per-night goal on every currently-reading book card**, right
+  above the log row, instead of only as a form input down in Setup. A readout, not a computed target
+  page - deliberately, since a per-book target would imply the whole night belongs to that book, which
+  breaks the moment a kid has two open. It does resolve the cases where a bare number would mislead: no
+  goal set shows nothing, a future start date says when it begins, a reading holiday or a weekday outside
+  the goal says tonight doesn't count, and a kid with any weighted book gets "counted pages" to match the
+  banner. Bumped `CACHE_NAME` (v7 → v8). See `decisions/2026/D-2026-08-31-nightly-goal-readout.md`.
 - Reading tracker books can carry a **page value %** - how much one of their pages counts against a
   normal page (100 = normal, 50 = two of its pages count as one, 150 = each counts for one and a half).
   Set it when starting a book or edit it later. It weights the ahead/behind schedule banner and the

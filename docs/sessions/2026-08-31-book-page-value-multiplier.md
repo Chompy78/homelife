@@ -122,7 +122,36 @@ through the real HTTPS endpoint rather than SQL:
 Test family deleted afterwards; cascade confirmed, zero orphan log rows, and
 all 6 real books still at the default 100.
 
+## Follow-on: the nightly goal readout
+
+- User raised a second, related problem: the pages-per-night goal was only
+  visible as a form input in the Setup card, so logging a night's reading
+  meant remembering it or scrolling — made worse by the page value work,
+  since on a weighted book the goal no longer equals pages physically turned.
+  Asked about a range.
+- Checked the live data before asking anything, which changed the questions:
+  Eira has 1 book and a 25/night goal, **Iya has 2 books** on a 15/night goal,
+  and Indie has a book but no goal at all. So multi-book and no-goal both had
+  to be handled, and a per-book target number couldn't be assumed meaningful.
+- User chose a plain readout over a computed target page or a catch-up range,
+  and chose to repeat it per book card. Logged as
+  `D-2026-08-31-nightly-goal-readout`.
+- Implemented as `nightlyGoalLabel(kidId)` rendered above each unfinished
+  book's log row. Four cases resolved beyond the plain number, all lookups
+  rather than arithmetic: no goal → nothing rendered; future start date →
+  says when it begins; inside a reading holiday → says so; weekday outside
+  the goal → says tonight isn't a goal night. A kid with any weighted book
+  gets "counted pages", reusing `kidUsesPageValues` so the wording matches the
+  ahead/behind banner.
+- 12 assertions against helpers extracted from the shipped `app.js`, using the
+  three real goal setups as fixtures — including that one kid's holiday
+  doesn't leak into another's line, and that a holiday starting tomorrow
+  doesn't apply tonight. The 21 page-value assertions were re-run for
+  regressions. All pass. `CACHE_NAME` v7 → v8.
+- Front-end only: no schema change, no edge function change, so **no Supabase
+  redeploy needed** for this one.
+
 ## Carried forward
 
-- Nothing outstanding. The feature is complete: migrations applied, front end
-  live on Pages, `family-api` at v44.
+- Nothing outstanding. Both features are complete: migrations applied, front
+  end live on Pages, `family-api` at v44.

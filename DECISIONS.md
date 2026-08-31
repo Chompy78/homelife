@@ -6,6 +6,18 @@ entry on top. See `AGENTS.md` for the format and when to add one.
 
 ---
 
+## D-2026-08-31-nightly-goal-readout
+
+**Status:** Done
+
+**Summary:** Show the pages-per-night goal as a plain line on every currently-reading book card, rather
+than only as a form input in Setup. Deliberately a readout, not a computed "read to page N" target - a
+per-book target implies the whole night belongs to that book, which breaks as soon as a kid has two open.
+Handles the four cases where a bare number would be wrong (no goal, future start, reading holiday, not a
+goal weekday).
+
+**Record:** decisions/2026/D-2026-08-31-nightly-goal-readout.md
+
 ## D-2026-08-31-book-page-value-multiplier
 
 **Status:** Done

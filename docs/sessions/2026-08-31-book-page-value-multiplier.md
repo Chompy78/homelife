@@ -231,11 +231,47 @@ couldn't be compared without a cast even though one mirrors the other.
 Harmless at runtime, but a trap for exactly the verification query that found
 it — narrowed to `smallint[]` in a follow-up migration.
 
+`family-api` was deployed as **v45** by the user via
+`npx supabase@latest functions deploy` after a `git pull` — the second deploy
+of the day, and this time the pull came first without prompting.
+
+## Backfilling Iya's July goal (operational)
+
+- User asked why Iya's 10-pages-a-night goal "since July" wasn't in the
+  history. Answer: the pre-periods design overwrote in place, so when she
+  went from 10 to 15 the 10 was gone the instant it saved. Nothing recorded
+  it and nothing could recover it — which is the bug the periods change
+  fixes, but it can't reach backwards. Worth stating plainly rather than
+  hunting for a backup that was never going to exist.
+- Her *log* did survive further back than her goal did: first entry 26 Jul,
+  220 pages across 7 nights before the 17 Aug period start, all of which the
+  banner was ignoring on both sides of the comparison.
+- Put the choice of start date to the user rather than guessing, because it
+  swings the result hard: from 26 Jul (her first logged night) leaves the
+  banner unchanged; from 1 Jul adds 25 unlogged nights and would have shown
+  her 307 behind instead of 57. They chose 26 Jul.
+- Added via the real HTTPS endpoint rather than SQL, so it went through the
+  same validation and mirror-sync the app uses. Result:
+  `26 Jul – 16 Aug: 10/night` then `17 Aug – now: 15/night`, expected 445
+  against 388 logged — **57 behind, exactly as before the change**, because
+  her July-to-mid-August reading came to precisely the 220 pages it was
+  aimed at. An independent recomputation of the banner (in the check script,
+  not the app's own code) confirmed the figure.
+
 ## Carried forward
 
-- **`family-api` needs another redeploy** for the goal-period endpoints
-  (`manage_reading_goal_periods`, and `goal_periods` in `get_reading_state`).
-  Same command as before, from an up-to-date clone:
-  `npx supabase@latest functions deploy family-api --project-ref
-  wumlrhswsyazbvmajhxg --no-verify-jwt`. **Done** — deployed as v45 and
-  verified above. Nothing outstanding.
+- **Eira's goal history needs a decision from the user.** While the above was
+  in progress, her seeded period (25/night from 29 Aug) was deleted and
+  replaced with a new row created 11:50 — 10/night from 27 Jul, Mon-Sat. Not
+  done by this session. It looks like the same backfill intent applied to
+  Eira but by *replacing* the row rather than adding a second one, which is
+  the one operation that still rewrites history. Effect: 🟢 2 ahead as it
+  stands, versus 🔴 28 behind with the 25/night period restored — a 30-page
+  swing. The deleted row's exact values are known (2026-08-29, 25 pages,
+  days [1,2,3,4,5,6]) so it can be restored on request. Left untouched
+  pending that call.
+- Worth watching whether the add-vs-edit distinction needs to be more obvious
+  in the UI. The add form defaults to today precisely so that forward-dating
+  is the easy path, but that only helps if the parent reaches for **+ Add**
+  rather than **✏️** when their intent is "the goal changed". One real
+  instance isn't yet evidence of a design problem — but a second would be.

@@ -15,8 +15,10 @@ on `TASK_BOARD.md`.
   a deficit out of nights that were genuinely met at the old rate. Each day is now scored at the goal
   that actually applied. New table `kid_reading_goal_periods` (RLS on, zero policies) seeded from
   existing settings so no figure moved when it shipped; `set_reading_settings` now rejects the old goal
-  fields rather than ignoring them. Bumped `CACHE_NAME` (v8 → v9). Requires a `family-api` redeploy.
-  See `decisions/2026/D-2026-08-31-reading-goal-periods.md`.
+  fields rather than ignoring them. Bumped `CACHE_NAME` (v8 → v9). `family-api` deployed as v45 and
+  smoke-tested end to end against a disposable family, including the mirror columns tracking period
+  add/edit/delete. A follow-up migration narrowed the new `days_of_week` to `smallint[]` to match the
+  column it mirrors. See `decisions/2026/D-2026-08-31-reading-goal-periods.md`.
 - Reading tracker shows each kid's **pages-per-night goal on every currently-reading book card**, right
   above the log row, instead of only as a form input down in Setup. A readout, not a computed target
   page - deliberately, since a per-book target would imply the whole night belongs to that book, which

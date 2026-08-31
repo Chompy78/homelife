@@ -27,14 +27,15 @@ This file (NOW) is always read; see `TASK_BOARD_NEXT.md`/`TASK_BOARD_LATER.md` f
 ### Redeploy `family-api` for the per-book page value multiplier
 - **Tags:** infra, migration
 - **Status:** blocked
-- The 2026-08-31 page-value work is complete and committed on
-  `claude/book-reading-multipliers-y3l9vh`, and its database half is
-  already live (column `kid_reading_books.page_value_percent`, plus
+- The 2026-08-31 page-value work is merged to `main` and live on GitHub
+  Pages, and its database half is already applied (column
+  `kid_reading_books.page_value_percent`, plus
   `credit_reading_spins_atomic` weighting per log entry). The edge
   function's half - `start_book` / `edit_book` accepting
   `page_value_percent`, and the `parsePageValuePercent` helper - is
-  committed but **not deployed**, so until it is, the app's new input
-  is accepted by the UI and then silently dropped by the backend.
+  merged but **not deployed**, so until it is, the page value input is
+  visible in the live app, accepted by the UI, and then silently
+  dropped by the backend: every book stays at 100.
 - Blocked on the deploy itself, not on any decision: this session could
   not use `mcp__Supabase__deploy_edge_function`, which needs the whole
   2,700-line `index.ts` passed as literal tool input, because Bash

@@ -59,6 +59,11 @@ read to be worth one normal page.
 - Committed to `claude/book-reading-multipliers-y3l9vh` (not `main`) — the
   session's own branch instruction overrides this repo's usual
   commit-straight-to-`main` convention; flagged to the user.
+- User then asked to merge. Fast-forwarded `main` (it hadn't moved since the
+  branch point) and pushed; GitHub Pages deploy run #103 triggered. The
+  front end is therefore live *ahead* of the edge function, so the page
+  value input now shows in the real app and is silently ignored on save
+  until the redeploy lands — noted on the task board entry.
 
 ## Files touched
 
@@ -81,8 +86,8 @@ read to be worth one normal page.
 
 ## Carried forward
 
-- **The `family-api` redeploy** (task on `TASK_BOARD_NOW.md`). Until it
-  lands, the page-value input reaches the backend and is ignored. The two
-  migrations are already live and backwards-compatible, so the order of
-  operations doesn't matter — redeploy and merge in either order.
-- The branch is unmerged, so nothing is on GitHub Pages yet either.
+- **The `family-api` redeploy** (task on `TASK_BOARD_NOW.md`). This is now
+  the only outstanding piece, and it's more visible than before the merge:
+  the input is live in the app and silently does nothing on save. Nothing
+  regresses in the meantime — every book stays at the column's default of
+  100, which is exactly the pre-change behaviour.

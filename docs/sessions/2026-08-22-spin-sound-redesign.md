@@ -37,6 +37,30 @@ specifically.
   wheel behaviour, and only at the far end of the slider.
 - Sent the five rendered WAVs to the user so the subjective half of the task's "done when" can
   actually be judged before deploying.
+- Cleared the two follow-ups carried forward from the 2026-08-18 session. Logged both of this
+  session's generalizable lessons to `chompy78/ai-lessons-learned` as
+  `inbox/2026-08-22-homelife-spin-overlay-and-audio-render.md` (the modal ghost-click, and
+  "render generated media to verify it rather than reading the code that generates it") — via
+  `inbox/` per that repo's own convention, not by hand-editing its `INDEX.md` table, which its
+  own lesson H-005 warns against. Its weekly curation workflow folds inbox entries into
+  `topics/`/`INDEX.md`.
+- Branch cleanup: deleted the merged local `claude/rewards-app-spin-flow-dqdlbe`, but **every
+  remote branch deletion fails 403** from this session's git credentials (`git push origin
+  --delete` and the `:refspec` form both; the agent proxy itself reports healthy, no relay
+  failures). Push access is not delete access here - the same finding as `ai-lessons-learned`
+  H-020, which already documents the GitHub-website fallback. Four merged remote strays therefore
+  remain and need deleting by hand: `claude/rewards-app-spin-flow-dqdlbe`,
+  `claude/reward-spinner-child-select-h39spd`, `claude/reward-app-adhoc-big-roprvp`,
+  `claude/custom-commands-available-1s3fri`.
+- **Collided with a concurrent session on `main`.** A `git ls-remote` run during the branch sweep
+  reported `main` at a SHA this session had never seen. Checked before touching anything: this
+  session's `2ebd2ac` is a clean ancestor of the new tip, so nothing here was lost or overwritten -
+  local `main` was simply stale. Eight commits of reading-tracker work from another session sit on
+  top (per-book page-value multiplier, nightly goal as dated history, an accompanying family-api
+  v45 deploy, plus its own decision records and session notes, through `5686727`). Fast-forwarded
+  local `main`. That session also left a fifth stray branch,
+  `claude/book-reading-multipliers-y3l9vh` - merged, but deliberately excluded from the delete list
+  above since that session may still be live.
 
 ## Files touched
 
@@ -64,5 +88,10 @@ specifically.
 - `WHEEL_EASING` in `app.js` now duplicates `.wheel`'s `transition-timing-function` in `styles.css`.
   Both carry a comment pointing at the other; changing one without the other silently desynchronises
   the ticks from the wheel.
-- Still open from the previous session: the ghost-click lesson isn't logged to `ai-lessons-learned`,
-  and `claude/rewards-app-spin-flow-dqdlbe` is still a merged stray branch.
+- Remote branch deletion is not available to a session like this one (403, see the timeline). Five
+  merged stray remote branches now sit on the repo; clearing them is a manual job on the GitHub
+  branches page. Confirm `claude/book-reading-multipliers-y3l9vh`'s session has finished before
+  including that one.
+- Another session was working `main` concurrently today. Nothing was lost, but the reading-tracker
+  work and its family-api v45 deploy landed independently of anything logged here - worth knowing
+  when reading this note next to `docs/sessions/2026-08-31-book-page-value-multiplier.md`.
